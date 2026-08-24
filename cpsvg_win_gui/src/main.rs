@@ -1,6 +1,8 @@
 use pvg_lib::compile_pvg_at_time;
 use pvg_lib::draw_list::DrawList;
+use pvg_lib::png_rasterizer::rasterize_draw_list_to_png;
 use pvg_lib::renderer;
+use pvg_lib::svg_emitter::emit_svg;
 use eframe::egui::{self, Color32, Rect, Vec2};
 use std::fs;
 use std::path::Path;
@@ -10,7 +12,7 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("PVG 0.1 - Windows GUI Live Preview")
-            .with_inner_size([1360.0, 840.0]),
+            .with_inner_size([1400.0, 860.0]),
         ..Default::default()
     };
 
@@ -62,8 +64,10 @@ const PRESETS: &[PresetItem] = &[
 
 struct PvgApp {
     code: String,
+    current_preset_idx: usize,
     draw_list: Option<DrawList>,
     error_msg: Option<String>,
+    status_notification: Option<(String, Instant)>,
     render_time_ms: f64,
     primitive_count: usize,
     zoom: f32,
@@ -79,8 +83,10 @@ impl PvgApp {
         let initial_code = Self::load_preset(0);
         let mut app = Self {
             code: initial_code,
+            current_preset_idx: 0,
             draw_list: None,
             error_msg: None,
+            status_notification: None,
             render_time_ms: 0.0,
             primitive_count: 0,
             zoom: 1.0,
@@ -114,6 +120,48 @@ impl PvgApp {
             }
             Err(e) => {
                 self.error_msg = Some(e);
+            }
+        }
+    }
+
+    fn export_png(&mut self) {
+        if let Some(ref dl) = self.draw_list {
+            let start = Instant::now();
+            match rasterize_draw_list_to_png(dl, 1.0) {
+                Ok(bytes) => {
+                    let filename = format!("export_preset_{}.png", self.current_preset_idx + 1);
+                    if let Err(e) = fs::write(&filename, &bytes) {
+                        self.status_notification = Some((format!("Failed to save PNG: {}", e), Instant::now()));
+                    } else {
+                        let dur = start.elapsed().as_secs_f64() * 1000.0;
+                        let size_kb = bytes.len() as f64 / 1024.0;
+                        self.status_notification = Some((
+                            format!("✓ Exported PNG '{}' ({:.1} KB in {:.2} ms)", filename, size_kb, dur),
+                            Instant::now(),
+                        ));
+                    }
+                }
+                Err(e) => {
+                    self.status_notification = Some((format!("PNG Export Error: {}", e), Instant::now()));
+                }
+            }
+        }
+    }
+
+    fn export_svg(&mut self) {
+        if let Some(ref dl) = self.draw_list {
+            let start = Instant::now();
+            let svg_content = emit_svg(dl);
+            let filename = format!("export_preset_{}.svg", self.current_preset_idx + 1);
+            if let Err(e) = fs::write(&filename, &svg_content) {
+                self.status_notification = Some((format!("Failed to save SVG: {}", e), Instant::now()));
+            } else {
+                let dur = start.elapsed().as_secs_f64() * 1000.0;
+                let size_kb = svg_content.len() as f64 / 1024.0;
+                self.status_notification = Some((
+                    format!("✓ Exported SVG '{}' ({:.1} KB in {:.2} ms)", filename, size_kb, dur),
+                    Instant::now(),
+                ));
             }
         }
     }
@@ -160,9 +208,21 @@ impl eframe::App for PvgApp {
                 ui.label(format!("Time: {:.2}s", self.current_time));
 
                 ui.separator();
+                let png_btn = egui::Button::new("📷 Export PNG").fill(Color32::from_rgb(0, 110, 180));
+                if ui.add(png_btn).clicked() {
+                    self.export_png();
+                }
+
+                let svg_btn = egui::Button::new("🌐 Export SVG").fill(Color32::from_rgb(160, 80, 0));
+                if ui.add(svg_btn).clicked() {
+                    self.export_svg();
+                }
+
+                ui.separator();
                 ui.label("Presets:");
                 for (i, p) in PRESETS.iter().enumerate() {
                     if ui.button(p.name).clicked() {
+                        self.current_preset_idx = i;
                         self.code = Self::load_preset(i);
                         self.pan = Vec2::ZERO;
                         self.zoom = 1.0;
@@ -198,6 +258,13 @@ impl eframe::App for PvgApp {
                             self.primitive_count, self.render_time_ms
                         ),
                     );
+                }
+
+                if let Some((ref msg, instant)) = self.status_notification {
+                    if instant.elapsed().as_secs_f64() < 5.0 {
+                        ui.separator();
+                        ui.colored_label(Color32::from_rgb(255, 215, 0), msg);
+                    }
                 }
             });
         });

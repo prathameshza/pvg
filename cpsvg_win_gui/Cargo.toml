@@ -21,8 +21,13 @@ name = "pvg_to_svg"
 path = "src/bin/pvg_to_svg.rs"
 
 [[bin]]
+name = "pvg_to_png"
+path = "src/bin/pvg_to_png.rs"
+
+[[bin]]
 name = "benchmark"
 path = "src/bin/benchmark.rs"
 
 [dependencies]
 eframe = "0.28.1"
+tiny-skia = "0.11"
