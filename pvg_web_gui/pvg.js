@@ -1,6 +1,7 @@
 ﻿/**
  * Procedural Vector Graphics (PVG) 0.1 - Pure Vanilla JavaScript Engine
  * Specification Conformant Lexer, Recursive Descent Parser, Evaluator & Render Pipeline
+ * Includes standard <pvg-view> W3C Custom Element Web Component
  */
 
 // ==========================================
@@ -313,7 +314,6 @@ class Lexer {
             }
           }
         }
-        // Entire rest of line is a comment
         break;
       }
 
@@ -573,7 +573,7 @@ class Parser {
     const version = [Math.floor(verTok.value), Math.round((verTok.value % 1) * 10)];
     this.skipNewlines();
 
-    // 2. Canvas declaration: canvas width height [background color]
+    // 2. Canvas declaration
     this.expect(TokenKind.Canvas);
     const wTok = this.advance();
     const hTok = this.advance();
@@ -1152,7 +1152,6 @@ class Evaluator {
   }
 
   nextRandom() {
-    // 64-bit Xorshift PRNG
     this.rngState ^= (this.rngState << 13n) & 0xffffffffffffffffn;
     this.rngState ^= (this.rngState >> 7n) & 0xffffffffffffffffn;
     this.rngState ^= (this.rngState << 17n) & 0xffffffffffffffffn;
@@ -1556,7 +1555,6 @@ function renderDrawListToCanvas(ctx, drawList, originX, originY, zoom) {
   ctx.translate(originX, originY);
   ctx.scale(zoom, zoom);
 
-  // Background
   if (drawList.background && !drawList.background.isNone) {
     ctx.fillStyle = drawList.background.toRgbaString(1.0);
     ctx.fillRect(0, 0, drawList.canvasWidth, drawList.canvasHeight);
@@ -1663,8 +1661,7 @@ function renderDrawListToCanvas(ctx, drawList, originX, originY, zoom) {
 }
 
 function exportToSvgString(drawList) {
-  let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-  svg += `<svg width="${drawList.canvasWidth}" height="${drawList.canvasHeight}" viewBox="0 0 ${drawList.canvasWidth} ${drawList.canvasHeight}" xmlns="http://www.w3.org/2000/svg">\n`;
+  let svg = `<svg viewBox="0 0 ${drawList.canvasWidth} ${drawList.canvasHeight}" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">\n`;
 
   if (drawList.background && !drawList.background.isNone) {
     svg += `  <rect width="100%" height="100%" fill="${drawList.background.toSvgString()}" />\n`;
@@ -1673,7 +1670,7 @@ function exportToSvgString(drawList) {
   const formatStyle = (s) => {
     let attrs = `fill="${s.fill.toSvgString()}"`;
     if (!s.stroke.isNone && s.width > 0) {
-      attrs += ` stroke="${s.stroke.toSvgString()}" stroke-width="${s.width.toFixed(2)}"`;
+      attrs += ` stroke="${s.stroke.toSvgString()}" stroke-width="${s.width.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"`;
     } else {
       attrs += ` stroke="none"`;
     }
@@ -1744,12 +1741,585 @@ function exportToSvgString(drawList) {
   return svg;
 }
 
-// Global Export for Web App
-// (Presets live in presets.js as window.PVG_PRESETS)
+// ==========================================
+// 6. GLOBAL TICKER FOR <pvg-view> ELEMENTS
+// ==========================================
+
+class PvgTicker {
+  constructor() {
+    this.activeViews = new Set();
+    this.rafId = null;
+    this.lastTimestamp = performance.now();
+    this.onFrame = this.onFrame.bind(this);
+  }
+
+  register(view) {
+    this.activeViews.add(view);
+    if (!this.rafId && this.activeViews.size > 0) {
+      this.lastTimestamp = performance.now();
+      this.rafId = requestAnimationFrame(this.onFrame);
+    }
+  }
+
+  unregister(view) {
+    this.activeViews.delete(view);
+    if (this.activeViews.size === 0 && this.rafId) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+  }
+
+  onFrame(timestamp) {
+    for (const view of this.activeViews) {
+      if (view.isConnected && view.isPlaying && view.isVisible) {
+        view._handleTick(timestamp);
+      }
+    }
+    if (this.activeViews.size > 0) {
+      this.rafId = requestAnimationFrame(this.onFrame);
+    } else {
+      this.rafId = null;
+    }
+  }
+}
+
+const GLOBAL_PVG_TICKER = new PvgTicker();
+
+// ==========================================
+// 7. W3C CUSTOM ELEMENT: <pvg-view>
+// ==========================================
+
+class PvgView extends HTMLElement {
+  static get observedAttributes() {
+    return [
+      'src',
+      'code',
+      'render',
+      'autoplay',
+      'loop',
+      'fps',
+      'time',
+      't',
+      'scale',
+      'fit',
+      'interactive',
+      'lazy',
+      'background',
+    ];
+  }
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+
+    this._sourceCode = '';
+    this._currentDrawList = null;
+    this._currentTime = 0.0;
+    this._startTime = performance.now();
+    this._lastFrameTime = 0;
+    this._isPlaying = false;
+    this._isVisible = true;
+    this._isAnimatedDoc = false;
+
+    // Pan & Zoom
+    this._panX = 0;
+    this._panY = 0;
+    this._zoom = 1.0;
+    this._isDragging = false;
+    this._dragStartX = 0;
+    this._dragStartY = 0;
+
+    // Build Internal Shadow DOM
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host {
+          display: inline-block;
+          position: relative;
+          width: 100%;
+          height: 100%;
+          min-width: 60px;
+          min-height: 60px;
+          overflow: hidden;
+          vertical-align: middle;
+          contain: layout paint;
+          box-sizing: border-box;
+        }
+        :host([hidden]) {
+          display: none !important;
+        }
+        .pvg-viewport {
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          position: relative;
+          overflow: hidden;
+        }
+        canvas, svg {
+          display: block;
+          max-width: 100%;
+          max-height: 100%;
+          touch-action: none;
+        }
+        svg {
+          width: 100%;
+          height: 100%;
+        }
+        .overlay-error {
+          position: absolute;
+          inset: 0;
+          background: rgba(18, 10, 14, 0.92);
+          color: #ff4766;
+          font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+          font-size: 11px;
+          padding: 10px;
+          box-sizing: border-box;
+          white-space: pre-wrap;
+          overflow: auto;
+          z-index: 10;
+          display: none;
+        }
+        .overlay-loading {
+          position: absolute;
+          inset: 0;
+          background: rgba(10, 12, 16, 0.5);
+          color: #00d2ff;
+          font-family: system-ui, -apple-system, sans-serif;
+          font-size: 12px;
+          display: none;
+          align-items: center;
+          justify-content: center;
+          z-index: 5;
+        }
+      </style>
+      <div class="pvg-viewport" part="viewport">
+        <div class="overlay-loading" part="loading">Loading PVG...</div>
+        <div class="overlay-error" part="error"></div>
+      </div>
+    `;
+
+    this._viewport = this.shadowRoot.querySelector('.pvg-viewport');
+    this._errorOverlay = this.shadowRoot.querySelector('.overlay-error');
+    this._loadingOverlay = this.shadowRoot.querySelector('.overlay-loading');
+    this._canvas = null;
+    this._ctx = null;
+
+    this._onMouseDown = this._onMouseDown.bind(this);
+    this._onMouseMove = this._onMouseMove.bind(this);
+    this._onMouseUp = this._onMouseUp.bind(this);
+    this._onWheel = this._onWheel.bind(this);
+    this._onDblClick = this._onDblClick.bind(this);
+  }
+
+  get isPlaying() {
+    return this._isPlaying;
+  }
+
+  get isVisible() {
+    return this._isVisible;
+  }
+
+  get time() {
+    return this._currentTime;
+  }
+
+  set time(val) {
+    this._currentTime = Number(val) || 0.0;
+    this.renderAt(this._currentTime);
+  }
+
+  get code() {
+    return this._sourceCode;
+  }
+
+  set code(val) {
+    this._sourceCode = String(val || '');
+    this.extractAndCompile();
+  }
+
+  get src() {
+    return this.getAttribute('src');
+  }
+
+  set src(val) {
+    if (val) this.setAttribute('src', val);
+    else this.removeAttribute('src');
+  }
+
+  get renderMode() {
+    return (this.getAttribute('render') || 'canvas').toLowerCase();
+  }
+
+  set renderMode(val) {
+    this.setAttribute('render', val);
+  }
+
+  get fit() {
+    return this.getAttribute('fit') || 'contain';
+  }
+
+  get fpsCap() {
+    const attr = this.getAttribute('fps');
+    return attr ? parseInt(attr, 10) : 0;
+  }
+
+  connectedCallback() {
+    // 1. Intersection Observer for Lazy Rendering
+    if (window.IntersectionObserver && this.getAttribute('lazy') !== 'false') {
+      this._intersectionObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          this._isVisible = entry.isIntersecting;
+          if (this._isVisible && this._isPlaying) {
+            this.renderAt(this._currentTime);
+          }
+        }
+      });
+      this._intersectionObserver.observe(this);
+    }
+
+    // 2. Resize Observer for Adaptive Scaling
+    if (window.ResizeObserver) {
+      this._resizeObserver = new ResizeObserver(() => {
+        if (this.renderMode === 'canvas') {
+          this._syncCanvasSize();
+          this.renderAt(this._currentTime);
+        }
+      });
+      this._resizeObserver.observe(this);
+    }
+
+    // 3. Child Mutation Observer (watches <script type="text/pvg">)
+    this._mutationObserver = new MutationObserver(() => {
+      if (!this.hasAttribute('src') && !this.hasAttribute('code')) {
+        this.extractAndCompile();
+      }
+    });
+    this._mutationObserver.observe(this, { childList: true, characterData: true, subtree: true });
+
+    // 4. Interactive Events
+    this._viewport.addEventListener('mousedown', this._onMouseDown);
+    window.addEventListener('mousemove', this._onMouseMove);
+    window.addEventListener('mouseup', this._onMouseUp);
+    this._viewport.addEventListener('wheel', this._onWheel, { passive: false });
+    this._viewport.addEventListener('dblclick', this._onDblClick);
+
+    this.extractAndCompile();
+
+    if (this.hasAttribute('autoplay') || this.hasAttribute('play')) {
+      this.play();
+    }
+  }
+
+  disconnectedCallback() {
+    GLOBAL_PVG_TICKER.unregister(this);
+
+    if (this._intersectionObserver) this._intersectionObserver.disconnect();
+    if (this._resizeObserver) this._resizeObserver.disconnect();
+    if (this._mutationObserver) this._mutationObserver.disconnect();
+
+    this._viewport.removeEventListener('mousedown', this._onMouseDown);
+    window.removeEventListener('mousemove', this._onMouseMove);
+    window.removeEventListener('mouseup', this._onMouseUp);
+    this._viewport.removeEventListener('wheel', this._onWheel);
+    this._viewport.removeEventListener('dblclick', this._onDblClick);
+  }
+
+  attributeChangedCallback(name, oldValue, newValue) {
+    if (oldValue === newValue) return;
+
+    if (name === 'src') {
+      this._fetchSrc(newValue);
+    } else if (name === 'code') {
+      this._sourceCode = newValue || '';
+      this.extractAndCompile();
+    } else if (name === 'render') {
+      this._setupRenderSurface();
+      this.renderAt(this._currentTime);
+    } else if (name === 'time' || name === 't') {
+      this._currentTime = parseFloat(newValue) || 0.0;
+      this.renderAt(this._currentTime);
+    } else if (name === 'autoplay') {
+      if (this.hasAttribute('autoplay')) this.play();
+      else this.pause();
+    } else {
+      this.renderAt(this._currentTime);
+    }
+  }
+
+  play() {
+    this._isPlaying = true;
+    this._startTime = performance.now() - this._currentTime * 1000.0;
+    GLOBAL_PVG_TICKER.register(this);
+    this.dispatchEvent(new CustomEvent('play', { detail: { time: this._currentTime } }));
+  }
+
+  pause() {
+    this._isPlaying = false;
+    GLOBAL_PVG_TICKER.unregister(this);
+    this.dispatchEvent(new CustomEvent('pause', { detail: { time: this._currentTime } }));
+  }
+
+  togglePlay() {
+    if (this._isPlaying) this.pause();
+    else this.play();
+  }
+
+  reset() {
+    this._startTime = performance.now();
+    this._currentTime = 0.0;
+    this._panX = 0;
+    this._panY = 0;
+    this._zoom = 1.0;
+    this.renderAt(0.0);
+    this.dispatchEvent(new CustomEvent('reset'));
+  }
+
+  seek(seconds) {
+    this._currentTime = Math.max(0, seconds);
+    this._startTime = performance.now() - this._currentTime * 1000.0;
+    this.renderAt(this._currentTime);
+    this.dispatchEvent(new CustomEvent('seek', { detail: { time: this._currentTime } }));
+  }
+
+  exportSvg() {
+    if (!this._currentDrawList) return '';
+    return exportToSvgString(this._currentDrawList);
+  }
+
+  async toPngBlob(scale = 2) {
+    if (!this._currentDrawList) return null;
+    const offscreen = document.createElement('canvas');
+    offscreen.width = this._currentDrawList.canvasWidth * scale;
+    offscreen.height = this._currentDrawList.canvasHeight * scale;
+    const offCtx = offscreen.getContext('2d');
+    renderDrawListToCanvas(offCtx, this._currentDrawList, 0, 0, scale);
+    return new Promise((resolve) => offscreen.toBlob(resolve, 'image/png'));
+  }
+
+  getDrawList() {
+    return this._currentDrawList;
+  }
+
+  async _fetchSrc(url) {
+    if (!url) return;
+    this._loadingOverlay.style.display = 'flex';
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}: Failed to fetch '${url}'`);
+      const text = await resp.text();
+      this._sourceCode = text;
+      this.extractAndCompile();
+    } catch (err) {
+      this._showError(err.message);
+    } finally {
+      this._loadingOverlay.style.display = 'none';
+    }
+  }
+
+  extractAndCompile() {
+    if (this.hasAttribute('src')) return;
+
+    if (!this.hasAttribute('code')) {
+      const scriptTag = this.querySelector('script[type="text/pvg"], script[type="text/plain"]');
+      if (scriptTag) {
+        this._sourceCode = scriptTag.textContent.trim();
+      } else {
+        const rawText = this.textContent.trim();
+        if (rawText.length > 0) {
+          this._sourceCode = rawText;
+        }
+      }
+    }
+
+    if (!this._sourceCode) return;
+
+    this._isAnimatedDoc =
+      this._sourceCode.includes('time') ||
+      this._sourceCode.includes(' t ') ||
+      this._sourceCode.includes('(t)') ||
+      this._sourceCode.includes('* t');
+
+    this._setupRenderSurface();
+    this.renderAt(this._currentTime);
+  }
+
+  _setupRenderSurface() {
+    const mode = this.renderMode;
+    this._viewport.innerHTML = '';
+    this._viewport.appendChild(this._loadingOverlay);
+    this._viewport.appendChild(this._errorOverlay);
+
+    if (mode === 'canvas') {
+      this._canvas = document.createElement('canvas');
+      this._ctx = this._canvas.getContext('2d');
+      this._viewport.appendChild(this._canvas);
+      this._syncCanvasSize();
+    }
+  }
+
+  _syncCanvasSize() {
+    if (!this._canvas || !this._ctx) return;
+    const dpr = parseFloat(this.getAttribute('scale')) || window.devicePixelRatio || 1;
+    const w = this._viewport.clientWidth || 300;
+    const h = this._viewport.clientHeight || 300;
+    this._canvas.width = Math.round(w * dpr);
+    this._canvas.height = Math.round(h * dpr);
+    this._canvas.style.width = `${w}px`;
+    this._canvas.style.height = `${h}px`;
+    this._ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this._ctx.scale(dpr, dpr);
+  }
+
+  renderAt(time) {
+    if (!this._sourceCode) return;
+
+    const t0 = performance.now();
+    try {
+      this._currentDrawList = compilePVG(this._sourceCode, time);
+      this._hideError();
+
+      if (this.renderMode === 'svg') {
+        this._renderSvg(this._currentDrawList);
+      } else {
+        this._renderCanvas(this._currentDrawList);
+      }
+
+      const elapsed = performance.now() - t0;
+      this.dispatchEvent(
+        new CustomEvent('render', {
+          detail: {
+            drawList: this._currentDrawList,
+            time,
+            renderTimeMs: elapsed,
+          },
+        })
+      );
+    } catch (err) {
+      this._showError(err.message);
+      this.dispatchEvent(new CustomEvent('error', { detail: { error: err.message } }));
+    }
+  }
+
+  _renderCanvas(drawList) {
+    if (!this._ctx || !this._canvas) return;
+
+    const w = this._viewport.clientWidth;
+    const h = this._viewport.clientHeight;
+    this._ctx.clearRect(0, 0, w, h);
+
+    const fit = this.fit;
+    let baseZoom = 1.0;
+    if (fit === 'contain') {
+      baseZoom = Math.min(w / drawList.canvasWidth, h / drawList.canvasHeight);
+    } else if (fit === 'cover') {
+      baseZoom = Math.max(w / drawList.canvasWidth, h / drawList.canvasHeight);
+    }
+
+    const effectiveZoom = baseZoom * this._zoom;
+    const originX = (w - drawList.canvasWidth * effectiveZoom) / 2 + this._panX;
+    const originY = (h - drawList.canvasHeight * effectiveZoom) / 2 + this._panY;
+
+    renderDrawListToCanvas(this._ctx, drawList, originX, originY, effectiveZoom);
+  }
+
+  _renderSvg(drawList) {
+    const existingSvg = this._viewport.querySelector('svg');
+    const svgStr = exportToSvgString(drawList);
+    if (existingSvg) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgStr, 'image/svg+xml');
+      const newSvg = doc.querySelector('svg');
+      if (newSvg) {
+        this._viewport.replaceChild(newSvg, existingSvg);
+      }
+    } else {
+      const container = document.createElement('div');
+      container.innerHTML = svgStr;
+      const svgEl = container.firstElementChild;
+      if (svgEl) {
+        this._viewport.appendChild(svgEl);
+      }
+    }
+  }
+
+  _handleTick(timestamp) {
+    const fps = this.fpsCap;
+    if (fps > 0) {
+      const frameDuration = 1000.0 / fps;
+      if (timestamp - this._lastFrameTime < frameDuration) {
+        return;
+      }
+    }
+    this._lastFrameTime = timestamp;
+
+    if (this._isAnimatedDoc) {
+      this._currentTime = (timestamp - this._startTime) / 1000.0;
+      this.renderAt(this._currentTime);
+      this.dispatchEvent(new CustomEvent('timeupdate', { detail: { time: this._currentTime } }));
+    }
+  }
+
+  _showError(msg) {
+    this._errorOverlay.textContent = `⚡ PVG Execution Error:\n${msg}`;
+    this._errorOverlay.style.display = 'block';
+  }
+
+  _hideError() {
+    this._errorOverlay.style.display = 'none';
+  }
+
+  // Interactive Viewport Events
+  _onMouseDown(e) {
+    if (!this.hasAttribute('interactive')) return;
+    this._isDragging = true;
+    this._dragStartX = e.clientX - this._panX;
+    this._dragStartY = e.clientY - this._panY;
+    this._viewport.style.cursor = 'grabbing';
+  }
+
+  _onMouseMove(e) {
+    if (!this._isDragging) return;
+    this._panX = e.clientX - this._dragStartX;
+    this._panY = e.clientY - this._dragStartY;
+    this.renderAt(this._currentTime);
+  }
+
+  _onMouseUp() {
+    if (this._isDragging) {
+      this._isDragging = false;
+      this._viewport.style.cursor = this.hasAttribute('interactive') ? 'grab' : 'default';
+    }
+  }
+
+  _onWheel(e) {
+    if (!this.hasAttribute('interactive')) return;
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.15 : 0.85;
+    this._zoom = Math.max(0.05, Math.min(20.0, this._zoom * factor));
+    this.renderAt(this._currentTime);
+  }
+
+  _onDblClick() {
+    if (!this.hasAttribute('interactive')) return;
+    this._panX = 0;
+    this._panY = 0;
+    this._zoom = 1.0;
+    this.renderAt(this._currentTime);
+  }
+}
+
+// Register Custom Element
+if (typeof customElements !== 'undefined' && !customElements.get('pvg-view')) {
+  customElements.define('pvg-view', PvgView);
+}
+
+// Global API
 window.PVG = {
   compile: compilePVG,
   render: renderDrawListToCanvas,
   exportSvg: exportToSvgString,
+  PvgView,
   get presets() {
     return window.PVG_PRESETS || [];
   },

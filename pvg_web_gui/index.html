@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PVG 0.1 Studio - Procedural Vector Graphics Web IDE</title>
+  <title>PVG 0.1 Studio - Procedural Vector Graphics Web IDE with &lt;pvg-view&gt;</title>
   <link rel="stylesheet" href="style.css">
   <script src="pvg.js"></script>
   <script src="presets.js"></script>
@@ -14,7 +14,7 @@
     <div class="toolbar-group">
       <div class="app-title">
         <span>⚡ PVG Studio</span>
-        <span class="badge">Web 0.1</span>
+        <span class="badge">&lt;pvg-view&gt; 0.1</span>
       </div>
       <div class="separator"></div>
 
@@ -35,13 +35,26 @@
 
       <div class="separator"></div>
 
+      <span style="font-size: 12px; color: var(--text-secondary);">Render:</span>
+      <select id="render-mode-select">
+        <option value="canvas">Canvas (60 FPS)</option>
+        <option value="svg">SVG (DOM Vector)</option>
+      </select>
+
+      <div class="separator"></div>
+
       <span style="font-size: 12px; color: var(--text-secondary);">Presets:</span>
       <select id="preset-select"></select>
     </div>
 
     <div class="toolbar-group">
-      <button id="btn-reset-view" title="Reset pan & zoom (100%)">Reset View</button>
-      <span id="lbl-zoom" style="font-size: 12px; font-family: var(--font-mono); color: var(--text-secondary);">1.0x</span>
+      <button id="btn-embed" class="btn-accent" title="Generate <pvg-view> Embed Snippet">
+        &lt;/&gt; Embed Tag
+      </button>
+      
+      <div class="separator"></div>
+
+      <button id="btn-reset-view" title="Reset view">Reset View</button>
       <div class="separator"></div>
 
       <button id="btn-export-svg" title="Export as standalone SVG file">📥 SVG</button>
@@ -74,14 +87,14 @@
     <!-- Split Resizer Bar -->
     <div id="resizer"></div>
 
-    <!-- Right: Interactive Viewport -->
+    <!-- Right: Interactive Viewport powered by <pvg-view> -->
     <section id="viewport-pane">
-      <canvas id="canvas-stage"></canvas>
+      <pvg-view id="main-pvg-view" interactive autoplay render="canvas"></pvg-view>
 
       <div class="viewport-overlay-controls">
         <button id="btn-zoom-in" title="Zoom In (+)">+</button>
         <button id="btn-zoom-out" title="Zoom Out (-)">−</button>
-        <button id="btn-center-view" title="Center canvas">⊙</button>
+        <button id="btn-center-view" title="Reset View">⊙</button>
       </div>
     </section>
   </main>
@@ -94,50 +107,75 @@
       <span class="status-pill success" id="lbl-status">✓ Ready</span>
     </div>
     <div class="status-right">
-      <span class="status-pill info">Memory: &lt; 50 KB</span>
+      <span class="status-pill info">Custom Element: &lt;pvg-view&gt; Active</span>
       <span class="status-pill info">Zero GPU Dependency</span>
     </div>
   </footer>
+
+  <!-- Embed Modal -->
+  <div class="modal-backdrop" id="modal-embed">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>⚡ &lt;pvg-view&gt; HTML Embed Generator</h3>
+        <button id="btn-modal-close" style="padding: 2px 6px;">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 12px; color: var(--text-secondary);">
+          Drop this standard Web Component directly into any HTML page, React, Vue, Svelte, or Astro app:
+        </p>
+
+        <div style="display: flex; gap: 12px; font-size: 12px;">
+          <label class="checkbox-label">
+            <input type="checkbox" id="embed-opt-autoplay" checked> Autoplay
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="embed-opt-interactive" checked> Interactive Pan/Zoom
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="embed-opt-script" checked> Safe &lt;script type="text/pvg"&gt;
+          </label>
+        </div>
+
+        <div class="code-preview-block" id="embed-code-output"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-copy-embed" class="btn-success">📋 Copy Snippet</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Application Controller Logic -->
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       const editor = document.getElementById('code-editor');
       const lineNumbers = document.getElementById('line-numbers');
-      const canvas = document.getElementById('canvas-stage');
-      const ctx = canvas.getContext('2d');
-      const viewportPane = document.getElementById('viewport-pane');
+      const mainView = document.getElementById('main-pvg-view');
 
       const btnRun = document.getElementById('btn-run');
       const chkAutoRun = document.getElementById('chk-autorun');
       const btnPlayPause = document.getElementById('btn-playpause');
       const btnResetTime = document.getElementById('btn-reset-time');
       const lblTime = document.getElementById('lbl-time');
+      const renderModeSelect = document.getElementById('render-mode-select');
       const presetSelect = document.getElementById('preset-select');
       const btnResetView = document.getElementById('btn-reset-view');
       const btnZoomIn = document.getElementById('btn-zoom-in');
       const btnZoomOut = document.getElementById('btn-zoom-out');
       const btnCenterView = document.getElementById('btn-center-view');
-      const lblZoom = document.getElementById('lbl-zoom');
       const lblStatus = document.getElementById('lbl-status');
       const lblLines = document.getElementById('lbl-lines');
       const lblCursorPos = document.getElementById('lbl-cursor-pos');
       const btnExportSvg = document.getElementById('btn-export-svg');
       const dropdownPng = document.getElementById('dropdown-png');
 
-      // Pan & Zoom State
-      let zoom = 1.0;
-      let panX = 0;
-      let panY = 0;
-      let isDragging = false;
-      let dragStartX = 0;
-      let dragStartY = 0;
-
-      // Animation State
-      let isAnimated = true;
-      let startTime = performance.now();
-      let currentTime = 0.0;
-      let currentDrawList = null;
+      const modalEmbed = document.getElementById('modal-embed');
+      const btnEmbed = document.getElementById('btn-embed');
+      const btnModalClose = document.getElementById('btn-modal-close');
+      const embedCodeOutput = document.getElementById('embed-code-output');
+      const btnCopyEmbed = document.getElementById('btn-copy-embed');
+      const embedOptAutoplay = document.getElementById('embed-opt-autoplay');
+      const embedOptInteractive = document.getElementById('embed-opt-interactive');
+      const embedOptScript = document.getElementById('embed-opt-script');
 
       // Initialize Presets
       window.PVG.presets.forEach((p, idx) => {
@@ -150,10 +188,10 @@
       function loadPreset(idx) {
         editor.value = window.PVG.presets[idx].code;
         updateLineNumbers();
-        resetView();
-        startTime = performance.now();
-        currentTime = 0.0;
-        recompile();
+        mainView.code = editor.value;
+        mainView.reset();
+        mainView.play();
+        btnPlayPause.textContent = '⏸ Pause';
       }
 
       function updateLineNumbers() {
@@ -174,93 +212,31 @@
         lblCursorPos.textContent = `Ln ${line}, Col ${col}`;
       }
 
-      function resetView() {
-        if (!currentDrawList) {
-          panX = (viewportPane.clientWidth - 600) / 2;
-          panY = (viewportPane.clientHeight - 600) / 2;
-        } else {
-          panX = (viewportPane.clientWidth - currentDrawList.canvasWidth * zoom) / 2;
-          panY = (viewportPane.clientHeight - currentDrawList.canvasHeight * zoom) / 2;
-        }
-        zoom = 1.0;
-        updateZoomLabel();
-        requestRender();
+      function recompile() {
+        mainView.code = editor.value;
       }
 
-      function updateZoomLabel() {
-        lblZoom.textContent = `${zoom.toFixed(1)}x`;
-      }
+      // Sync Viewport Events to Status Bar
+      mainView.addEventListener('render', (e) => {
+        const { drawList, renderTimeMs } = e.detail;
+        lblStatus.className = 'status-pill success';
+        lblStatus.textContent = `✓ Rendered ${drawList.items.length} primitives in ${renderTimeMs.toFixed(3)} ms`;
+      });
 
-      function recompile(time = currentTime) {
-        const t0 = performance.now();
-        try {
-          currentDrawList = window.PVG.compile(editor.value, time);
-          const elapsed = (performance.now() - t0).toFixed(3);
-          lblStatus.className = 'status-pill success';
-          lblStatus.textContent = `✓ Rendered ${currentDrawList.items.length} primitives in ${elapsed} ms`;
-        } catch (err) {
-          lblStatus.className = 'status-pill error';
-          lblStatus.textContent = `✗ ${err.message}`;
-        }
-        requestRender();
-      }
+      mainView.addEventListener('timeupdate', (e) => {
+        lblTime.textContent = `${e.detail.time.toFixed(2)}s`;
+      });
 
-      function resizeCanvas() {
-        const dpr = window.devicePixelRatio || 1;
-        const w = viewportPane.clientWidth;
-        const h = viewportPane.clientHeight;
-        canvas.width = w * dpr;
-        canvas.height = h * dpr;
-        canvas.style.width = `${w}px`;
-        canvas.style.height = `${h}px`;
-        ctx.scale(dpr, dpr);
-        requestRender();
-      }
-
-      function requestRender() {
-        const w = viewportPane.clientWidth;
-        const h = viewportPane.clientHeight;
-        ctx.clearRect(0, 0, w, h);
-
-        if (!currentDrawList) return;
-
-        // Draw Canvas Board Outline & Drop Shadow
-        const dw = currentDrawList.canvasWidth * zoom;
-        const dh = currentDrawList.canvasHeight * zoom;
-
-        ctx.save();
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
-        ctx.shadowBlur = 16;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 4;
-        ctx.strokeStyle = '#3d4052';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(panX, panY, dw, dh);
-        ctx.restore();
-
-        // Render Primitives via PVG Render Engine
-        window.PVG.render(ctx, currentDrawList, panX, panY, zoom);
-      }
-
-      // Animation Loop
-      function animationLoop(timestamp) {
-        const code = editor.value;
-        const hasTime = code.includes('time') || code.includes(' t ') || code.includes('(t)') || code.includes('* t');
-
-        if (isAnimated && hasTime) {
-          currentTime = (timestamp - startTime) / 1000.0;
-          lblTime.textContent = `${currentTime.toFixed(2)}s`;
-          recompile(currentTime);
-        }
-
-        requestAnimationFrame(animationLoop);
-      }
+      mainView.addEventListener('error', (e) => {
+        lblStatus.className = 'status-pill error';
+        lblStatus.textContent = `✗ ${e.detail.error}`;
+      });
 
       // Event Listeners
       editor.addEventListener('input', () => {
         updateLineNumbers();
         if (chkAutoRun.checked) {
-          recompile(currentTime);
+          recompile();
         }
       });
 
@@ -271,7 +247,7 @@
       editor.addEventListener('keyup', updateCursorInfo);
       editor.addEventListener('click', updateCursorInfo);
 
-      // Support Tab key (2 spaces) and Auto-Indent
+      // Support Tab key (2 spaces) & Run shortcuts
       editor.addEventListener('keydown', (e) => {
         if (e.key === 'Tab') {
           e.preventDefault();
@@ -280,87 +256,46 @@
           editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
           editor.selectionStart = editor.selectionEnd = start + 2;
           updateLineNumbers();
-          if (chkAutoRun.checked) recompile(currentTime);
+          if (chkAutoRun.checked) recompile();
         }
         if (e.key === 'F5' || (e.ctrlKey && e.key === 'Enter')) {
           e.preventDefault();
-          recompile(currentTime);
+          recompile();
         }
       });
 
-      btnRun.addEventListener('click', () => recompile(currentTime));
+      btnRun.addEventListener('click', recompile);
 
       btnPlayPause.addEventListener('click', () => {
-        isAnimated = !isAnimated;
-        btnPlayPause.textContent = isAnimated ? '⏸ Pause' : '▶ Play';
-        if (isAnimated) {
-          startTime = performance.now() - currentTime * 1000.0;
-        }
+        mainView.togglePlay();
+        btnPlayPause.textContent = mainView.isPlaying ? '⏸ Pause' : '▶ Play';
       });
 
       btnResetTime.addEventListener('click', () => {
-        startTime = performance.now();
-        currentTime = 0.0;
+        mainView.reset();
         lblTime.textContent = '0.00s';
-        recompile(0.0);
+      });
+
+      renderModeSelect.addEventListener('change', (e) => {
+        mainView.renderMode = e.target.value;
       });
 
       presetSelect.addEventListener('change', (e) => loadPreset(parseInt(e.target.value, 10)));
 
-      btnResetView.addEventListener('click', resetView);
-      btnCenterView.addEventListener('click', resetView);
+      btnResetView.addEventListener('click', () => mainView.reset());
+      btnCenterView.addEventListener('click', () => mainView.reset());
 
       btnZoomIn.addEventListener('click', () => {
-        zoom = Math.min(10.0, zoom * 1.2);
-        updateZoomLabel();
-        requestRender();
+        mainView._zoom = Math.min(20.0, mainView._zoom * 1.2);
+        mainView.renderAt(mainView.time);
       });
 
       btnZoomOut.addEventListener('click', () => {
-        zoom = Math.max(0.1, zoom / 1.2);
-        updateZoomLabel();
-        requestRender();
+        mainView._zoom = Math.max(0.05, mainView._zoom / 1.2);
+        mainView.renderAt(mainView.time);
       });
 
-      // Viewport Pan & Drag
-      viewportPane.addEventListener('mousedown', (e) => {
-        if (e.target.closest('.viewport-overlay-controls')) return;
-        isDragging = true;
-        dragStartX = e.clientX - panX;
-        dragStartY = e.clientY - panY;
-      });
-
-      window.addEventListener('mousemove', (e) => {
-        if (isDragging) {
-          panX = e.clientX - dragStartX;
-          panY = e.clientY - dragStartY;
-          requestRender();
-        }
-      });
-
-      window.addEventListener('mouseup', () => {
-        isDragging = false;
-      });
-
-      // Mouse Wheel Zoom centered on cursor
-      viewportPane.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        const rect = viewportPane.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-
-        const factor = e.deltaY < 0 ? 1.1 : 0.9;
-        const newZoom = Math.max(0.1, Math.min(10.0, zoom * factor));
-
-        panX = mouseX - (mouseX - panX) * (newZoom / zoom);
-        panY = mouseY - (mouseY - panY) * (newZoom / zoom);
-        zoom = newZoom;
-
-        updateZoomLabel();
-        requestRender();
-      }, { passive: false });
-
-      // Pane Resizer Logic
+      // Resizer Logic
       const resizer = document.getElementById('resizer');
       const editorPane = document.getElementById('editor-pane');
       let isResizing = false;
@@ -374,7 +309,6 @@
         if (isResizing) {
           const newWidth = Math.max(280, Math.min(window.innerWidth - 300, e.clientX));
           editorPane.style.width = `${newWidth}px`;
-          resizeCanvas();
         }
       });
 
@@ -387,8 +321,8 @@
 
       // SVG Export
       btnExportSvg.addEventListener('click', () => {
-        if (!currentDrawList) return;
-        const svgData = window.PVG.exportSvg(currentDrawList);
+        const svgData = mainView.exportSvg();
+        if (!svgData) return;
         const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -410,34 +344,61 @@
       });
 
       document.querySelectorAll('#dropdown-png .dropdown-item').forEach((item) => {
-        item.addEventListener('click', () => {
-          if (!currentDrawList) return;
+        item.addEventListener('click', async () => {
           const scale = parseInt(item.dataset.scale, 10) || 1;
-          const offscreen = document.createElement('canvas');
-          offscreen.width = currentDrawList.canvasWidth * scale;
-          offscreen.height = currentDrawList.canvasHeight * scale;
-          const offCtx = offscreen.getContext('2d');
-
-          window.PVG.render(offCtx, currentDrawList, 0, 0, scale);
-
-          offscreen.toBlob((blob) => {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `export_${scale}x.png`;
-            a.click();
-            URL.revokeObjectURL(url);
-          });
+          const blob = await mainView.toPngBlob(scale);
+          if (!blob) return;
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `export_${scale}x.png`;
+          a.click();
+          URL.revokeObjectURL(url);
         });
       });
 
-      window.addEventListener('resize', resizeCanvas);
+      // Embed Modal Logic
+      function updateEmbedSnippet() {
+        const mode = renderModeSelect.value;
+        const autoplay = embedOptAutoplay.checked ? ' autoplay' : '';
+        const interactive = embedOptInteractive.checked ? ' interactive' : '';
+        const useScript = embedOptScript.checked;
+
+        let code = editor.value;
+        let snippet = `<!-- Include PVG Runtime -->\n<script src="pvg.js"><\/script>\n\n<!-- PVG Web Component -->\n`;
+
+        if (useScript) {
+          snippet += `<pvg-view render="${mode}"${autoplay}${interactive}>\n  <script type="text/pvg">\n${code.split('\n').map(l => '    ' + l).join('\n')}\n  <\/script>\n</pvg-view>`;
+        } else {
+          snippet += `<pvg-view render="${mode}"${autoplay}${interactive}>\n${code}\n</pvg-view>`;
+        }
+
+        embedCodeOutput.textContent = snippet;
+      }
+
+      btnEmbed.addEventListener('click', () => {
+        updateEmbedSnippet();
+        modalEmbed.classList.add('active');
+      });
+
+      btnModalClose.addEventListener('click', () => modalEmbed.classList.remove('active'));
+      modalEmbed.addEventListener('click', (e) => {
+        if (e.target === modalEmbed) modalEmbed.classList.remove('active');
+      });
+
+      embedOptAutoplay.addEventListener('change', updateEmbedSnippet);
+      embedOptInteractive.addEventListener('change', updateEmbedSnippet);
+      embedOptScript.addEventListener('change', updateEmbedSnippet);
+
+      btnCopyEmbed.addEventListener('click', () => {
+        navigator.clipboard.writeText(embedCodeOutput.textContent).then(() => {
+          btnCopyEmbed.textContent = '✓ Copied!';
+          setTimeout(() => { btnCopyEmbed.textContent = '📋 Copy Snippet'; }, 2000);
+        });
+      });
 
       // Initial Setup
       loadPreset(0);
-      resizeCanvas();
-      resetView();
-      requestAnimationFrame(animationLoop);
     });
   </script>
 </body>

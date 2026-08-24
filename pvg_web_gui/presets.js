@@ -1,6 +1,5 @@
 /**
  * Procedural Vector Graphics (PVG) 0.1 - Reference Presets
- * Extracted from pvg.js
  */
 
 const PVG_PRESETS = [
@@ -276,5 +275,4 @@ draw_gear(410, 300, 8, 75, 20, #03a9f4)`,
   },
 ];
 
-// Global Export for Web App
 window.PVG_PRESETS = PVG_PRESETS;
