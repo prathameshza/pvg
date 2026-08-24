@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "pvg",
+    "transpilers",
+    "pvg_win_gui",
+]
+resolver = "2"

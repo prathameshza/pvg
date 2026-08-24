@@ -1,0 +1,9 @@
+[package]
+name = "pvg_win_gui"
+version = "0.1.0"
+edition = "2021"
+default-run = "pvg_win_gui"
+
+[dependencies]
+pvg = { path = "../pvg" }
+eframe = "0.28.1"

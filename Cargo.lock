@@ -2472,11 +2472,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
+name = "pvg"
+version = "0.1.0"
+
+[[package]]
+name = "pvg_transpilers"
+version = "0.1.0"
+dependencies = [
+ "pvg",
+ "tiny-skia",
+]
+
+[[package]]
 name = "pvg_win_gui"
 version = "0.1.0"
 dependencies = [
  "eframe",
- "tiny-skia",
+ "pvg",
 ]
 
 [[package]]

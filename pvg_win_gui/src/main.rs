@@ -1,9 +1,8 @@
-use pvg_lib::compile_pvg_at_time;
-use pvg_lib::draw_list::DrawList;
-use pvg_lib::png_rasterizer::rasterize_draw_list_to_png;
-use pvg_lib::renderer;
-use pvg_lib::svg_emitter::emit_svg;
+mod renderer;
+
 use eframe::egui::{self, Color32, Rect, Vec2};
+use pvg::compile_pvg_at_time;
+use pvg::draw_list::DrawList;
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
@@ -12,7 +11,7 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("PVG 0.1 - Windows GUI Live Preview")
-            .with_inner_size([1400.0, 860.0]),
+            .with_inner_size([1380.0, 850.0]),
         ..Default::default()
     };
 
@@ -33,41 +32,39 @@ const PRESETS: &[PresetItem] = &[
     PresetItem {
         name: "🌀 Radar Scanner (Anim)",
         path: "presets/radar.pvg",
-        fallback: include_str!("../presets/radar.pvg"),
+        fallback: include_str!("../../presets/radar.pvg"),
     },
     PresetItem {
         name: "Dashboard Dial",
         path: "presets/dial.pvg",
-        fallback: include_str!("../presets/dial.pvg"),
+        fallback: include_str!("../../presets/dial.pvg"),
     },
     PresetItem {
         name: "Procedural Grid",
         path: "presets/grid.pvg",
-        fallback: include_str!("../presets/grid.pvg"),
+        fallback: include_str!("../../presets/grid.pvg"),
     },
     PresetItem {
         name: "Golden Spiral",
         path: "presets/spiral.pvg",
-        fallback: include_str!("../presets/spiral.pvg"),
+        fallback: include_str!("../../presets/spiral.pvg"),
     },
     PresetItem {
         name: "Paths & Curves",
         path: "presets/paths.pvg",
-        fallback: include_str!("../presets/paths.pvg"),
+        fallback: include_str!("../../presets/paths.pvg"),
     },
     PresetItem {
         name: "Gears & Groups",
         path: "presets/gears.pvg",
-        fallback: include_str!("../presets/gears.pvg"),
+        fallback: include_str!("../../presets/gears.pvg"),
     },
 ];
 
 struct PvgApp {
     code: String,
-    current_preset_idx: usize,
     draw_list: Option<DrawList>,
     error_msg: Option<String>,
-    status_notification: Option<(String, Instant)>,
     render_time_ms: f64,
     primitive_count: usize,
     zoom: f32,
@@ -83,10 +80,8 @@ impl PvgApp {
         let initial_code = Self::load_preset(0);
         let mut app = Self {
             code: initial_code,
-            current_preset_idx: 0,
             draw_list: None,
             error_msg: None,
-            status_notification: None,
             render_time_ms: 0.0,
             primitive_count: 0,
             zoom: 1.0,
@@ -102,11 +97,21 @@ impl PvgApp {
 
     fn load_preset(idx: usize) -> String {
         let p = &PRESETS[idx];
-        if Path::new(p.path).exists() {
-            fs::read_to_string(p.path).unwrap_or_else(|_| p.fallback.to_string())
-        } else {
-            p.fallback.to_string()
+        let candidates = [
+            p.path.to_string(),
+            format!("../{}", p.path),
+            format!("../../{}", p.path),
+        ];
+
+        for c in &candidates {
+            if Path::new(c).exists() {
+                if let Ok(content) = fs::read_to_string(c) {
+                    return content;
+                }
+            }
         }
+
+        p.fallback.to_string()
     }
 
     fn recompile_at(&mut self, time: f64) {
@@ -123,48 +128,6 @@ impl PvgApp {
             }
         }
     }
-
-    fn export_png(&mut self) {
-        if let Some(ref dl) = self.draw_list {
-            let start = Instant::now();
-            match rasterize_draw_list_to_png(dl, 1.0) {
-                Ok(bytes) => {
-                    let filename = format!("export_preset_{}.png", self.current_preset_idx + 1);
-                    if let Err(e) = fs::write(&filename, &bytes) {
-                        self.status_notification = Some((format!("Failed to save PNG: {}", e), Instant::now()));
-                    } else {
-                        let dur = start.elapsed().as_secs_f64() * 1000.0;
-                        let size_kb = bytes.len() as f64 / 1024.0;
-                        self.status_notification = Some((
-                            format!("✓ Exported PNG '{}' ({:.1} KB in {:.2} ms)", filename, size_kb, dur),
-                            Instant::now(),
-                        ));
-                    }
-                }
-                Err(e) => {
-                    self.status_notification = Some((format!("PNG Export Error: {}", e), Instant::now()));
-                }
-            }
-        }
-    }
-
-    fn export_svg(&mut self) {
-        if let Some(ref dl) = self.draw_list {
-            let start = Instant::now();
-            let svg_content = emit_svg(dl);
-            let filename = format!("export_preset_{}.svg", self.current_preset_idx + 1);
-            if let Err(e) = fs::write(&filename, &svg_content) {
-                self.status_notification = Some((format!("Failed to save SVG: {}", e), Instant::now()));
-            } else {
-                let dur = start.elapsed().as_secs_f64() * 1000.0;
-                let size_kb = svg_content.len() as f64 / 1024.0;
-                self.status_notification = Some((
-                    format!("✓ Exported SVG '{}' ({:.1} KB in {:.2} ms)", filename, size_kb, dur),
-                    Instant::now(),
-                ));
-            }
-        }
-    }
 }
 
 impl eframe::App for PvgApp {
@@ -175,14 +138,12 @@ impl eframe::App for PvgApp {
             self.recompile_at(self.current_time);
         }
 
-        // Animation update loop
         if self.is_animated && (self.code.contains("time") || self.code.contains(" t ") || self.code.contains("(t)") || self.code.contains("* t")) {
             self.current_time = self.start_time.elapsed().as_secs_f64();
             self.recompile_at(self.current_time);
             ctx.request_repaint();
         }
 
-        // Top Toolbar
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("⚡ PVG 0.1 Studio");
@@ -208,21 +169,9 @@ impl eframe::App for PvgApp {
                 ui.label(format!("Time: {:.2}s", self.current_time));
 
                 ui.separator();
-                let png_btn = egui::Button::new("📷 Export PNG").fill(Color32::from_rgb(0, 110, 180));
-                if ui.add(png_btn).clicked() {
-                    self.export_png();
-                }
-
-                let svg_btn = egui::Button::new("🌐 Export SVG").fill(Color32::from_rgb(160, 80, 0));
-                if ui.add(svg_btn).clicked() {
-                    self.export_svg();
-                }
-
-                ui.separator();
                 ui.label("Presets:");
                 for (i, p) in PRESETS.iter().enumerate() {
                     if ui.button(p.name).clicked() {
-                        self.current_preset_idx = i;
                         self.code = Self::load_preset(i);
                         self.pan = Vec2::ZERO;
                         self.zoom = 1.0;
@@ -241,7 +190,6 @@ impl eframe::App for PvgApp {
             });
         });
 
-        // Bottom Status Bar
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let total_lines = self.code.split('\n').count();
@@ -259,17 +207,9 @@ impl eframe::App for PvgApp {
                         ),
                     );
                 }
-
-                if let Some((ref msg, instant)) = self.status_notification {
-                    if instant.elapsed().as_secs_f64() < 5.0 {
-                        ui.separator();
-                        ui.colored_label(Color32::from_rgb(255, 215, 0), msg);
-                    }
-                }
             });
         });
 
-        // Left Code Editor Panel with Line Numbers and Scrollbar
         egui::SidePanel::left("editor_panel")
             .resizable(true)
             .default_width(560.0)
@@ -317,7 +257,6 @@ impl eframe::App for PvgApp {
                 });
             });
 
-        // Right Interactive Preview Canvas
         egui::CentralPanel::default().show(ctx, |ui| {
             let (response, painter) = ui.allocate_painter(ui.available_size_before_wrap(), egui::Sense::drag());
 

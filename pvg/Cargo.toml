@@ -1,0 +1,7 @@
+[package]
+name = "pvg"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic Procedural Vector Graphics Core Engine"
+
+[dependencies]

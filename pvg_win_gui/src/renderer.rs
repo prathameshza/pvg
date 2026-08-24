@@ -1,15 +1,15 @@
-use crate::ast::Color as CpsvgColor;
-use crate::draw_list::*;
 use eframe::egui::{Color32, Painter, Pos2, Rect, Stroke};
 use eframe::epaint::PathShape;
+use pvg::ast::Color as PvgColor;
+use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand};
 
-pub fn to_egui_color(col: &CpsvgColor, opacity: f64) -> Color32 {
+pub fn to_egui_color(col: &PvgColor, opacity: f64) -> Color32 {
     match col {
-        CpsvgColor::Rgba(r, g, b, a) => {
+        PvgColor::Rgba(r, g, b, a) => {
             let final_a = ((*a as f64) * opacity).clamp(0.0, 255.0) as u8;
             Color32::from_rgba_unmultiplied(*r, *g, *b, final_a)
         }
-        CpsvgColor::None => Color32::TRANSPARENT,
+        PvgColor::None => Color32::TRANSPARENT,
     }
 }
 

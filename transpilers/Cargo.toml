@@ -1,0 +1,17 @@
+[package]
+name = "pvg_transpilers"
+version = "0.1.0"
+edition = "2021"
+description = "Standalone CLI transpilers for converting PVG to SVG and PNG"
+
+[[bin]]
+name = "pvg_to_svg"
+path = "src/pvg_to_svg.rs"
+
+[[bin]]
+name = "pvg_to_png"
+path = "src/pvg_to_png.rs"
+
+[dependencies]
+pvg = { path = "../pvg" }
+tiny-skia = "0.11"
