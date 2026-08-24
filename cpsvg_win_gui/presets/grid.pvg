@@ -1,0 +1,28 @@
+PVG 0.1
+canvas 600 600
+  background #0b0c10
+
+seed 42
+
+for row from 0 to 7
+  for col from 0 to 7
+    set x = 60 + col * 68
+    set y = 60 + row * 68
+    set r = 10 + random(0, 18)
+    
+    circle
+      center [x, y]
+      radius r
+      fill #66fcf1
+      opacity 0.25 + (col + row) * 0.05
+      stroke #45a29e
+      width 1.5
+
+    rectangle
+      pos [x - 20, y - 20]
+      size [40, 40]
+      radius 4
+      fill none
+      stroke #c5c6c7
+      width 1
+      opacity 0.2

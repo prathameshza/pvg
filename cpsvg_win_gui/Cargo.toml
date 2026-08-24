@@ -1,0 +1,28 @@
+[package]
+name = "pvg_win_gui"
+version = "0.1.0"
+edition = "2021"
+default-run = "pvg_win_gui"
+
+[lib]
+name = "pvg_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pvg_win_gui"
+path = "src/main.rs"
+
+[[bin]]
+name = "test_presets"
+path = "src/bin/test_presets.rs"
+
+[[bin]]
+name = "pvg_to_svg"
+path = "src/bin/pvg_to_svg.rs"
+
+[[bin]]
+name = "benchmark"
+path = "src/bin/benchmark.rs"
+
+[dependencies]
+eframe = "0.28.1"

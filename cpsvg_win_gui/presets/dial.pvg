@@ -1,0 +1,61 @@
+PVG 0.1
+canvas 600 600
+  background #141419
+
+set cx = 300
+set cy = 300
+set outer_r = 200
+set inner_r = 170
+
+# Outer Background Track
+path
+  stroke #2c2d35
+  width 14
+  fill none
+  start [cx + outer_r * cos(135deg), cy + outer_r * sin(135deg)]
+  arc [cx, cy] outer_r 135deg 405deg
+
+# Colored Value Arc
+path
+  stroke #00d2ff
+  width 14
+  fill none
+  start [cx + outer_r * cos(135deg), cy + outer_r * sin(135deg)]
+  arc [cx, cy] outer_r 135deg 325deg
+
+# Procedurally Generated Ticks
+for i from 0 to 24
+  set angle = 135deg + i * (270deg / 24)
+  set is_major = (i % 4 == 0)
+  set tick_len = is_major ? 18 : 8
+  
+  line
+    from [cx + inner_r * cos(angle), cy + inner_r * sin(angle)]
+    to   [cx + (inner_r - tick_len) * cos(angle), cy + (inner_r - tick_len) * sin(angle)]
+    stroke is_major ? #ffffff : #666677
+    width is_major ? 3 : 1
+    opacity is_major ? 1.0 : 0.5
+
+# Central Hub
+circle
+  center [cx, cy]
+  radius 18
+  fill #ffffff
+  stroke #00d2ff
+  width 4
+
+# Gauge Pointer Needle
+path
+  fill #ff3355
+  stroke none
+  
+  set needle_angle = 325deg
+  set nx = cos(needle_angle)
+  set ny = sin(needle_angle)
+  set px = -ny * 7
+  set py =  nx * 7
+  
+  start [cx + px, cy + py]
+  line  [cx + nx * (inner_r - 25), cy + ny * (inner_r - 25)]
+  line  [cx - px, cy - py]
+  close

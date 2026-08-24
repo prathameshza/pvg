@@ -1,0 +1,30 @@
+PVG 0.1
+canvas 600 600
+  background #111116
+
+def draw_gear(gx, gy, teeth, outer_r, inner_r, col)
+  circle
+    center [gx, gy]
+    radius outer_r - 10
+    fill col
+    stroke #ffffff
+    width 2
+
+  for t from 0 to (teeth - 1)
+    set angle = t * (TAU / teeth)
+    set tx = gx + outer_r * cos(angle)
+    set ty = gy + outer_r * sin(angle)
+    circle
+      center [tx, ty]
+      radius 8
+      fill col
+
+  circle
+    center [gx, gy]
+    radius inner_r
+    fill #111116
+    stroke #ffffff
+    width 2
+
+draw_gear(220, 300, 12, 110, 30, #ff5722)
+draw_gear(410, 300, 8, 75, 20, #03a9f4)

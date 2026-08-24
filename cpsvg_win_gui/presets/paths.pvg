@@ -1,0 +1,29 @@
+PVG 0.1
+canvas 600 600
+  background #1e1e24
+
+# Smooth Quadratic Curve Wave
+path
+  fill none
+  stroke #ff9f1c
+  width 4
+  start [50, 200]
+  quad [150, 50] [250, 200]
+  quad [350, 350] [450, 200]
+  line [550, 200]
+
+# Cubic Bézier S-Shape
+path
+  fill none
+  stroke #2ec4b6
+  width 5
+  start [100, 450]
+  curve [150, 250] [450, 550] [500, 350]
+
+# Filled Smooth Polygon
+polygon
+  points [300, 80] [360, 160] [320, 220] [280, 220] [240, 160]
+  fill #e71d36
+  stroke #ffffff
+  width 2
+  opacity 0.8

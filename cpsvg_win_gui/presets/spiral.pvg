@@ -1,0 +1,22 @@
+PVG 0.1
+canvas 600 600
+  background #000000
+
+set cx = 300
+set cy = 300
+set a = 3.0
+set b = 0.12
+
+for i from 0 to 60
+  set theta = i * 0.2
+  set r = a * (2.71828 ^ (b * theta)) * 8.0
+  set x = cx + r * cos(theta)
+  set y = cy + r * sin(theta)
+  
+  circle
+    center [x, y]
+    radius 4 + (i * 0.2)
+    fill #ff007f
+    stroke #00ffff
+    width 1
+    opacity 0.85 - (i * 0.008)
