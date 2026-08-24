@@ -49,7 +49,7 @@ def main():
 
     with open(out_path, "w", encoding="utf-8") as f:
         for rel, content in sorted(entries):
-            f.write(f"===== FILE: {full} =====\n")
+            f.write(f"===== FILE: {rel} =====\n")
             f.write("Below is this file's contents:\n")
             f.write(content)
             if not content.endswith("\n"):

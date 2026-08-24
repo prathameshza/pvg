@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PVG 0.1 Studio - Procedural Vector Graphics Web IDE</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="pvg.js"></script>
+  <script src="presets.js"></script>
+</head>
+<body>
+  <!-- Top Application Toolbar -->
+  <header id="toolbar">
+    <div class="toolbar-group">
+      <div class="app-title">
+        <span>⚡ PVG Studio</span>
+        <span class="badge">Web 0.1</span>
+      </div>
+      <div class="separator"></div>
+
+      <button id="btn-run" class="btn-success" title="Recompile and evaluate (F5 / Ctrl+Enter)">
+        ▶ Run (F5)
+      </button>
+
+      <label class="checkbox-label">
+        <input type="checkbox" id="chk-autorun" checked>
+        <span>Auto-Run</span>
+      </label>
+
+      <div class="separator"></div>
+
+      <button id="btn-playpause" title="Play/Pause timeline">⏸ Pause</button>
+      <button id="btn-reset-time" title="Reset timeline clock">⏮ Reset Time</button>
+      <span class="time-label" id="lbl-time">0.00s</span>
+
+      <div class="separator"></div>
+
+      <span style="font-size: 12px; color: var(--text-secondary);">Presets:</span>
+      <select id="preset-select"></select>
+    </div>
+
+    <div class="toolbar-group">
+      <button id="btn-reset-view" title="Reset pan & zoom (100%)">Reset View</button>
+      <span id="lbl-zoom" style="font-size: 12px; font-family: var(--font-mono); color: var(--text-secondary);">1.0x</span>
+      <div class="separator"></div>
+
+      <button id="btn-export-svg" title="Export as standalone SVG file">📥 SVG</button>
+      
+      <div class="dropdown" id="dropdown-png">
+        <button id="btn-export-png" title="Export as raster PNG">📥 PNG ▾</button>
+        <div class="dropdown-menu">
+          <button class="dropdown-item" data-scale="1">PNG (1x Scale)</button>
+          <button class="dropdown-item" data-scale="2">PNG (2x HD)</button>
+          <button class="dropdown-item" data-scale="4">PNG (4x Ultra)</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Split Workspace -->
+  <main id="workspace">
+    <!-- Left: Code Editor -->
+    <section id="editor-pane">
+      <div class="pane-header">
+        <span>PVG Document Source</span>
+        <span id="lbl-cursor-pos">Ln 1, Col 1</span>
+      </div>
+      <div class="editor-container">
+        <div id="line-numbers">1</div>
+        <textarea id="code-editor" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
+      </div>
+    </section>
+
+    <!-- Split Resizer Bar -->
+    <div id="resizer"></div>
+
+    <!-- Right: Interactive Viewport -->
+    <section id="viewport-pane">
+      <canvas id="canvas-stage"></canvas>
+
+      <div class="viewport-overlay-controls">
+        <button id="btn-zoom-in" title="Zoom In (+)">+</button>
+        <button id="btn-zoom-out" title="Zoom Out (-)">−</button>
+        <button id="btn-center-view" title="Center canvas">⊙</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom Diagnostics & Status Bar -->
+  <footer id="statusbar">
+    <div class="status-left">
+      <span class="status-pill info" id="lbl-lines">Lines: 1</span>
+      <div class="separator"></div>
+      <span class="status-pill success" id="lbl-status">✓ Ready</span>
+    </div>
+    <div class="status-right">
+      <span class="status-pill info">Memory: &lt; 50 KB</span>
+      <span class="status-pill info">Zero GPU Dependency</span>
+    </div>
+  </footer>
+
+  <!-- Application Controller Logic -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const editor = document.getElementById('code-editor');
+      const lineNumbers = document.getElementById('line-numbers');
+      const canvas = document.getElementById('canvas-stage');
+      const ctx = canvas.getContext('2d');
+      const viewportPane = document.getElementById('viewport-pane');
+
+      const btnRun = document.getElementById('btn-run');
+      const chkAutoRun = document.getElementById('chk-autorun');
+      const btnPlayPause = document.getElementById('btn-playpause');
+      const btnResetTime = document.getElementById('btn-reset-time');
+      const lblTime = document.getElementById('lbl-time');
+      const presetSelect = document.getElementById('preset-select');
+      const btnResetView = document.getElementById('btn-reset-view');
+      const btnZoomIn = document.getElementById('btn-zoom-in');
+      const btnZoomOut = document.getElementById('btn-zoom-out');
+      const btnCenterView = document.getElementById('btn-center-view');
+      const lblZoom = document.getElementById('lbl-zoom');
+      const lblStatus = document.getElementById('lbl-status');
+      const lblLines = document.getElementById('lbl-lines');
+      const lblCursorPos = document.getElementById('lbl-cursor-pos');
+      const btnExportSvg = document.getElementById('btn-export-svg');
+      const dropdownPng = document.getElementById('dropdown-png');
+
+      // Pan & Zoom State
+      let zoom = 1.0;
+      let panX = 0;
+      let panY = 0;
+      let isDragging = false;
+      let dragStartX = 0;
+      let dragStartY = 0;
+
+      // Animation State
+      let isAnimated = true;
+      let startTime = performance.now();
+      let currentTime = 0.0;
+      let currentDrawList = null;
+
+      // Initialize Presets
+      window.PVG.presets.forEach((p, idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx;
+        opt.textContent = p.name;
+        presetSelect.appendChild(opt);
+      });
+
+      function loadPreset(idx) {
+        editor.value = window.PVG.presets[idx].code;
+        updateLineNumbers();
+        resetView();
+        startTime = performance.now();
+        currentTime = 0.0;
+        recompile();
+      }
+
+      function updateLineNumbers() {
+        const lines = editor.value.split('\n');
+        lblLines.textContent = `Lines: ${lines.length}`;
+        let lineNums = '';
+        for (let i = 1; i <= lines.length; i++) {
+          lineNums += `${i}\n`;
+        }
+        lineNumbers.textContent = lineNums;
+      }
+
+      function updateCursorInfo() {
+        const text = editor.value.substring(0, editor.selectionStart);
+        const lines = text.split('\n');
+        const line = lines.length;
+        const col = lines[lines.length - 1].length + 1;
+        lblCursorPos.textContent = `Ln ${line}, Col ${col}`;
+      }
+
+      function resetView() {
+        if (!currentDrawList) {
+          panX = (viewportPane.clientWidth - 600) / 2;
+          panY = (viewportPane.clientHeight - 600) / 2;
+        } else {
+          panX = (viewportPane.clientWidth - currentDrawList.canvasWidth * zoom) / 2;
+          panY = (viewportPane.clientHeight - currentDrawList.canvasHeight * zoom) / 2;
+        }
+        zoom = 1.0;
+        updateZoomLabel();
+        requestRender();
+      }
+
+      function updateZoomLabel() {
+        lblZoom.textContent = `${zoom.toFixed(1)}x`;
+      }
+
+      function recompile(time = currentTime) {
+        const t0 = performance.now();
+        try {
+          currentDrawList = window.PVG.compile(editor.value, time);
+          const elapsed = (performance.now() - t0).toFixed(3);
+          lblStatus.className = 'status-pill success';
+          lblStatus.textContent = `✓ Rendered ${currentDrawList.items.length} primitives in ${elapsed} ms`;
+        } catch (err) {
+          lblStatus.className = 'status-pill error';
+          lblStatus.textContent = `✗ ${err.message}`;
+        }
+        requestRender();
+      }
+
+      function resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        const w = viewportPane.clientWidth;
+        const h = viewportPane.clientHeight;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+        ctx.scale(dpr, dpr);
+        requestRender();
+      }
+
+      function requestRender() {
+        const w = viewportPane.clientWidth;
+        const h = viewportPane.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        if (!currentDrawList) return;
+
+        // Draw Canvas Board Outline & Drop Shadow
+        const dw = currentDrawList.canvasWidth * zoom;
+        const dh = currentDrawList.canvasHeight * zoom;
+
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+        ctx.shadowBlur = 16;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 4;
+        ctx.strokeStyle = '#3d4052';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(panX, panY, dw, dh);
+        ctx.restore();
+
+        // Render Primitives via PVG Render Engine
+        window.PVG.render(ctx, currentDrawList, panX, panY, zoom);
+      }
+
+      // Animation Loop
+      function animationLoop(timestamp) {
+        const code = editor.value;
+        const hasTime = code.includes('time') || code.includes(' t ') || code.includes('(t)') || code.includes('* t');
+
+        if (isAnimated && hasTime) {
+          currentTime = (timestamp - startTime) / 1000.0;
+          lblTime.textContent = `${currentTime.toFixed(2)}s`;
+          recompile(currentTime);
+        }
+
+        requestAnimationFrame(animationLoop);
+      }
+
+      // Event Listeners
+      editor.addEventListener('input', () => {
+        updateLineNumbers();
+        if (chkAutoRun.checked) {
+          recompile(currentTime);
+        }
+      });
+
+      editor.addEventListener('scroll', () => {
+        lineNumbers.scrollTop = editor.scrollTop;
+      });
+
+      editor.addEventListener('keyup', updateCursorInfo);
+      editor.addEventListener('click', updateCursorInfo);
+
+      // Support Tab key (2 spaces) and Auto-Indent
+      editor.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          const start = editor.selectionStart;
+          const end = editor.selectionEnd;
+          editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+          editor.selectionStart = editor.selectionEnd = start + 2;
+          updateLineNumbers();
+          if (chkAutoRun.checked) recompile(currentTime);
+        }
+        if (e.key === 'F5' || (e.ctrlKey && e.key === 'Enter')) {
+          e.preventDefault();
+          recompile(currentTime);
+        }
+      });
+
+      btnRun.addEventListener('click', () => recompile(currentTime));
+
+      btnPlayPause.addEventListener('click', () => {
+        isAnimated = !isAnimated;
+        btnPlayPause.textContent = isAnimated ? '⏸ Pause' : '▶ Play';
+        if (isAnimated) {
+          startTime = performance.now() - currentTime * 1000.0;
+        }
+      });
+
+      btnResetTime.addEventListener('click', () => {
+        startTime = performance.now();
+        currentTime = 0.0;
+        lblTime.textContent = '0.00s';
+        recompile(0.0);
+      });
+
+      presetSelect.addEventListener('change', (e) => loadPreset(parseInt(e.target.value, 10)));
+
+      btnResetView.addEventListener('click', resetView);
+      btnCenterView.addEventListener('click', resetView);
+
+      btnZoomIn.addEventListener('click', () => {
+        zoom = Math.min(10.0, zoom * 1.2);
+        updateZoomLabel();
+        requestRender();
+      });
+
+      btnZoomOut.addEventListener('click', () => {
+        zoom = Math.max(0.1, zoom / 1.2);
+        updateZoomLabel();
+        requestRender();
+      });
+
+      // Viewport Pan & Drag
+      viewportPane.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.viewport-overlay-controls')) return;
+        isDragging = true;
+        dragStartX = e.clientX - panX;
+        dragStartY = e.clientY - panY;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+          panX = e.clientX - dragStartX;
+          panY = e.clientY - dragStartY;
+          requestRender();
+        }
+      });
+
+      window.addEventListener('mouseup', () => {
+        isDragging = false;
+      });
+
+      // Mouse Wheel Zoom centered on cursor
+      viewportPane.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const rect = viewportPane.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const factor = e.deltaY < 0 ? 1.1 : 0.9;
+        const newZoom = Math.max(0.1, Math.min(10.0, zoom * factor));
+
+        panX = mouseX - (mouseX - panX) * (newZoom / zoom);
+        panY = mouseY - (mouseY - panY) * (newZoom / zoom);
+        zoom = newZoom;
+
+        updateZoomLabel();
+        requestRender();
+      }, { passive: false });
+
+      // Pane Resizer Logic
+      const resizer = document.getElementById('resizer');
+      const editorPane = document.getElementById('editor-pane');
+      let isResizing = false;
+
+      resizer.addEventListener('mousedown', () => {
+        isResizing = true;
+        resizer.classList.add('resizing');
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (isResizing) {
+          const newWidth = Math.max(280, Math.min(window.innerWidth - 300, e.clientX));
+          editorPane.style.width = `${newWidth}px`;
+          resizeCanvas();
+        }
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (isResizing) {
+          isResizing = false;
+          resizer.classList.remove('resizing');
+        }
+      });
+
+      // SVG Export
+      btnExportSvg.addEventListener('click', () => {
+        if (!currentDrawList) return;
+        const svgData = window.PVG.exportSvg(currentDrawList);
+        const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'export.svg';
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+
+      // PNG Export Menu
+      const btnExportPng = document.getElementById('btn-export-png');
+      btnExportPng.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdownPng.classList.toggle('open');
+      });
+
+      window.addEventListener('click', () => {
+        dropdownPng.classList.remove('open');
+      });
+
+      document.querySelectorAll('#dropdown-png .dropdown-item').forEach((item) => {
+        item.addEventListener('click', () => {
+          if (!currentDrawList) return;
+          const scale = parseInt(item.dataset.scale, 10) || 1;
+          const offscreen = document.createElement('canvas');
+          offscreen.width = currentDrawList.canvasWidth * scale;
+          offscreen.height = currentDrawList.canvasHeight * scale;
+          const offCtx = offscreen.getContext('2d');
+
+          window.PVG.render(offCtx, currentDrawList, 0, 0, scale);
+
+          offscreen.toBlob((blob) => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `export_${scale}x.png`;
+            a.click();
+            URL.revokeObjectURL(url);
+          });
+        });
+      });
+
+      window.addEventListener('resize', resizeCanvas);
+
+      // Initial Setup
+      loadPreset(0);
+      resizeCanvas();
+      resetView();
+      requestAnimationFrame(animationLoop);
+    });
+  </script>
+</body>
+</html>

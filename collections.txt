@@ -1,4 +1,41 @@
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: .gitignore =====
+Below is this file's contents:
+# Rust / Cargo
+/target/
+**/*.rs.bk
+
+# Build artifacts
+*.exe
+*.pdb
+*.dll
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs and temp files
+*.log
+*.tmp
+
+===== FILE: Cargo.toml =====
+Below is this file's contents:
+[workspace]
+members = [
+    "pvg",
+    "transpilers",
+    "pvg_win_gui",
+]
+resolver = "2"
+
+===== FILE: PVG_SPECS.md =====
 Below is this file's contents:
 # PVG 0.1 Language & Architecture Specification
 
@@ -539,42 +576,74 @@ path
   close
 ```
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: generate_collections.py =====
 Below is this file's contents:
-/target
+#!/usr/bin/env python3
+"""Generate collections.txt containing file paths and contents for LLM context."""
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
-Below is this file's contents:
-[package]
-name = "pvg_win_gui"
-version = "0.1.0"
-edition = "2021"
-default-run = "pvg_win_gui"
+import os
+import sys
 
-[lib]
-name = "pvg_lib"
-path = "src/lib.rs"
+# Directories/files to skip
+SKIP_DIRS = {"target", ".git", "node_modules", "__pycache__", ".vscode", ".idea", "build"}
+SKIP_EXT = {".exe", ".dll", ".png", ".jpg", ".ico", ".lock", ".svg"}
+SKIP_FILES = {"LICENSE"}
+MAX_FILE_SIZE = 500_000  # skip files larger than ~500KB
 
-[[bin]]
-name = "pvg_win_gui"
-path = "src/main.rs"
+OUTPUT = "collections.txt"
 
-[[bin]]
-name = "test_presets"
-path = "src/bin/test_presets.rs"
 
-[[bin]]
-name = "pvg_to_svg"
-path = "src/bin/pvg_to_svg.rs"
+def should_skip(path: str, name: str) -> bool:
+    parts = path.replace("\\", "/").split("/")
+    if any(p in SKIP_DIRS for p in parts):
+        return True
+    _, ext = os.path.splitext(name)
+    if ext.lower() in SKIP_EXT or name in SKIP_FILES:
+        return True
+    return False
 
-[[bin]]
-name = "benchmark"
-path = "src/bin/benchmark.rs"
 
-[dependencies]
-eframe = "0.28.1"
+def main():
+    root = os.path.dirname(os.path.abspath(__file__))
+    out_path = os.path.join(root, OUTPUT)
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+    entries = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        # prune skipped dirs in-place
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        for name in filenames:
+            full = os.path.join(dirpath, name)
+            rel = os.path.relpath(full, root).replace("\\", "/")
+            if should_skip(rel, name) or rel == OUTPUT:
+                continue
+            try:
+                size = os.path.getsize(full)
+                if size > MAX_FILE_SIZE:
+                    print(f"Skipping (too large): {rel}")
+                    continue
+                with open(full, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+                entries.append((rel, content))
+            except OSError as e:
+                print(f"Skipping (error): {rel}: {e}", file=sys.stderr)
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        for rel, content in sorted(entries):
+            f.write(f"===== FILE: {rel} =====\n")
+            f.write("Below is this file's contents:\n")
+            f.write(content)
+            if not content.endswith("\n"):
+                f.write("\n")
+            f.write("\n")
+
+    total_chars = sum(len(c) for _, c in entries)
+    print(f"Wrote {len(entries)} files ({total_chars:,} chars) to {out_path}")
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: presets/dial.pvg =====
 Below is this file's contents:
 PVG 0.1
 canvas 600 600
@@ -638,7 +707,7 @@ path
   line  [cx - px, cy - py]
   close
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: presets/gears.pvg =====
 Below is this file's contents:
 PVG 0.1
 canvas 600 600
@@ -671,7 +740,7 @@ def draw_gear(gx, gy, teeth, outer_r, inner_r, col)
 draw_gear(220, 300, 12, 110, 30, #ff5722)
 draw_gear(410, 300, 8, 75, 20, #03a9f4)
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: presets/grid.pvg =====
 Below is this file's contents:
 PVG 0.1
 canvas 600 600
@@ -702,7 +771,7 @@ for row from 0 to 7
       width 1
       opacity 0.2
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: presets/paths.pvg =====
 Below is this file's contents:
 PVG 0.1
 canvas 600 600
@@ -734,7 +803,7 @@ polygon
   width 2
   opacity 0.8
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: presets/radar.pvg =====
 Below is this file's contents:
 PVG 0.1
 canvas 600 600
@@ -820,7 +889,7 @@ circle
   stroke #ffffff
   width 2
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: presets/spiral.pvg =====
 Below is this file's contents:
 PVG 0.1
 canvas 600 600
@@ -845,7 +914,17 @@ for i from 0 to 60
     width 1
     opacity 0.85 - (i * 0.008)
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: pvg/Cargo.toml =====
+Below is this file's contents:
+[package]
+name = "pvg"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic Procedural Vector Graphics Core Engine"
+
+[dependencies]
+
+===== FILE: pvg/src/ast.rs =====
 Below is this file's contents:
 #[derive(Debug, Clone, PartialEq)]
 pub enum Color {
@@ -1043,440 +1122,7 @@ pub struct Document {
     pub statements: Vec<Stmt>,
 }
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
-Below is this file's contents:
-use pvg_lib::ast::Document;
-use pvg_lib::eval::Evaluator;
-use pvg_lib::lexer::Lexer;
-use pvg_lib::parser::Parser;
-use std::alloc::{GlobalAlloc, Layout, System};
-use std::fs;
-use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
-
-struct TrackingAllocator;
-
-static ALLOCATED_BYTES: AtomicUsize = AtomicUsize::new(0);
-static FREED_BYTES: AtomicUsize = AtomicUsize::new(0);
-static PEAK_HEAP_BYTES: AtomicUsize = AtomicUsize::new(0);
-
-unsafe impl GlobalAlloc for TrackingAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let ptr = System.alloc(layout);
-        if !ptr.is_null() {
-            let alloc_size = layout.size();
-            let current = ALLOCATED_BYTES.fetch_add(alloc_size, Ordering::SeqCst) + alloc_size;
-            let freed = FREED_BYTES.load(Ordering::SeqCst);
-            let live = current.saturating_sub(freed);
-
-            let mut peak = PEAK_HEAP_BYTES.load(Ordering::SeqCst);
-            while live > peak {
-                match PEAK_HEAP_BYTES.compare_exchange_weak(peak, live, Ordering::SeqCst, Ordering::SeqCst) {
-                    Ok(_) => break,
-                    Err(actual) => peak = actual,
-                }
-            }
-        }
-        ptr
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        System.dealloc(ptr, layout);
-        FREED_BYTES.fetch_add(layout.size(), Ordering::SeqCst);
-    }
-}
-
-#[global_allocator]
-static GLOBAL: TrackingAllocator = TrackingAllocator;
-
-fn reset_memory_counters() {
-    ALLOCATED_BYTES.store(0, Ordering::SeqCst);
-    FREED_BYTES.store(0, Ordering::SeqCst);
-    PEAK_HEAP_BYTES.store(0, Ordering::SeqCst);
-}
-
-fn get_peak_heap_kb() -> f64 {
-    PEAK_HEAP_BYTES.load(Ordering::SeqCst) as f64 / 1024.0
-}
-
-fn parse_to_doc(source: &str) -> Result<Document, String> {
-    let mut lexer = Lexer::new(source);
-    let tokens = lexer.tokenize_all()?;
-    let mut parser = Parser::new(tokens);
-    parser.parse_document()
-}
-
-fn main() {
-    println!("\n=========================================================================================");
-    println!("               PVG 0.1 CPU & MEMORY PROFILING HARNESS                                    ");
-    println!("=========================================================================================\n");
-
-    let presets = [
-        ("Radar Scanner", "presets/radar.pvg", true),
-        ("Dashboard Dial", "presets/dial.pvg", false),
-        ("Procedural Grid", "presets/grid.pvg", false),
-        ("Golden Spiral", "presets/spiral.pvg", false),
-        ("Paths & Curves", "presets/paths.pvg", false),
-        ("Gears & Groups", "presets/gears.pvg", false),
-    ];
-
-    let iterations = 1000;
-
-    println!(
-        " {:<18} | {:<12} | {:<14} | {:<14} | {:<12}",
-        "Benchmark", "Parse Time", "1-Frame Time", "Peak Heap", "Max FPS (CPU)"
-    );
-    println!("-----------------------------------------------------------------------------------------");
-
-    for (name, path_str, is_animated) in &presets {
-        let path = Path::new(path_str);
-        if !path.exists() {
-            println!("  ❌ File not found: {}", path_str);
-            continue;
-        }
-
-        let source = fs::read_to_string(path).expect("Failed to read file");
-
-        // 1. Measure Parse & AST Memory
-        reset_memory_counters();
-        let parse_start = Instant::now();
-        let mut doc_opt = None;
-        for _ in 0..iterations {
-            doc_opt = Some(parse_to_doc(&source).expect("Parse failed"));
-        }
-        let parse_total_time = parse_start.elapsed();
-        let avg_parse_us = (parse_total_time.as_micros() as f64) / (iterations as f64);
-        let parse_peak_kb = get_peak_heap_kb();
-
-        let doc = doc_opt.unwrap();
-
-        // 2. Measure Frame Evaluation Time & Memory
-        reset_memory_counters();
-        let eval_start = Instant::now();
-        for i in 0..iterations {
-            let t = if *is_animated { (i as f64) * 0.016 } else { 0.0 };
-            let evaluator = Evaluator::new_with_time(t);
-            let _ = evaluator.evaluate_document(&doc).expect("Eval failed");
-        }
-        let eval_total_time = eval_start.elapsed();
-        let avg_eval_us = (eval_total_time.as_micros() as f64) / (iterations as f64);
-        let eval_peak_kb = get_peak_heap_kb();
-
-        let max_theoretical_fps = if avg_eval_us > 0.0 {
-            1_000_000.0 / avg_eval_us
-        } else {
-            999_999.0
-        };
-
-        println!(
-            " {:<18} | {:>9.2} µs | {:>11.2} µs | {:>10.2} KB | {:>10.0} fps",
-            name,
-            avg_parse_us,
-            avg_eval_us,
-            parse_peak_kb.max(eval_peak_kb),
-            max_theoretical_fps
-        );
-    }
-
-    println!("\n-----------------------------------------------------------------------------------------");
-    println!(" ⚡ REAL-WORLD BENCHMARK TAKEAWAYS:");
-    println!("   • Memory: The entire AST + Scene evaluation executes inside < 50 KB of RAM.");
-    println!("   • CPU: Each frame computes in ~20 to 100 microseconds (0.02 - 0.1 ms).");
-    println!("   • Throughput: The CPU engine can evaluate over 10,000+ frames per second.");
-    println!("=========================================================================================\n");
-}
-
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
-Below is this file's contents:
-use pvg_lib::compile_pvg_at_time;
-use pvg_lib::svg_emitter::{emit_animated_svg, emit_svg};
-use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::Instant;
-
-fn print_usage() {
-    println!("\n===============================================================================");
-    println!("             PVG 0.1 TO SVG COMPILER & TRANSPILER CLI                          ");
-    println!("===============================================================================");
-    println!("Usage:");
-    println!("  cargo run --bin pvg_to_svg -- <input.pvg> [output.svg] [--time <seconds>] [--static]");
-    println!("  cargo run --bin pvg_to_svg -- --all");
-    println!();
-    println!("Options:");
-    println!("  -t, --time <sec>    Capture static frame at specific timestamp (default: 0.0)");
-    println!("  --static            Force static export even if file contains animation");
-    println!("  -h, --help          Show this help message");
-    println!();
-    println!("Examples:");
-    println!("  cargo run --bin pvg_to_svg -- presets/dial.pvg");
-    println!("  cargo run --bin pvg_to_svg -- presets/radar.pvg radar.svg");
-    println!("  cargo run --bin pvg_to_svg -- --all");
-    println!("===============================================================================\n");
-}
-
-fn resolve_file_path(filename: &str) -> Option<PathBuf> {
-    let p = PathBuf::from(filename);
-    if p.exists() {
-        return Some(p);
-    }
-
-    let search_candidates = [
-        format!("presets/{}", filename),
-        format!("../presets/{}", filename),
-        format!("../../presets/{}", filename),
-    ];
-
-    for candidate in &search_candidates {
-        let cp = PathBuf::from(candidate);
-        if cp.exists() {
-            return Some(cp);
-        }
-    }
-
-    None
-}
-
-fn find_presets_dir(custom_path: Option<&str>) -> Option<PathBuf> {
-    if let Some(cp) = custom_path {
-        let p = PathBuf::from(cp);
-        if p.is_dir() {
-            return Some(p);
-        }
-    }
-
-    let candidates = ["presets", "../presets", "../../presets"];
-
-    for candidate in &candidates {
-        let p = PathBuf::from(candidate);
-        if p.is_dir() {
-            return Some(p);
-        }
-    }
-
-    None
-}
-
-fn transpile_file(input_path: &Path, output_path: &Path, time: f64, force_static: bool) -> Result<(), String> {
-    let source = fs::read_to_string(input_path)
-        .map_err(|e| format!("Failed to read '{}': {}", input_path.display(), e))?;
-
-    let start = Instant::now();
-    let is_animated = !force_static && (source.contains("time") || source.contains(" t ") || source.contains("(t)") || source.contains("* t"));
-
-    let svg_content = if is_animated {
-        let total_frames = 30;
-        let loop_dur = 3.0;
-        let mut frames = Vec::with_capacity(total_frames);
-
-        for f in 0..total_frames {
-            let t = (f as f64 / total_frames as f64) * loop_dur;
-            let dl = compile_pvg_at_time(&source, t)
-                .map_err(|e| format!("Runtime Error at t={:.2}: {}", t, e))?;
-            frames.push(dl);
-        }
-
-        emit_animated_svg(&frames, loop_dur)
-    } else {
-        let dl = compile_pvg_at_time(&source, time)
-            .map_err(|e| format!("Runtime Error: {}", e))?;
-        emit_svg(&dl)
-    };
-
-    fs::write(output_path, svg_content)
-        .map_err(|e| format!("Failed to write '{}': {}", output_path.display(), e))?;
-
-    let elapsed = start.elapsed().as_micros();
-    let mode_str = if is_animated { "Animated (SMIL 30 FPS)" } else { "Static" };
-
-    println!(
-        "  ✓ [SUCCESS] {:<20} -> {:<20} ({:<24} | {:.3} ms)",
-        input_path.file_name().unwrap().to_str().unwrap_or(""),
-        output_path.file_name().unwrap().to_str().unwrap_or(""),
-        mode_str,
-        elapsed as f64 / 1000.0
-    );
-
-    Ok(())
-}
-
-fn main() {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() < 2 || args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
-        print_usage();
-        return;
-    }
-
-    // Batch Transpilation Mode: --all
-    if args[1] == "--all" {
-        let custom_dir = if args.len() >= 3 && !args[2].starts_with('-') {
-            Some(args[2].as_str())
-        } else {
-            None
-        };
-
-        let presets_dir = match find_presets_dir(custom_dir) {
-            Some(d) => d,
-            None => {
-                eprintln!("\n❌ Could not locate the 'presets' directory.\n");
-                return;
-            }
-        };
-
-        println!("\n===============================================================================");
-        println!("              PVG TO SVG BATCH TRANSPILER                                      ");
-        println!("              Scanning: {}                                                     ", presets_dir.display());
-        println!("===============================================================================\n");
-
-        let entries = match fs::read_dir(&presets_dir) {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("Failed to read directory: {}", e);
-                return;
-            }
-        };
-
-        let mut count = 0;
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("pvg") {
-                let mut out_path = path.clone();
-                out_path.set_extension("svg");
-                if let Err(e) = transpile_file(&path, &out_path, 0.0, false) {
-                    eprintln!("  ✗ Failed '{}': {}", path.display(), e);
-                } else {
-                    count += 1;
-                }
-            }
-        }
-
-        println!("\n-------------------------------------------------------------------------------");
-        println!(" ✨ Successfully transpiled {} file(s) into valid SVG in '{}'!", count, presets_dir.display());
-        println!("===============================================================================\n");
-        return;
-    }
-
-    // Single File Mode
-    let input_name = &args[1];
-    let input_path = match resolve_file_path(input_name) {
-        Some(p) => p,
-        None => {
-            eprintln!("\n❌ Could not find file '{}'. Check the filename or path.\n", input_name);
-            return;
-        }
-    };
-
-    let mut output_path = None;
-    let mut time = 0.0;
-    let mut force_static = false;
-
-    let mut i = 2;
-    while i < args.len() {
-        if args[i] == "-t" || args[i] == "--time" {
-            if i + 1 < args.len() {
-                time = args[i + 1].parse::<f64>().unwrap_or(0.0);
-                i += 2;
-                continue;
-            }
-        } else if args[i] == "--static" {
-            force_static = true;
-        } else if output_path.is_none() && !args[i].starts_with('-') {
-            output_path = Some(PathBuf::from(&args[i]));
-        }
-        i += 1;
-    }
-
-    let final_output = output_path.unwrap_or_else(|| {
-        let mut p = PathBuf::from(input_path.file_name().unwrap());
-        p.set_extension("svg");
-        p
-    });
-
-    println!("\n⚡ Transpiling PVG -> SVG...");
-    match transpile_file(&input_path, &final_output, time, force_static) {
-        Ok(_) => {
-            println!("✨ Done! Created output at '{}'.\n", final_output.display());
-        }
-        Err(e) => {
-            eprintln!("\n❌ Transpilation failed: {}\n", e);
-            std::process::exit(1);
-        }
-    }
-}
-
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
-Below is this file's contents:
-use pvg_lib::compile_pvg_at_time;
-use std::fs;
-use std::path::Path;
-use std::time::Instant;
-
-fn main() {
-    println!("\n===============================================================================");
-    println!("             PVG 0.1 PRESET TEST RUNNER & DIAGNOSTIC REPORT                    ");
-    println!("===============================================================================");
-    println!(" Procedural Vector Graphics — https://github.com/prathameshza/pvg.git\n");
-
-    let preset_files = [
-        ("Radar Scanner (Anim)", "presets/radar.pvg"),
-        ("Dashboard Dial", "presets/dial.pvg"),
-        ("Procedural Grid", "presets/grid.pvg"),
-        ("Golden Spiral", "presets/spiral.pvg"),
-        ("Paths & Curves", "presets/paths.pvg"),
-        ("Gears & Groups", "presets/gears.pvg"),
-    ];
-
-    let mut all_passed = true;
-    let mut total_primitives = 0;
-
-    for (name, path_str) in &preset_files {
-        let path = Path::new(path_str);
-        if !path.exists() {
-            println!("❌ [{}] File not found at: {}", name, path_str);
-            all_passed = false;
-            continue;
-        }
-
-        let source = fs::read_to_string(path).expect("Unable to read file");
-        let start = Instant::now();
-
-        match compile_pvg_at_time(&source, 1.25) {
-            Ok(dl) => {
-                let duration_us = start.elapsed().as_micros();
-                let duration_ms = duration_us as f64 / 1000.0;
-                total_primitives += dl.items.len();
-
-                println!(
-                    "  [PASS] {:<22} | Size: {:>3}x{:<3} | Primitives: {:>4} | Time: {:>7.3} ms ({:>5} µs)",
-                    name,
-                    dl.canvas_width as u32,
-                    dl.canvas_height as u32,
-                    dl.items.len(),
-                    duration_ms,
-                    duration_us
-                );
-            }
-            Err(e) => {
-                all_passed = false;
-                println!("❌ [FAIL] {:<22} | Error: {}", name, e);
-            }
-        }
-    }
-
-    println!("\n-------------------------------------------------------------------------------");
-    if all_passed {
-        println!(" 🎉 ALL PRESET TESTS PASSED! Total Primitives: {}", total_primitives);
-        println!(" ⚡ Average compile & evaluation time per preset: < 0.25 ms");
-        println!(" 💾 Peak memory footprint during evaluation: < 45 KB");
-    } else {
-        println!(" ⚠️ SOME TESTS FAILED. See error messages above.");
-    }
-    println!("===============================================================================\n");
-}
-
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: pvg/src/draw_list.rs =====
 Below is this file's contents:
 use crate::ast::Color;
 
@@ -1596,7 +1242,7 @@ pub struct DrawList {
     pub items: Vec<DrawCmd>,
 }
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: pvg/src/eval.rs =====
 Below is this file's contents:
 use crate::ast::*;
 use crate::draw_list::*;
@@ -2085,7 +1731,7 @@ impl Evaluator {
     }
 }
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: pvg/src/lexer.rs =====
 Below is this file's contents:
 use crate::ast::Color;
 
@@ -2505,329 +2151,38 @@ impl<'a> Lexer<'a> {
     }
 }
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: pvg/src/lib.rs =====
 Below is this file's contents:
 pub mod ast;
 pub mod draw_list;
 pub mod eval;
 pub mod lexer;
 pub mod parser;
-pub mod renderer;
-pub mod svg_emitter;
 
-use draw_list::DrawList;
-use eval::Evaluator;
-use lexer::Lexer;
-use parser::Parser;
+pub use ast::{Color, Document};
+pub use draw_list::{DrawCmd, DrawList, DrawPathCommand, DrawStyle, Transform2D};
+pub use eval::Evaluator;
+pub use lexer::Lexer;
+pub use parser::Parser;
+
+pub fn parse_pvg(source: &str) -> Result<Document, String> {
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize_all()?;
+    let mut parser = Parser::new(tokens);
+    parser.parse_document()
+}
 
 pub fn compile_pvg(source: &str) -> Result<DrawList, String> {
     compile_pvg_at_time(source, 0.0)
 }
 
 pub fn compile_pvg_at_time(source: &str, time: f64) -> Result<DrawList, String> {
-    let mut lexer = Lexer::new(source);
-    let tokens = lexer.tokenize_all()?;
-    let mut parser = Parser::new(tokens);
-    let doc = parser.parse_document()?;
+    let doc = parse_pvg(source)?;
     let evaluator = Evaluator::new_with_time(time);
     evaluator.evaluate_document(&doc)
 }
 
-pub fn transpile_pvg_to_svg(source: &str, time: f64) -> Result<String, String> {
-    let draw_list = compile_pvg_at_time(source, time)?;
-    Ok(svg_emitter::emit_svg(&draw_list))
-}
-
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
-Below is this file's contents:
-use pvg_lib::compile_pvg_at_time;
-use pvg_lib::draw_list::DrawList;
-use pvg_lib::renderer;
-use eframe::egui::{self, Color32, Rect, Vec2};
-use std::fs;
-use std::path::Path;
-use std::time::Instant;
-
-fn main() -> eframe::Result<()> {
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("PVG 0.1 - Windows GUI Live Preview")
-            .with_inner_size([1360.0, 840.0]),
-        ..Default::default()
-    };
-
-    eframe::run_native(
-        "PVG Studio",
-        options,
-        Box::new(|_cc| Ok(Box::new(PvgApp::new()))),
-    )
-}
-
-struct PresetItem {
-    name: &'static str,
-    path: &'static str,
-    fallback: &'static str,
-}
-
-const PRESETS: &[PresetItem] = &[
-    PresetItem {
-        name: "🌀 Radar Scanner (Anim)",
-        path: "presets/radar.pvg",
-        fallback: include_str!("../presets/radar.pvg"),
-    },
-    PresetItem {
-        name: "Dashboard Dial",
-        path: "presets/dial.pvg",
-        fallback: include_str!("../presets/dial.pvg"),
-    },
-    PresetItem {
-        name: "Procedural Grid",
-        path: "presets/grid.pvg",
-        fallback: include_str!("../presets/grid.pvg"),
-    },
-    PresetItem {
-        name: "Golden Spiral",
-        path: "presets/spiral.pvg",
-        fallback: include_str!("../presets/spiral.pvg"),
-    },
-    PresetItem {
-        name: "Paths & Curves",
-        path: "presets/paths.pvg",
-        fallback: include_str!("../presets/paths.pvg"),
-    },
-    PresetItem {
-        name: "Gears & Groups",
-        path: "presets/gears.pvg",
-        fallback: include_str!("../presets/gears.pvg"),
-    },
-];
-
-struct PvgApp {
-    code: String,
-    draw_list: Option<DrawList>,
-    error_msg: Option<String>,
-    render_time_ms: f64,
-    primitive_count: usize,
-    zoom: f32,
-    pan: Vec2,
-    auto_run: bool,
-    is_animated: bool,
-    start_time: Instant,
-    current_time: f64,
-}
-
-impl PvgApp {
-    pub fn new() -> Self {
-        let initial_code = Self::load_preset(0);
-        let mut app = Self {
-            code: initial_code,
-            draw_list: None,
-            error_msg: None,
-            render_time_ms: 0.0,
-            primitive_count: 0,
-            zoom: 1.0,
-            pan: Vec2::ZERO,
-            auto_run: true,
-            is_animated: true,
-            start_time: Instant::now(),
-            current_time: 0.0,
-        };
-        app.recompile_at(0.0);
-        app
-    }
-
-    fn load_preset(idx: usize) -> String {
-        let p = &PRESETS[idx];
-        if Path::new(p.path).exists() {
-            fs::read_to_string(p.path).unwrap_or_else(|_| p.fallback.to_string())
-        } else {
-            p.fallback.to_string()
-        }
-    }
-
-    fn recompile_at(&mut self, time: f64) {
-        let start = Instant::now();
-        match compile_pvg_at_time(&self.code, time) {
-            Ok(dl) => {
-                self.primitive_count = dl.items.len();
-                self.draw_list = Some(dl);
-                self.error_msg = None;
-                self.render_time_ms = start.elapsed().as_secs_f64() * 1000.0;
-            }
-            Err(e) => {
-                self.error_msg = Some(e);
-            }
-        }
-    }
-}
-
-impl eframe::App for PvgApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let f5_pressed = ctx.input(|i| i.key_pressed(egui::Key::F5));
-        let ctrl_enter = ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Enter));
-        if f5_pressed || ctrl_enter {
-            self.recompile_at(self.current_time);
-        }
-
-        // Animation update loop
-        if self.is_animated && (self.code.contains("time") || self.code.contains(" t ") || self.code.contains("(t)") || self.code.contains("* t")) {
-            self.current_time = self.start_time.elapsed().as_secs_f64();
-            self.recompile_at(self.current_time);
-            ctx.request_repaint();
-        }
-
-        // Top Toolbar
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.heading("⚡ PVG 0.1 Studio");
-                ui.separator();
-
-                let run_btn = egui::Button::new("▶ Run (F5)").fill(Color32::from_rgb(0, 140, 70));
-                if ui.add(run_btn).clicked() {
-                    self.recompile_at(self.current_time);
-                }
-
-                ui.checkbox(&mut self.auto_run, "Auto-Run on edit");
-                ui.separator();
-
-                let anim_label = if self.is_animated { "⏸ Pause" } else { "▶ Play" };
-                if ui.button(anim_label).clicked() {
-                    self.is_animated = !self.is_animated;
-                }
-                if ui.button("⏮ Reset Time").clicked() {
-                    self.start_time = Instant::now();
-                    self.current_time = 0.0;
-                    self.recompile_at(0.0);
-                }
-                ui.label(format!("Time: {:.2}s", self.current_time));
-
-                ui.separator();
-                ui.label("Presets:");
-                for (i, p) in PRESETS.iter().enumerate() {
-                    if ui.button(p.name).clicked() {
-                        self.code = Self::load_preset(i);
-                        self.pan = Vec2::ZERO;
-                        self.zoom = 1.0;
-                        self.start_time = Instant::now();
-                        self.current_time = 0.0;
-                        self.recompile_at(0.0);
-                    }
-                }
-
-                ui.separator();
-                if ui.button("Reset View").clicked() {
-                    self.pan = Vec2::ZERO;
-                    self.zoom = 1.0;
-                }
-                ui.label(format!("Zoom: {:.1}x", self.zoom));
-            });
-        });
-
-        // Bottom Status Bar
-        egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                let total_lines = self.code.split('\n').count();
-                ui.label(format!("Lines: {}", total_lines));
-                ui.separator();
-
-                if let Some(ref err) = self.error_msg {
-                    ui.colored_label(Color32::from_rgb(255, 80, 80), format!("✗ {}", err));
-                } else {
-                    ui.colored_label(
-                        Color32::from_rgb(80, 255, 120),
-                        format!(
-                            "✓ Rendered {} primitives in {:.3} ms | Working Memory: < 50 KB",
-                            self.primitive_count, self.render_time_ms
-                        ),
-                    );
-                }
-            });
-        });
-
-        // Left Code Editor Panel with Line Numbers and Scrollbar
-        egui::SidePanel::left("editor_panel")
-            .resizable(true)
-            .default_width(560.0)
-            .min_width(380.0)
-            .show(ctx, |ui| {
-                ui.vertical(|ui| {
-                    ui.add_space(4.0);
-                    ui.label("PVG Code Editor:");
-                    ui.add_space(2.0);
-
-                    egui::ScrollArea::both()
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            ui.horizontal_top(|ui| {
-                                let line_count = self.code.split('\n').count().max(1);
-                                let mut line_numbers_text = String::with_capacity(line_count * 5);
-                                for line_idx in 1..=line_count {
-                                    line_numbers_text.push_str(&format!("{:>3}\n", line_idx));
-                                }
-
-                                ui.add(
-                                    egui::Label::new(
-                                        egui::RichText::new(line_numbers_text)
-                                            .monospace()
-                                            .color(Color32::from_rgb(90, 95, 115)),
-                                    )
-                                    .selectable(false),
-                                );
-
-                                ui.separator();
-
-                                let text_edit = egui::TextEdit::multiline(&mut self.code)
-                                    .font(egui::TextStyle::Monospace)
-                                    .code_editor()
-                                    .lock_focus(true)
-                                    .desired_width(f32::INFINITY)
-                                    .frame(false);
-
-                                let response = ui.add(text_edit);
-                                if response.changed() && self.auto_run {
-                                    self.recompile_at(self.current_time);
-                                }
-                            });
-                        });
-                });
-            });
-
-        // Right Interactive Preview Canvas
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let (response, painter) = ui.allocate_painter(ui.available_size_before_wrap(), egui::Sense::drag());
-
-            if response.dragged() {
-                self.pan += response.drag_delta();
-            }
-
-            if response.hovered() {
-                let scroll = ui.input(|i| i.raw_scroll_delta.y);
-                if scroll != 0.0 {
-                    let zoom_factor = if scroll > 0.0 { 1.1 } else { 0.9 };
-                    self.zoom = (self.zoom * zoom_factor).clamp(0.1, 10.0);
-                }
-            }
-
-            let canvas_origin = response.rect.min + self.pan;
-            painter.rect_filled(response.rect, 0.0_f32, Color32::from_rgb(20, 20, 22));
-
-            if let Some(ref dl) = self.draw_list {
-                let border_rect = Rect::from_min_size(
-                    canvas_origin,
-                    Vec2::new((dl.canvas_width as f32) * self.zoom, (dl.canvas_height as f32) * self.zoom),
-                );
-                painter.rect_stroke(
-                    border_rect,
-                    0.0_f32,
-                    egui::Stroke::new(1.0_f32, Color32::from_rgb(70, 70, 80)),
-                );
-                renderer::render_draw_list(&painter, dl, canvas_origin, self.zoom);
-            }
-        });
-    }
-}
-
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: pvg/src/parser.rs =====
 Below is this file's contents:
 use crate::ast::*;
 use crate::lexer::{Token, TokenKind};
@@ -3515,20 +2870,331 @@ impl Parser {
     }
 }
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: pvg_win_gui/.gitignore =====
 Below is this file's contents:
-use crate::ast::Color as CpsvgColor;
-use crate::draw_list::*;
+/target
+
+===== FILE: pvg_win_gui/Cargo.toml =====
+Below is this file's contents:
+[package]
+name = "pvg_win_gui"
+version = "0.1.0"
+edition = "2021"
+default-run = "pvg_win_gui"
+
+[dependencies]
+pvg = { path = "../pvg" }
+eframe = "0.28.1"
+
+===== FILE: pvg_win_gui/src/main.rs =====
+Below is this file's contents:
+mod renderer;
+
+use eframe::egui::{self, Color32, Rect, Vec2};
+use pvg::compile_pvg_at_time;
+use pvg::draw_list::DrawList;
+use std::fs;
+use std::path::Path;
+use std::time::Instant;
+
+fn main() -> eframe::Result<()> {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_title("PVG 0.1 - Windows GUI Live Preview")
+            .with_inner_size([1380.0, 850.0]),
+        ..Default::default()
+    };
+
+    eframe::run_native(
+        "PVG Studio",
+        options,
+        Box::new(|_cc| Ok(Box::new(PvgApp::new()))),
+    )
+}
+
+struct PresetItem {
+    name: &'static str,
+    path: &'static str,
+    fallback: &'static str,
+}
+
+const PRESETS: &[PresetItem] = &[
+    PresetItem {
+        name: "🌀 Radar Scanner (Anim)",
+        path: "presets/radar.pvg",
+        fallback: include_str!("../../presets/radar.pvg"),
+    },
+    PresetItem {
+        name: "Dashboard Dial",
+        path: "presets/dial.pvg",
+        fallback: include_str!("../../presets/dial.pvg"),
+    },
+    PresetItem {
+        name: "Procedural Grid",
+        path: "presets/grid.pvg",
+        fallback: include_str!("../../presets/grid.pvg"),
+    },
+    PresetItem {
+        name: "Golden Spiral",
+        path: "presets/spiral.pvg",
+        fallback: include_str!("../../presets/spiral.pvg"),
+    },
+    PresetItem {
+        name: "Paths & Curves",
+        path: "presets/paths.pvg",
+        fallback: include_str!("../../presets/paths.pvg"),
+    },
+    PresetItem {
+        name: "Gears & Groups",
+        path: "presets/gears.pvg",
+        fallback: include_str!("../../presets/gears.pvg"),
+    },
+];
+
+struct PvgApp {
+    code: String,
+    draw_list: Option<DrawList>,
+    error_msg: Option<String>,
+    render_time_ms: f64,
+    primitive_count: usize,
+    zoom: f32,
+    pan: Vec2,
+    auto_run: bool,
+    is_animated: bool,
+    start_time: Instant,
+    current_time: f64,
+}
+
+impl PvgApp {
+    pub fn new() -> Self {
+        let initial_code = Self::load_preset(0);
+        let mut app = Self {
+            code: initial_code,
+            draw_list: None,
+            error_msg: None,
+            render_time_ms: 0.0,
+            primitive_count: 0,
+            zoom: 1.0,
+            pan: Vec2::ZERO,
+            auto_run: true,
+            is_animated: true,
+            start_time: Instant::now(),
+            current_time: 0.0,
+        };
+        app.recompile_at(0.0);
+        app
+    }
+
+    fn load_preset(idx: usize) -> String {
+        let p = &PRESETS[idx];
+        let candidates = [
+            p.path.to_string(),
+            format!("../{}", p.path),
+            format!("../../{}", p.path),
+        ];
+
+        for c in &candidates {
+            if Path::new(c).exists() {
+                if let Ok(content) = fs::read_to_string(c) {
+                    return content;
+                }
+            }
+        }
+
+        p.fallback.to_string()
+    }
+
+    fn recompile_at(&mut self, time: f64) {
+        let start = Instant::now();
+        match compile_pvg_at_time(&self.code, time) {
+            Ok(dl) => {
+                self.primitive_count = dl.items.len();
+                self.draw_list = Some(dl);
+                self.error_msg = None;
+                self.render_time_ms = start.elapsed().as_secs_f64() * 1000.0;
+            }
+            Err(e) => {
+                self.error_msg = Some(e);
+            }
+        }
+    }
+}
+
+impl eframe::App for PvgApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let f5_pressed = ctx.input(|i| i.key_pressed(egui::Key::F5));
+        let ctrl_enter = ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Enter));
+        if f5_pressed || ctrl_enter {
+            self.recompile_at(self.current_time);
+        }
+
+        if self.is_animated && (self.code.contains("time") || self.code.contains(" t ") || self.code.contains("(t)") || self.code.contains("* t")) {
+            self.current_time = self.start_time.elapsed().as_secs_f64();
+            self.recompile_at(self.current_time);
+            ctx.request_repaint();
+        }
+
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.heading("⚡ PVG 0.1 Studio");
+                ui.separator();
+
+                let run_btn = egui::Button::new("▶ Run (F5)").fill(Color32::from_rgb(0, 140, 70));
+                if ui.add(run_btn).clicked() {
+                    self.recompile_at(self.current_time);
+                }
+
+                ui.checkbox(&mut self.auto_run, "Auto-Run on edit");
+                ui.separator();
+
+                let anim_label = if self.is_animated { "⏸ Pause" } else { "▶ Play" };
+                if ui.button(anim_label).clicked() {
+                    self.is_animated = !self.is_animated;
+                }
+                if ui.button("⏮ Reset Time").clicked() {
+                    self.start_time = Instant::now();
+                    self.current_time = 0.0;
+                    self.recompile_at(0.0);
+                }
+                ui.label(format!("Time: {:.2}s", self.current_time));
+
+                ui.separator();
+                ui.label("Presets:");
+                for (i, p) in PRESETS.iter().enumerate() {
+                    if ui.button(p.name).clicked() {
+                        self.code = Self::load_preset(i);
+                        self.pan = Vec2::ZERO;
+                        self.zoom = 1.0;
+                        self.start_time = Instant::now();
+                        self.current_time = 0.0;
+                        self.recompile_at(0.0);
+                    }
+                }
+
+                ui.separator();
+                if ui.button("Reset View").clicked() {
+                    self.pan = Vec2::ZERO;
+                    self.zoom = 1.0;
+                }
+                ui.label(format!("Zoom: {:.1}x", self.zoom));
+            });
+        });
+
+        egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                let total_lines = self.code.split('\n').count();
+                ui.label(format!("Lines: {}", total_lines));
+                ui.separator();
+
+                if let Some(ref err) = self.error_msg {
+                    ui.colored_label(Color32::from_rgb(255, 80, 80), format!("✗ {}", err));
+                } else {
+                    ui.colored_label(
+                        Color32::from_rgb(80, 255, 120),
+                        format!(
+                            "✓ Rendered {} primitives in {:.3} ms | Working Memory: < 50 KB",
+                            self.primitive_count, self.render_time_ms
+                        ),
+                    );
+                }
+            });
+        });
+
+        egui::SidePanel::left("editor_panel")
+            .resizable(true)
+            .default_width(560.0)
+            .min_width(380.0)
+            .show(ctx, |ui| {
+                ui.vertical(|ui| {
+                    ui.add_space(4.0);
+                    ui.label("PVG Code Editor:");
+                    ui.add_space(2.0);
+
+                    egui::ScrollArea::both()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.horizontal_top(|ui| {
+                                let line_count = self.code.split('\n').count().max(1);
+                                let mut line_numbers_text = String::with_capacity(line_count * 5);
+                                for line_idx in 1..=line_count {
+                                    line_numbers_text.push_str(&format!("{:>3}\n", line_idx));
+                                }
+
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(line_numbers_text)
+                                            .monospace()
+                                            .color(Color32::from_rgb(90, 95, 115)),
+                                    )
+                                    .selectable(false),
+                                );
+
+                                ui.separator();
+
+                                let text_edit = egui::TextEdit::multiline(&mut self.code)
+                                    .font(egui::TextStyle::Monospace)
+                                    .code_editor()
+                                    .lock_focus(true)
+                                    .desired_width(f32::INFINITY)
+                                    .frame(false);
+
+                                let response = ui.add(text_edit);
+                                if response.changed() && self.auto_run {
+                                    self.recompile_at(self.current_time);
+                                }
+                            });
+                        });
+                });
+            });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            let (response, painter) = ui.allocate_painter(ui.available_size_before_wrap(), egui::Sense::drag());
+
+            if response.dragged() {
+                self.pan += response.drag_delta();
+            }
+
+            if response.hovered() {
+                let scroll = ui.input(|i| i.raw_scroll_delta.y);
+                if scroll != 0.0 {
+                    let zoom_factor = if scroll > 0.0 { 1.1 } else { 0.9 };
+                    self.zoom = (self.zoom * zoom_factor).clamp(0.1, 10.0);
+                }
+            }
+
+            let canvas_origin = response.rect.min + self.pan;
+            painter.rect_filled(response.rect, 0.0_f32, Color32::from_rgb(20, 20, 22));
+
+            if let Some(ref dl) = self.draw_list {
+                let border_rect = Rect::from_min_size(
+                    canvas_origin,
+                    Vec2::new((dl.canvas_width as f32) * self.zoom, (dl.canvas_height as f32) * self.zoom),
+                );
+                painter.rect_stroke(
+                    border_rect,
+                    0.0_f32,
+                    egui::Stroke::new(1.0_f32, Color32::from_rgb(70, 70, 80)),
+                );
+                renderer::render_draw_list(&painter, dl, canvas_origin, self.zoom);
+            }
+        });
+    }
+}
+
+===== FILE: pvg_win_gui/src/renderer.rs =====
+Below is this file's contents:
 use eframe::egui::{Color32, Painter, Pos2, Rect, Stroke};
 use eframe::epaint::PathShape;
+use pvg::ast::Color as PvgColor;
+use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand};
 
-pub fn to_egui_color(col: &CpsvgColor, opacity: f64) -> Color32 {
+pub fn to_egui_color(col: &PvgColor, opacity: f64) -> Color32 {
     match col {
-        CpsvgColor::Rgba(r, g, b, a) => {
+        PvgColor::Rgba(r, g, b, a) => {
             let final_a = ((*a as f64) * opacity).clamp(0.0, 255.0) as u8;
             Color32::from_rgba_unmultiplied(*r, *g, *b, final_a)
         }
-        CpsvgColor::None => Color32::TRANSPARENT,
+        PvgColor::None => Color32::TRANSPARENT,
     }
 }
 
@@ -3709,11 +3375,537 @@ pub fn render_draw_list(painter: &Painter, draw_list: &DrawList, origin: Pos2, z
     }
 }
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
+===== FILE: transpilers/Cargo.toml =====
 Below is this file's contents:
-use crate::ast::Color;
-use crate::draw_list::*;
+[package]
+name = "pvg_transpilers"
+version = "0.1.0"
+edition = "2021"
+description = "Standalone CLI transpilers for converting PVG to SVG and PNG"
+
+[[bin]]
+name = "pvg_to_svg"
+path = "src/pvg_to_svg.rs"
+
+[[bin]]
+name = "pvg_to_png"
+path = "src/pvg_to_png.rs"
+
+[dependencies]
+pvg = { path = "../pvg" }
+tiny-skia = "0.11"
+
+===== FILE: transpilers/src/pvg_to_png.rs =====
+Below is this file's contents:
+use pvg::ast::Color;
+use pvg::compile_pvg_at_time;
+use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand};
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
+use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
+
+pub fn color_to_skia(col: &Color, opacity: f64) -> Option<Paint<'static>> {
+    match col {
+        Color::Rgba(r, g, b, a) => {
+            let final_a = ((*a as f64) * opacity).clamp(0.0, 255.0).round() as u8;
+            if final_a == 0 {
+                return None;
+            }
+            let mut paint = Paint::default();
+            paint.set_color_rgba8(*r, *g, *b, final_a);
+            paint.anti_alias = true;
+            Some(paint)
+        }
+        Color::None => None,
+    }
+}
+
+pub fn rasterize_draw_list(draw_list: &DrawList, scale: f32) -> Result<Pixmap, String> {
+    let scale = if scale <= 0.0 { 1.0 } else { scale };
+    let width = ((draw_list.canvas_width as f32) * scale).round() as u32;
+    let height = ((draw_list.canvas_height as f32) * scale).round() as u32;
+
+    if width == 0 || height == 0 {
+        return Err("Canvas dimensions must be greater than zero".into());
+    }
+
+    let mut pixmap = Pixmap::new(width, height)
+        .ok_or_else(|| format!("Failed to allocate Pixmap of size {}x{}", width, height))?;
+
+    let transform = Transform::from_scale(scale, scale);
+
+    // 1. Background
+    if let Some(ref bg) = draw_list.background {
+        if let Some(bg_paint) = color_to_skia(bg, 1.0) {
+            if let Some(rect) = Rect::from_xywh(0.0, 0.0, width as f32, height as f32) {
+                pixmap.fill_rect(rect, &bg_paint, Transform::identity(), None);
+            }
+        }
+    }
+
+    // 2. Shapes
+    for cmd in &draw_list.items {
+        match cmd {
+            DrawCmd::Circle { center, radius, style } => {
+                let mut pb = PathBuilder::new();
+                pb.push_circle(center.0 as f32, center.1 as f32, *radius as f32);
+                if let Some(path) = pb.finish() {
+                    if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
+                        pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
+                    }
+                    if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
+                        if style.width > 0.0 {
+                            let mut stroke = Stroke::default();
+                            stroke.width = style.width as f32;
+                            pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
+                        }
+                    }
+                }
+            }
+
+            DrawCmd::Ellipse { center, radius, style } => {
+                let x = (center.0 - radius.0) as f32;
+                let y = (center.1 - radius.1) as f32;
+                let w = (radius.0 * 2.0) as f32;
+                let h = (radius.1 * 2.0) as f32;
+
+                if let Some(rect) = Rect::from_xywh(x, y, w, h) {
+                    let mut pb = PathBuilder::new();
+                    pb.push_oval(rect);
+                    if let Some(path) = pb.finish() {
+                        if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
+                            pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
+                        }
+                        if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
+                            if style.width > 0.0 {
+                                let mut stroke = Stroke::default();
+                                stroke.width = style.width as f32;
+                                pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
+                            }
+                        }
+                    }
+                }
+            }
+
+            DrawCmd::Rectangle { pos, size, corner_radius, style } => {
+                let x = pos.0 as f32;
+                let y = pos.1 as f32;
+                let w = size.0 as f32;
+                let h = size.1 as f32;
+                let cr = (*corner_radius as f32).max(0.0);
+
+                if w > 0.0 && h > 0.0 {
+                    let path = if cr > 0.0 {
+                        let r = cr.min(w / 2.0).min(h / 2.0);
+                        let mut pb = PathBuilder::new();
+                        pb.move_to(x + r, y);
+                        pb.line_to(x + w - r, y);
+                        pb.quad_to(x + w, y, x + w, y + r);
+                        pb.line_to(x + w, y + h - r);
+                        pb.quad_to(x + w, y + h, x + w - r, y + h);
+                        pb.line_to(x + r, y + h);
+                        pb.quad_to(x, y + h, x, y + h - r);
+                        pb.line_to(x, y + r);
+                        pb.quad_to(x, y, x + r, y);
+                        pb.close();
+                        pb.finish()
+                    } else if let Some(rect) = Rect::from_xywh(x, y, w, h) {
+                        let mut pb = PathBuilder::new();
+                        pb.push_rect(rect);
+                        pb.finish()
+                    } else {
+                        None
+                    };
+
+                    if let Some(path) = path {
+                        if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
+                            pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
+                        }
+                        if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
+                            if style.width > 0.0 {
+                                let mut stroke = Stroke::default();
+                                stroke.width = style.width as f32;
+                                pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
+                            }
+                        }
+                    }
+                }
+            }
+
+            DrawCmd::Line { from, to, style } => {
+                let mut pb = PathBuilder::new();
+                pb.move_to(from.0 as f32, from.1 as f32);
+                pb.line_to(to.0 as f32, to.1 as f32);
+                if let Some(path) = pb.finish() {
+                    if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
+                        if style.width > 0.0 {
+                            let mut stroke = Stroke::default();
+                            stroke.width = style.width as f32;
+                            pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
+                        }
+                    }
+                }
+            }
+
+            DrawCmd::Polygon { points, style } => {
+                if points.len() >= 2 {
+                    let mut pb = PathBuilder::new();
+                    pb.move_to(points[0].0 as f32, points[0].1 as f32);
+                    for pt in &points[1..] {
+                        pb.line_to(pt.0 as f32, pt.1 as f32);
+                    }
+                    pb.close();
+
+                    if let Some(path) = pb.finish() {
+                        if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
+                            pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
+                        }
+                        if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
+                            if style.width > 0.0 {
+                                let mut stroke = Stroke::default();
+                                stroke.width = style.width as f32;
+                                pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
+                            }
+                        }
+                    }
+                }
+            }
+
+            DrawCmd::Path { commands, style } => {
+                let mut pb = PathBuilder::new();
+                let mut has_commands = false;
+
+                for cmd in commands {
+                    match cmd {
+                        DrawPathCommand::Start(p) => {
+                            pb.move_to(p.0 as f32, p.1 as f32);
+                            has_commands = true;
+                        }
+                        DrawPathCommand::Line(p) => {
+                            if !has_commands {
+                                pb.move_to(p.0 as f32, p.1 as f32);
+                                has_commands = true;
+                            } else {
+                                pb.line_to(p.0 as f32, p.1 as f32);
+                            }
+                        }
+                        DrawPathCommand::Quad { cp, ep } => {
+                            if !has_commands {
+                                pb.move_to(cp.0 as f32, cp.1 as f32);
+                                has_commands = true;
+                            }
+                            pb.quad_to(cp.0 as f32, cp.1 as f32, ep.0 as f32, ep.1 as f32);
+                        }
+                        DrawPathCommand::Curve { c1, c2, ep } => {
+                            if !has_commands {
+                                pb.move_to(c1.0 as f32, c1.1 as f32);
+                                has_commands = true;
+                            }
+                            pb.cubic_to(
+                                c1.0 as f32, c1.1 as f32,
+                                c2.0 as f32, c2.1 as f32,
+                                ep.0 as f32, ep.1 as f32,
+                            );
+                        }
+                        DrawPathCommand::Arc { center, radius, start_angle, end_angle } => {
+                            let delta = end_angle - start_angle;
+                            let steps = (delta.abs() / (std::f64::consts::PI / 32.0)).ceil().max(16.0) as usize;
+                            for step in 0..=steps {
+                                let t = step as f64 / steps as f64;
+                                let angle = start_angle + t * delta;
+                                let px = center.0 + radius * angle.cos();
+                                let py = center.1 + radius * angle.sin();
+                                if !has_commands && step == 0 {
+                                    pb.move_to(px as f32, py as f32);
+                                    has_commands = true;
+                                } else {
+                                    pb.line_to(px as f32, py as f32);
+                                }
+                            }
+                        }
+                        DrawPathCommand::Close => {
+                            pb.close();
+                        }
+                    }
+                }
+
+                if let Some(path) = pb.finish() {
+                    if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
+                        pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
+                    }
+                    if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
+                        if style.width > 0.0 {
+                            let mut stroke = Stroke::default();
+                            stroke.width = style.width as f32;
+                            pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(pixmap)
+}
+
+pub fn rasterize_draw_list_to_png(draw_list: &DrawList, scale: f32) -> Result<Vec<u8>, String> {
+    let pixmap = rasterize_draw_list(draw_list, scale)?;
+    pixmap.encode_png().map_err(|e| format!("PNG encoding failed: {}", e))
+}
+
+fn print_usage() {
+    println!("\n===============================================================================");
+    println!("             PVG 0.1 TO PNG RASTERIZER & EXPORTER CLI                          ");
+    println!("===============================================================================");
+    println!("Usage:");
+    println!("  cargo run --bin pvg_to_png -- <input.pvg> [output.png] [options]");
+    println!("  cargo run --bin pvg_to_png -- --all [options]");
+    println!();
+    println!("Options:");
+    println!("  -t, --time <sec>       Capture static frame at specific timestamp (default: 0.0)");
+    println!("  -s, --scale <factor>   Resolution scale multiplier: 1.0, 2.0, 4.0 (default: 1.0)");
+    println!("  --frames <count>       Export animation sequence frames (e.g. --frames 30)");
+    println!("  --duration <sec>       Animation sequence duration in seconds (default: 3.0)");
+    println!("  --static               Force single static export even if file is animated");
+    println!("  -h, --help             Show this help message");
+    println!();
+    println!("Examples:");
+    println!("  cargo run --bin pvg_to_png -- presets/dial.pvg");
+    println!("  cargo run --bin pvg_to_png -- presets/radar.pvg radar.png --scale 2.0");
+    println!("  cargo run --bin pvg_to_png -- presets/radar.pvg --frames 30");
+    println!("  cargo run --bin pvg_to_png -- --all --scale 2.0");
+    println!("===============================================================================\n");
+}
+
+fn resolve_file_path(filename: &str) -> Option<PathBuf> {
+    let p = PathBuf::from(filename);
+    if p.exists() {
+        return Some(p);
+    }
+    let search_candidates = [
+        format!("presets/{}", filename),
+        format!("../presets/{}", filename),
+        format!("../../presets/{}", filename),
+    ];
+    for candidate in &search_candidates {
+        let cp = PathBuf::from(candidate);
+        if cp.exists() {
+            return Some(cp);
+        }
+    }
+    None
+}
+
+fn find_presets_dir() -> Option<PathBuf> {
+    let candidates = ["presets", "../presets", "../../presets"];
+    for candidate in &candidates {
+        let p = PathBuf::from(candidate);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+fn rasterize_file(
+    input_path: &Path,
+    output_path: &Path,
+    time: f64,
+    scale: f32,
+    frames_count: Option<usize>,
+    duration: f64,
+    force_static: bool,
+) -> Result<(), String> {
+    let source = fs::read_to_string(input_path)
+        .map_err(|e| format!("Failed to read '{}': {}", input_path.display(), e))?;
+
+    let is_animated = !force_static && (source.contains("time") || source.contains(" t ") || source.contains("(t)") || source.contains("* t"));
+
+    if is_animated && frames_count.is_some() {
+        let total_frames = frames_count.unwrap().max(1);
+        let start = Instant::now();
+        let stem = input_path.file_stem().and_then(|s| s.to_str()).unwrap_or("frame");
+        let parent = output_path.parent().unwrap_or_else(|| Path::new("."));
+
+        for f in 0..total_frames {
+            let t = (f as f64 / total_frames as f64) * duration;
+            let dl = compile_pvg_at_time(&source, t)
+                .map_err(|e| format!("Runtime Error at t={:.2}: {}", t, e))?;
+            let png_bytes = rasterize_draw_list_to_png(&dl, scale)?;
+            let frame_filename = format!("{}_{:03}.png", stem, f);
+            let frame_path = parent.join(frame_filename);
+            fs::write(&frame_path, png_bytes)
+                .map_err(|e| format!("Failed to write '{}': {}", frame_path.display(), e))?;
+        }
+
+        let elapsed = start.elapsed().as_micros();
+        println!(
+            "  ✓ [SUCCESS] {:<20} -> {} frames (Sequence @ {:.1}x | {:.3} ms total)",
+            input_path.file_name().unwrap().to_str().unwrap_or(""),
+            total_frames,
+            scale,
+            elapsed as f64 / 1000.0
+        );
+        return Ok(());
+    }
+
+    let start = Instant::now();
+    let dl = compile_pvg_at_time(&source, time)?;
+    let png_bytes = rasterize_draw_list_to_png(&dl, scale)?;
+    fs::write(output_path, &png_bytes)
+        .map_err(|e| format!("Failed to write '{}': {}", output_path.display(), e))?;
+
+    let elapsed = start.elapsed().as_micros();
+    let size_kb = png_bytes.len() as f64 / 1024.0;
+
+    println!(
+        "  ✓ [SUCCESS] {:<20} -> {:<20} ({:>5.1} KB | {:.1}x Scale | {:.3} ms)",
+        input_path.file_name().unwrap().to_str().unwrap_or(""),
+        output_path.file_name().unwrap().to_str().unwrap_or(""),
+        size_kb,
+        scale,
+        elapsed as f64 / 1000.0
+    );
+
+    Ok(())
+}
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() < 2 || args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
+        print_usage();
+        return;
+    }
+
+    let mut scale: f32 = 1.0;
+    let mut time: f64 = 0.0;
+    let mut frames_count: Option<usize> = None;
+    let mut duration: f64 = 3.0;
+    let mut force_static = false;
+    let mut output_path = None;
+
+    let is_batch = args[1] == "--all";
+    let mut i = if is_batch { 2 } else { 1 };
+
+    while i < args.len() {
+        match args[i].as_str() {
+            "-s" | "--scale" => {
+                if i + 1 < args.len() {
+                    scale = args[i + 1].parse::<f32>().unwrap_or(1.0);
+                    i += 1;
+                }
+            }
+            "-t" | "--time" => {
+                if i + 1 < args.len() {
+                    time = args[i + 1].parse::<f64>().unwrap_or(0.0);
+                    i += 1;
+                }
+            }
+            "--frames" => {
+                if i + 1 < args.len() {
+                    frames_count = args[i + 1].parse::<usize>().ok();
+                    i += 1;
+                }
+            }
+            "--duration" => {
+                if i + 1 < args.len() {
+                    duration = args[i + 1].parse::<f64>().unwrap_or(3.0);
+                    i += 1;
+                }
+            }
+            "--static" => {
+                force_static = true;
+            }
+            arg if !arg.starts_with('-') && !is_batch && i > 1 && output_path.is_none() => {
+                output_path = Some(PathBuf::from(arg));
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    if is_batch {
+        let presets_dir = match find_presets_dir() {
+            Some(d) => d,
+            None => {
+                eprintln!("\n❌ Could not locate the 'presets' directory.\n");
+                return;
+            }
+        };
+
+        println!("\n===============================================================================");
+        println!("              PVG TO PNG BATCH RASTERIZER                                      ");
+        println!("              Scanning: {} (Scale: {:.1}x)                                     ", presets_dir.display(), scale);
+        println!("===============================================================================\n");
+
+        let entries = match fs::read_dir(&presets_dir) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("Failed to read directory: {}", e);
+                return;
+            }
+        };
+
+        let mut count = 0;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("pvg") {
+                let mut out_path = path.clone();
+                out_path.set_extension("png");
+                if let Err(e) = rasterize_file(&path, &out_path, time, scale, frames_count, duration, force_static) {
+                    eprintln!("  ✗ Failed '{}': {}", path.display(), e);
+                } else {
+                    count += 1;
+                }
+            }
+        }
+
+        println!("\n-------------------------------------------------------------------------------");
+        println!(" ✨ Successfully rasterized {} file(s) into PNG in '{}'!", count, presets_dir.display());
+        println!("===============================================================================\n");
+        return;
+    }
+
+    let input_name = &args[1];
+    let input_path = match resolve_file_path(input_name) {
+        Some(p) => p,
+        None => {
+            eprintln!("\n❌ Could not find file '{}'. Check the filename or path.\n", input_name);
+            return;
+        }
+    };
+
+    let final_output = output_path.unwrap_or_else(|| {
+        let mut p = PathBuf::from(input_path.file_name().unwrap());
+        p.set_extension("png");
+        p
+    });
+
+    println!("\n⚡ Rasterizing PVG -> PNG (Scale: {:.1}x)...", scale);
+    match rasterize_file(&input_path, &final_output, time, scale, frames_count, duration, force_static) {
+        Ok(_) => {
+            println!("✨ Done! Created image at '{}'.\n", final_output.display());
+        }
+        Err(e) => {
+            eprintln!("\n❌ Rasterization failed: {}\n", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+===== FILE: transpilers/src/pvg_to_svg.rs =====
+Below is this file's contents:
+use pvg::ast::Color;
+use pvg::compile_pvg_at_time;
+use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand, DrawStyle};
+use std::env;
 use std::f64::consts::PI;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 pub fn color_to_svg(col: &Color) -> String {
     match col {
@@ -3727,7 +3919,6 @@ pub fn color_to_svg(col: &Color) -> String {
 
 pub fn format_svg_attributes(style: &DrawStyle) -> String {
     let mut attrs = Vec::new();
-
     attrs.push(format!("fill=\"{}\"", color_to_svg(&style.fill)));
 
     if style.stroke != Color::None {
@@ -3900,23 +4091,14 @@ pub fn emit_animated_svg(frames: &[DrawList], duration_sec: f64) -> String {
 
         let (values_str, keytimes_str) = if i == 0 {
             let t1 = 1.0 / n;
-            (
-                "visible;hidden".to_string(),
-                format!("0; {:.4}", t1),
-            )
+            ("visible;hidden".to_string(), format!("0; {:.4}", t1))
         } else if i == frame_count - 1 {
             let t0 = (n - 1.0) / n;
-            (
-                "hidden;visible".to_string(),
-                format!("0; {:.4}", t0),
-            )
+            ("hidden;visible".to_string(), format!("0; {:.4}", t0))
         } else {
             let t0 = i_f / n;
             let t1 = (i_f + 1.0) / n;
-            (
-                "hidden;visible;hidden".to_string(),
-                format!("0; {:.4}; {:.4}", t0, t1),
-            )
+            ("hidden;visible;hidden".to_string(), format!("0; {:.4}; {:.4}", t0, t1))
         };
 
         out.push_str("  <g>\n");
@@ -3932,103 +4114,193 @@ pub fn emit_animated_svg(frames: &[DrawList], duration_sec: f64) -> String {
     out
 }
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
-Below is this file's contents:
-use pvg_lib::compile_pvg_at_time;
-use std::fs;
-
-#[test]
-fn test_all_preset_files() {
-    let files = [
-        "presets/radar.pvg",
-        "presets/dial.pvg",
-        "presets/grid.pvg",
-        "presets/spiral.pvg",
-        "presets/paths.pvg",
-        "presets/gears.pvg",
-    ];
-
-    for file_path in files {
-        let content = fs::read_to_string(file_path)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", file_path, e));
-        
-        let result = compile_pvg_at_time(&content, 1.0);
-        assert!(
-            result.is_ok(),
-            "Preset {} failed compilation: {:?}",
-            file_path,
-            result.err()
-        );
-
-        let draw_list = result.unwrap();
-        assert!(!draw_list.items.is_empty(), "Preset {} generated 0 primitives", file_path);
-    }
+fn print_usage() {
+    println!("\n===============================================================================");
+    println!("             PVG 0.1 TO SVG COMPILER & TRANSPILER CLI                          ");
+    println!("===============================================================================");
+    println!("Usage:");
+    println!("  cargo run --bin pvg_to_svg -- <input.pvg> [output.svg] [--time <seconds>] [--static]");
+    println!("  cargo run --bin pvg_to_svg -- --all");
+    println!();
+    println!("Options:");
+    println!("  -t, --time <sec>    Capture static frame at specific timestamp (default: 0.0)");
+    println!("  --static            Force static export even if file contains animation");
+    println!("  -h, --help          Show this help message");
+    println!();
+    println!("Examples:");
+    println!("  cargo run --bin pvg_to_svg -- presets/dial.pvg");
+    println!("  cargo run --bin pvg_to_svg -- presets/radar.pvg radar.svg");
+    println!("  cargo run --bin pvg_to_svg -- --all");
+    println!("===============================================================================\n");
 }
 
-===== FILE: C:\Users\Vedant\MySpace\BRAINSTROME\CPSVG\cpsvg_win_gui\tests\preset_tests.rs =====
-Below is this file's contents:
-#!/usr/bin/env python3
-"""Generate collections.txt containing file paths and contents for LLM context."""
+fn resolve_file_path(filename: &str) -> Option<PathBuf> {
+    let p = PathBuf::from(filename);
+    if p.exists() {
+        return Some(p);
+    }
+    let search_candidates = [
+        format!("presets/{}", filename),
+        format!("../presets/{}", filename),
+        format!("../../presets/{}", filename),
+    ];
+    for candidate in &search_candidates {
+        let cp = PathBuf::from(candidate);
+        if cp.exists() {
+            return Some(cp);
+        }
+    }
+    None
+}
 
-import os
-import sys
+fn find_presets_dir() -> Option<PathBuf> {
+    let candidates = ["presets", "../presets", "../../presets"];
+    for candidate in &candidates {
+        let p = PathBuf::from(candidate);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    None
+}
 
-# Directories/files to skip
-SKIP_DIRS = {"target", ".git", "node_modules", "__pycache__", ".vscode", ".idea", "build"}
-SKIP_EXT = {".exe", ".dll", ".png", ".jpg", ".ico", ".lock", ".svg"}
-SKIP_FILES = {"LICENSE"}
-MAX_FILE_SIZE = 500_000  # skip files larger than ~500KB
+fn transpile_file(input_path: &Path, output_path: &Path, time: f64, force_static: bool) -> Result<(), String> {
+    let source = fs::read_to_string(input_path)
+        .map_err(|e| format!("Failed to read '{}': {}", input_path.display(), e))?;
 
-OUTPUT = "collections.txt"
+    let start = Instant::now();
+    let is_animated = !force_static && (source.contains("time") || source.contains(" t ") || source.contains("(t)") || source.contains("* t"));
 
+    let svg_content = if is_animated {
+        let total_frames = 30;
+        let loop_dur = 3.0;
+        let mut frames = Vec::with_capacity(total_frames);
 
-def should_skip(path: str, name: str) -> bool:
-    parts = path.replace("\\", "/").split("/")
-    if any(p in SKIP_DIRS for p in parts):
-        return True
-    _, ext = os.path.splitext(name)
-    if ext.lower() in SKIP_EXT or name in SKIP_FILES:
-        return True
-    return False
+        for f in 0..total_frames {
+            let t = (f as f64 / total_frames as f64) * loop_dur;
+            let dl = compile_pvg_at_time(&source, t)
+                .map_err(|e| format!("Runtime Error at t={:.2}: {}", t, e))?;
+            frames.push(dl);
+        }
 
+        emit_animated_svg(&frames, loop_dur)
+    } else {
+        let dl = compile_pvg_at_time(&source, time)
+            .map_err(|e| format!("Runtime Error: {}", e))?;
+        emit_svg(&dl)
+    };
 
-def main():
-    root = os.path.dirname(os.path.abspath(__file__))
-    out_path = os.path.join(root, OUTPUT)
+    fs::write(output_path, svg_content)
+        .map_err(|e| format!("Failed to write '{}': {}", output_path.display(), e))?;
 
-    entries = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        # prune skipped dirs in-place
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        for name in filenames:
-            full = os.path.join(dirpath, name)
-            rel = os.path.relpath(full, root).replace("\\", "/")
-            if should_skip(rel, name) or rel == OUTPUT:
-                continue
-            try:
-                size = os.path.getsize(full)
-                if size > MAX_FILE_SIZE:
-                    print(f"Skipping (too large): {rel}")
-                    continue
-                with open(full, "r", encoding="utf-8", errors="replace") as f:
-                    content = f.read()
-                entries.append((rel, content))
-            except OSError as e:
-                print(f"Skipping (error): {rel}: {e}", file=sys.stderr)
+    let elapsed = start.elapsed().as_micros();
+    let mode_str = if is_animated { "Animated (SMIL 30 FPS)" } else { "Static" };
 
-    with open(out_path, "w", encoding="utf-8") as f:
-        for rel, content in sorted(entries):
-            f.write(f"===== FILE: {full} =====\n")
-            f.write("Below is this file's contents:\n")
-            f.write(content)
-            if not content.endswith("\n"):
-                f.write("\n")
-            f.write("\n")
+    println!(
+        "  ✓ [SUCCESS] {:<20} -> {:<20} ({:<24} | {:.3} ms)",
+        input_path.file_name().unwrap().to_str().unwrap_or(""),
+        output_path.file_name().unwrap().to_str().unwrap_or(""),
+        mode_str,
+        elapsed as f64 / 1000.0
+    );
 
-    total_chars = sum(len(c) for _, c in entries)
-    print(f"Wrote {len(entries)} files ({total_chars:,} chars) to {out_path}")
+    Ok(())
+}
 
+fn main() {
+    let args: Vec<String> = env::args().collect();
 
-if __name__ == "__main__":
-    main()
+    if args.len() < 2 || args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
+        print_usage();
+        return;
+    }
+
+    if args[1] == "--all" {
+        let presets_dir = match find_presets_dir() {
+            Some(d) => d,
+            None => {
+                eprintln!("\n❌ Could not locate the 'presets' directory.\n");
+                return;
+            }
+        };
+
+        println!("\n===============================================================================");
+        println!("              PVG TO SVG BATCH TRANSPILER                                      ");
+        println!("              Scanning: {}                                                     ", presets_dir.display());
+        println!("===============================================================================\n");
+
+        let entries = match fs::read_dir(&presets_dir) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("Failed to read directory: {}", e);
+                return;
+            }
+        };
+
+        let mut count = 0;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("pvg") {
+                let mut out_path = path.clone();
+                out_path.set_extension("svg");
+                if let Err(e) = transpile_file(&path, &out_path, 0.0, false) {
+                    eprintln!("  ✗ Failed '{}': {}", path.display(), e);
+                } else {
+                    count += 1;
+                }
+            }
+        }
+
+        println!("\n-------------------------------------------------------------------------------");
+        println!(" ✨ Successfully transpiled {} file(s) into valid SVG in '{}'!", count, presets_dir.display());
+        println!("===============================================================================\n");
+        return;
+    }
+
+    let input_name = &args[1];
+    let input_path = match resolve_file_path(input_name) {
+        Some(p) => p,
+        None => {
+            eprintln!("\n❌ Could not find file '{}'. Check the filename or path.\n", input_name);
+            return;
+        }
+    };
+
+    let mut output_path = None;
+    let mut time = 0.0;
+    let mut force_static = false;
+
+    let mut i = 2;
+    while i < args.len() {
+        if args[i] == "-t" || args[i] == "--time" {
+            if i + 1 < args.len() {
+                time = args[i + 1].parse::<f64>().unwrap_or(0.0);
+                i += 2;
+                continue;
+            }
+        } else if args[i] == "--static" {
+            force_static = true;
+        } else if output_path.is_none() && !args[i].starts_with('-') {
+            output_path = Some(PathBuf::from(&args[i]));
+        }
+        i += 1;
+    }
+
+    let final_output = output_path.unwrap_or_else(|| {
+        let mut p = PathBuf::from(input_path.file_name().unwrap());
+        p.set_extension("svg");
+        p
+    });
+
+    println!("\n⚡ Transpiling PVG -> SVG...");
+    match transpile_file(&input_path, &final_output, time, force_static) {
+        Ok(_) => {
+            println!("✨ Done! Created output at '{}'.\n", final_output.display());
+        }
+        Err(e) => {
+            eprintln!("\n❌ Transpilation failed: {}\n", e);
+            std::process::exit(1);
+        }
+    }
+}
 
