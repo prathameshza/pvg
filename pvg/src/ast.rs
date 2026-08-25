@@ -42,6 +42,30 @@ impl Color {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOp {
+    Neg,
+    Not,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Pow,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    And,
+    Or,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Number(f64),
@@ -50,8 +74,8 @@ pub enum Expr {
     Color(Color),
     Vec2(Box<Expr>, Box<Expr>),
     Ident(String),
-    Unary(String, Box<Expr>),
-    Binary(Box<Expr>, String, Box<Expr>),
+    Unary(UnaryOp, Box<Expr>),
+    Binary(Box<Expr>, BinaryOp, Box<Expr>),
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
     Call(String, Vec<Expr>),
 }

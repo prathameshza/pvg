@@ -92,36 +92,40 @@ pub struct Token {
 }
 
 pub struct Lexer<'a> {
-    lines: Vec<&'a str>,
-    current_line_idx: usize,
+    source: &'a str,
     indent_stack: Vec<usize>,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
-        let lines: Vec<&'a str> = source.lines().collect();
         Self {
-            lines,
-            current_line_idx: 0,
+            source,
             indent_stack: vec![0],
         }
     }
 
     pub fn tokenize_all(&mut self) -> Result<Vec<Token>, String> {
         let mut tokens = Vec::new();
-        while self.current_line_idx < self.lines.len() {
-            let raw_line = self.lines[self.current_line_idx];
-            let line_num = self.current_line_idx + 1;
-            self.current_line_idx += 1;
+        let mut line_num = 0;
 
-            let trimmed = raw_line.trim_start();
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                continue;
+        for raw_line in self.source.lines() {
+            line_num += 1;
+
+            let bytes = raw_line.as_bytes();
+            let mut spaces = 0;
+            while spaces < bytes.len() && bytes[spaces] == b' ' {
+                spaces += 1;
             }
 
-            let spaces = raw_line.chars().take_while(|c| *c == ' ').count();
-            if raw_line.chars().any(|c| c == '\t') {
-                return Err(format!("Line {}: Tabs are forbidden. Use 2 spaces for indentation.", line_num));
+            if spaces < bytes.len() && bytes[spaces] == b'\t' {
+                return Err(format!(
+                    "Line {}: Tabs are forbidden. Use 2 spaces for indentation.",
+                    line_num
+                ));
+            }
+
+            if spaces == bytes.len() || bytes[spaces] == b'#' {
+                continue;
             }
 
             let current_indent = *self.indent_stack.last().unwrap();
@@ -150,8 +154,7 @@ impl<'a> Lexer<'a> {
             }
 
             let content = &raw_line[spaces..];
-            let line_tokens = self.tokenize_line(content, line_num, spaces + 1)?;
-            tokens.extend(line_tokens);
+            self.tokenize_line(content, line_num, spaces + 1, &mut tokens)?;
             tokens.push(Token {
                 kind: TokenKind::Newline,
                 line: line_num,
@@ -163,51 +166,56 @@ impl<'a> Lexer<'a> {
             self.indent_stack.pop();
             tokens.push(Token {
                 kind: TokenKind::Dedent,
-                line: self.lines.len().max(1),
+                line: line_num.max(1),
                 col: 1,
             });
         }
 
         tokens.push(Token {
             kind: TokenKind::Eof,
-            line: self.lines.len().max(1),
+            line: line_num.max(1),
             col: 1,
         });
 
         Ok(tokens)
     }
 
-    fn tokenize_line(&self, text: &str, line_num: usize, col_offset: usize) -> Result<Vec<Token>, String> {
-        let mut tokens = Vec::new();
-        let chars: Vec<char> = text.chars().collect();
-        let len = chars.len();
+    fn tokenize_line(
+        &self,
+        text: &str,
+        line_num: usize,
+        col_offset: usize,
+        tokens: &mut Vec<Token>,
+    ) -> Result<(), String> {
+        let bytes = text.as_bytes();
+        let len = bytes.len();
         let mut i = 0;
 
         while i < len {
-            let c = chars[i];
-            if c.is_whitespace() {
+            let b = bytes[i];
+            if b == b' ' || b == b'\t' || b == b'\r' {
                 i += 1;
                 continue;
             }
 
             let col = col_offset + i;
 
-            if c == '#' {
+            if b == b'#' {
                 let mut hex_end = i + 1;
-                while hex_end < len && chars[hex_end].is_ascii_hexdigit() {
+                while hex_end < len && bytes[hex_end].is_ascii_hexdigit() {
                     hex_end += 1;
                 }
                 let hex_len = hex_end - (i + 1);
                 if hex_len == 3 || hex_len == 6 || hex_len == 8 {
                     let is_delim = hex_end == len
-                        || chars[hex_end].is_whitespace()
-                        || chars[hex_end] == ']'
-                        || chars[hex_end] == ')'
-                        || chars[hex_end] == ','
-                        || chars[hex_end] == ':';
+                        || bytes[hex_end].is_ascii_whitespace()
+                        || bytes[hex_end] == b']'
+                        || bytes[hex_end] == b')'
+                        || bytes[hex_end] == b','
+                        || bytes[hex_end] == b':';
                     if is_delim {
-                        let hex_str: String = chars[i..hex_end].iter().collect();
-                        if let Some(col_val) = Color::from_hex(&hex_str) {
+                        let hex_str = std::str::from_utf8(&bytes[i..hex_end]).unwrap();
+                        if let Some(col_val) = Color::from_hex(hex_str) {
                             tokens.push(Token {
                                 kind: TokenKind::Color(col_val),
                                 line: line_num,
@@ -221,17 +229,17 @@ impl<'a> Lexer<'a> {
                 break;
             }
 
-            if c == '[' { tokens.push(Token { kind: TokenKind::LBracket, line: line_num, col }); i += 1; continue; }
-            if c == ']' { tokens.push(Token { kind: TokenKind::RBracket, line: line_num, col }); i += 1; continue; }
-            if c == '(' { tokens.push(Token { kind: TokenKind::LParen, line: line_num, col }); i += 1; continue; }
-            if c == ')' { tokens.push(Token { kind: TokenKind::RParen, line: line_num, col }); i += 1; continue; }
-            if c == ',' { tokens.push(Token { kind: TokenKind::Comma, line: line_num, col }); i += 1; continue; }
-            if c == '?' { tokens.push(Token { kind: TokenKind::Question, line: line_num, col }); i += 1; continue; }
-            if c == ':' { tokens.push(Token { kind: TokenKind::Colon, line: line_num, col }); i += 1; continue; }
-            if c == '^' { tokens.push(Token { kind: TokenKind::Caret, line: line_num, col }); i += 1; continue; }
+            if b == b'[' { tokens.push(Token { kind: TokenKind::LBracket, line: line_num, col }); i += 1; continue; }
+            if b == b']' { tokens.push(Token { kind: TokenKind::RBracket, line: line_num, col }); i += 1; continue; }
+            if b == b'(' { tokens.push(Token { kind: TokenKind::LParen, line: line_num, col }); i += 1; continue; }
+            if b == b')' { tokens.push(Token { kind: TokenKind::RParen, line: line_num, col }); i += 1; continue; }
+            if b == b',' { tokens.push(Token { kind: TokenKind::Comma, line: line_num, col }); i += 1; continue; }
+            if b == b'?' { tokens.push(Token { kind: TokenKind::Question, line: line_num, col }); i += 1; continue; }
+            if b == b':' { tokens.push(Token { kind: TokenKind::Colon, line: line_num, col }); i += 1; continue; }
+            if b == b'^' { tokens.push(Token { kind: TokenKind::Caret, line: line_num, col }); i += 1; continue; }
 
-            if c == '=' {
-                if i + 1 < len && chars[i + 1] == '=' {
+            if b == b'=' {
+                if i + 1 < len && bytes[i + 1] == b'=' {
                     tokens.push(Token { kind: TokenKind::EqualEqual, line: line_num, col });
                     i += 2;
                 } else {
@@ -241,8 +249,8 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if c == '!' {
-                if i + 1 < len && chars[i + 1] == '=' {
+            if b == b'!' {
+                if i + 1 < len && bytes[i + 1] == b'=' {
                     tokens.push(Token { kind: TokenKind::NotEqual, line: line_num, col });
                     i += 2;
                 } else {
@@ -252,8 +260,8 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if c == '<' {
-                if i + 1 < len && chars[i + 1] == '=' {
+            if b == b'<' {
+                if i + 1 < len && bytes[i + 1] == b'=' {
                     tokens.push(Token { kind: TokenKind::LessEqual, line: line_num, col });
                     i += 2;
                 } else {
@@ -263,8 +271,8 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if c == '>' {
-                if i + 1 < len && chars[i + 1] == '=' {
+            if b == b'>' {
+                if i + 1 < len && bytes[i + 1] == b'=' {
                     tokens.push(Token { kind: TokenKind::GreaterEqual, line: line_num, col });
                     i += 2;
                 } else {
@@ -274,44 +282,44 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if c == '&' && i + 1 < len && chars[i + 1] == '&' {
+            if b == b'&' && i + 1 < len && bytes[i + 1] == b'&' {
                 tokens.push(Token { kind: TokenKind::And, line: line_num, col });
                 i += 2;
                 continue;
             }
-            if c == '|' && i + 1 < len && chars[i + 1] == '|' {
+            if b == b'|' && i + 1 < len && bytes[i + 1] == b'|' {
                 tokens.push(Token { kind: TokenKind::Or, line: line_num, col });
                 i += 2;
                 continue;
             }
 
-            if c == '+' { tokens.push(Token { kind: TokenKind::Plus, line: line_num, col }); i += 1; continue; }
-            if c == '-' { tokens.push(Token { kind: TokenKind::Minus, line: line_num, col }); i += 1; continue; }
-            if c == '*' { tokens.push(Token { kind: TokenKind::Star, line: line_num, col }); i += 1; continue; }
-            if c == '/' { tokens.push(Token { kind: TokenKind::Slash, line: line_num, col }); i += 1; continue; }
-            if c == '%' { tokens.push(Token { kind: TokenKind::Percent, line: line_num, col }); i += 1; continue; }
+            if b == b'+' { tokens.push(Token { kind: TokenKind::Plus, line: line_num, col }); i += 1; continue; }
+            if b == b'-' { tokens.push(Token { kind: TokenKind::Minus, line: line_num, col }); i += 1; continue; }
+            if b == b'*' { tokens.push(Token { kind: TokenKind::Star, line: line_num, col }); i += 1; continue; }
+            if b == b'/' { tokens.push(Token { kind: TokenKind::Slash, line: line_num, col }); i += 1; continue; }
+            if b == b'%' { tokens.push(Token { kind: TokenKind::Percent, line: line_num, col }); i += 1; continue; }
 
-            if c == '"' {
+            if b == b'"' {
                 i += 1;
                 let mut s = String::new();
                 let mut closed = false;
                 while i < len {
-                    if chars[i] == '\\' && i + 1 < len {
-                        match chars[i + 1] {
-                            'n' => s.push('\n'),
-                            't' => s.push('\t'),
-                            'r' => s.push('\r'),
-                            '\"' => s.push('\"'),
-                            '\\' => s.push('\\'),
-                            other => s.push(other),
+                    if bytes[i] == b'\\' && i + 1 < len {
+                        match bytes[i + 1] {
+                            b'n' => s.push('\n'),
+                            b't' => s.push('\t'),
+                            b'r' => s.push('\r'),
+                            b'\"' => s.push('\"'),
+                            b'\\' => s.push('\\'),
+                            other => s.push(other as char),
                         }
                         i += 2;
-                    } else if chars[i] == '"' {
+                    } else if bytes[i] == b'"' {
                         closed = true;
                         i += 1;
                         break;
                     } else {
-                        s.push(chars[i]);
+                        s.push(bytes[i] as char);
                         i += 1;
                     }
                 }
@@ -322,22 +330,24 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if c.is_ascii_digit() || (c == '.' && i + 1 < len && chars[i + 1].is_ascii_digit()) {
+            if b.is_ascii_digit() || (b == b'.' && i + 1 < len && bytes[i + 1].is_ascii_digit()) {
                 let start = i;
                 let mut has_dot = false;
-                while i < len && (chars[i].is_ascii_digit() || (!has_dot && chars[i] == '.')) {
-                    if chars[i] == '.' {
+                while i < len && (bytes[i].is_ascii_digit() || (!has_dot && bytes[i] == b'.')) {
+                    if bytes[i] == b'.' {
                         has_dot = true;
                     }
                     i += 1;
                 }
-                let num_str: String = chars[start..i].iter().collect();
-                let mut val = num_str.parse::<f64>().map_err(|e| format!("Line {}: {}", line_num, e))?;
+                let num_str = std::str::from_utf8(&bytes[start..i]).unwrap();
+                let mut val = num_str
+                    .parse::<f64>()
+                    .map_err(|e| format!("Line {}: {}", line_num, e))?;
 
-                if i + 3 <= len && &chars[i..i + 3] == &['d', 'e', 'g'] {
+                if i + 3 <= len && &bytes[i..i + 3] == b"deg" {
                     val = val.to_radians();
                     i += 3;
-                } else if i + 3 <= len && &chars[i..i + 3] == &['r', 'a', 'd'] {
+                } else if i + 3 <= len && &bytes[i..i + 3] == b"rad" {
                     i += 3;
                 }
 
@@ -345,13 +355,13 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if c.is_ascii_alphabetic() || c == '_' {
+            if b.is_ascii_alphabetic() || b == b'_' {
                 let start = i;
-                while i < len && (chars[i].is_ascii_alphanumeric() || chars[i] == '_' || chars[i] == '-') {
+                while i < len && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-') {
                     i += 1;
                 }
-                let ident: String = chars[start..i].iter().collect();
-                let kind = match ident.as_str() {
+                let ident = std::str::from_utf8(&bytes[start..i]).unwrap();
+                let kind = match ident {
                     "PVG" | "CPSVG" => TokenKind::Pvg,
                     "canvas" => TokenKind::Canvas,
                     "background" => TokenKind::Background,
@@ -403,15 +413,18 @@ impl<'a> Lexer<'a> {
                     "none" | "transparent" => TokenKind::Color(Color::None),
                     "true" => TokenKind::Ident("true".into()),
                     "false" => TokenKind::Ident("false".into()),
-                    _ => TokenKind::Ident(ident),
+                    _ => TokenKind::Ident(ident.to_string()),
                 };
                 tokens.push(Token { kind, line: line_num, col });
                 continue;
             }
 
-            return Err(format!("Line {}, Col {}: Unexpected character '{}'.", line_num, col, c));
+            return Err(format!(
+                "Line {}, Col {}: Unexpected character '{}'.",
+                line_num, col, b as char
+            ));
         }
 
-        Ok(tokens)
+        Ok(())
     }
 }

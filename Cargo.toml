@@ -3,5 +3,6 @@ members = [
     "pvg",
     "transpilers",
     "pvg_win_gui",
+    "benchmark",
 ]
 resolver = "2"

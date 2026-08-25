@@ -97,8 +97,9 @@ impl Evaluator {
     }
 
     pub fn evaluate_document(mut self, doc: &Document) -> Result<DrawList, String> {
+        let mut locals = HashMap::new();
         for stmt in &doc.statements {
-            self.eval_stmt(stmt, &mut HashMap::new())?;
+            self.eval_stmt(stmt, &mut locals)?;
         }
 
         Ok(DrawList {
@@ -137,8 +138,10 @@ impl Evaluator {
                 let end_val = self.eval_expr(to, locals)?.as_f64()?;
                 let step_val = if let Some(s) = step {
                     self.eval_expr(s, locals)?.as_f64()?
+                } else if end_val >= start_val {
+                    1.0
                 } else {
-                    if end_val >= start_val { 1.0 } else { -1.0 }
+                    -1.0
                 };
 
                 if step_val == 0.0 {
@@ -281,39 +284,37 @@ impl Evaluator {
 
                 let trans = self.current_transform();
                 let mut draw_commands = Vec::new();
-                let mut path_locals = locals.clone();
 
                 for cmd in &p.commands {
                     match cmd {
                         PathCommand::Set(name, expr) => {
-                            let val = self.eval_expr(expr, &path_locals)?;
-                            path_locals.insert(name.clone(), val.clone());
+                            let val = self.eval_expr(expr, locals)?;
                             locals.insert(name.clone(), val);
                         }
                         PathCommand::Start(e) => {
-                            let pt = trans.transform_point(self.eval_expr(e, &path_locals)?.as_vec2()?);
+                            let pt = trans.transform_point(self.eval_expr(e, locals)?.as_vec2()?);
                             draw_commands.push(DrawPathCommand::Start(pt));
                         }
                         PathCommand::Line(e) => {
-                            let pt = trans.transform_point(self.eval_expr(e, &path_locals)?.as_vec2()?);
+                            let pt = trans.transform_point(self.eval_expr(e, locals)?.as_vec2()?);
                             draw_commands.push(DrawPathCommand::Line(pt));
                         }
                         PathCommand::Quad(cp, ep) => {
-                            let cp_pt = trans.transform_point(self.eval_expr(cp, &path_locals)?.as_vec2()?);
-                            let ep_pt = trans.transform_point(self.eval_expr(ep, &path_locals)?.as_vec2()?);
+                            let cp_pt = trans.transform_point(self.eval_expr(cp, locals)?.as_vec2()?);
+                            let ep_pt = trans.transform_point(self.eval_expr(ep, locals)?.as_vec2()?);
                             draw_commands.push(DrawPathCommand::Quad { cp: cp_pt, ep: ep_pt });
                         }
                         PathCommand::Curve(c1, c2, ep) => {
-                            let c1_pt = trans.transform_point(self.eval_expr(c1, &path_locals)?.as_vec2()?);
-                            let c2_pt = trans.transform_point(self.eval_expr(c2, &path_locals)?.as_vec2()?);
-                            let ep_pt = trans.transform_point(self.eval_expr(ep, &path_locals)?.as_vec2()?);
+                            let c1_pt = trans.transform_point(self.eval_expr(c1, locals)?.as_vec2()?);
+                            let c2_pt = trans.transform_point(self.eval_expr(c2, locals)?.as_vec2()?);
+                            let ep_pt = trans.transform_point(self.eval_expr(ep, locals)?.as_vec2()?);
                             draw_commands.push(DrawPathCommand::Curve { c1: c1_pt, c2: c2_pt, ep: ep_pt });
                         }
                         PathCommand::Arc { center, radius, start_angle, end_angle } => {
-                            let c_pt = trans.transform_point(self.eval_expr(center, &path_locals)?.as_vec2()?);
-                            let r = self.eval_expr(radius, &path_locals)?.as_f64()?;
-                            let sa = self.eval_expr(start_angle, &path_locals)?.as_f64()?;
-                            let ea = self.eval_expr(end_angle, &path_locals)?.as_f64()?;
+                            let c_pt = trans.transform_point(self.eval_expr(center, locals)?.as_vec2()?);
+                            let r = self.eval_expr(radius, locals)?.as_f64()?;
+                            let sa = self.eval_expr(start_angle, locals)?.as_f64()?;
+                            let ea = self.eval_expr(end_angle, locals)?.as_f64()?;
                             draw_commands.push(DrawPathCommand::Arc { center: c_pt, radius: r, start_angle: sa, end_angle: ea });
                         }
                         PathCommand::Close => {
@@ -407,20 +408,19 @@ impl Evaluator {
             }
             Expr::Unary(op, inner) => {
                 let val = self.eval_expr(inner, locals)?;
-                match op.as_str() {
-                    "-" => Ok(Value::Number(-val.as_f64()?)),
-                    "not" => Ok(Value::Bool(!val.is_truthy())),
-                    _ => Err(format!("Unknown unary operator '{}'", op)),
+                match op {
+                    UnaryOp::Neg => Ok(Value::Number(-val.as_f64()?)),
+                    UnaryOp::Not => Ok(Value::Bool(!val.is_truthy())),
                 }
             }
             Expr::Binary(left, op, right) => {
                 let l_val = self.eval_expr(left, locals)?;
                 let r_val = self.eval_expr(right, locals)?;
-                match op.as_str() {
-                    "+" => Ok(Value::Number(l_val.as_f64()? + r_val.as_f64()?)),
-                    "-" => Ok(Value::Number(l_val.as_f64()? - r_val.as_f64()?)),
-                    "*" => Ok(Value::Number(l_val.as_f64()? * r_val.as_f64()?)),
-                    "/" => {
+                match op {
+                    BinaryOp::Add => Ok(Value::Number(l_val.as_f64()? + r_val.as_f64()?)),
+                    BinaryOp::Sub => Ok(Value::Number(l_val.as_f64()? - r_val.as_f64()?)),
+                    BinaryOp::Mul => Ok(Value::Number(l_val.as_f64()? * r_val.as_f64()?)),
+                    BinaryOp::Div => {
                         let denom = r_val.as_f64()?;
                         if denom == 0.0 {
                             Ok(Value::Number(0.0))
@@ -428,17 +428,16 @@ impl Evaluator {
                             Ok(Value::Number(l_val.as_f64()? / denom))
                         }
                     }
-                    "%" => Ok(Value::Number(l_val.as_f64()? % r_val.as_f64()?)),
-                    "^" => Ok(Value::Number(l_val.as_f64()?.powf(r_val.as_f64()?))),
-                    "==" => Ok(Value::Bool(l_val.as_f64()? == r_val.as_f64()?)),
-                    "!=" => Ok(Value::Bool(l_val.as_f64()? != r_val.as_f64()?)),
-                    "<" => Ok(Value::Bool(l_val.as_f64()? < r_val.as_f64()?)),
-                    "<=" => Ok(Value::Bool(l_val.as_f64()? <= r_val.as_f64()?)),
-                    ">" => Ok(Value::Bool(l_val.as_f64()? > r_val.as_f64()?)),
-                    ">=" => Ok(Value::Bool(l_val.as_f64()? >= r_val.as_f64()?)),
-                    "and" => Ok(Value::Bool(l_val.is_truthy() && r_val.is_truthy())),
-                    "or" => Ok(Value::Bool(l_val.is_truthy() || r_val.is_truthy())),
-                    _ => Err(format!("Unknown binary operator '{}'", op)),
+                    BinaryOp::Mod => Ok(Value::Number(l_val.as_f64()? % r_val.as_f64()?)),
+                    BinaryOp::Pow => Ok(Value::Number(l_val.as_f64()?.powf(r_val.as_f64()?))),
+                    BinaryOp::Eq => Ok(Value::Bool(l_val.as_f64()? == r_val.as_f64()?)),
+                    BinaryOp::Ne => Ok(Value::Bool(l_val.as_f64()? != r_val.as_f64()?)),
+                    BinaryOp::Lt => Ok(Value::Bool(l_val.as_f64()? < r_val.as_f64()?)),
+                    BinaryOp::Le => Ok(Value::Bool(l_val.as_f64()? <= r_val.as_f64()?)),
+                    BinaryOp::Gt => Ok(Value::Bool(l_val.as_f64()? > r_val.as_f64()?)),
+                    BinaryOp::Ge => Ok(Value::Bool(l_val.as_f64()? >= r_val.as_f64()?)),
+                    BinaryOp::And => Ok(Value::Bool(l_val.is_truthy() && r_val.is_truthy())),
+                    BinaryOp::Or => Ok(Value::Bool(l_val.is_truthy() || r_val.is_truthy())),
                 }
             }
             Expr::Ternary(cond, t_expr, f_expr) => {

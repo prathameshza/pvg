@@ -544,7 +544,7 @@ impl Parser {
         let mut left = self.parse_logical_and()?;
         while self.match_kind(&TokenKind::Or) {
             let right = self.parse_logical_and()?;
-            left = Expr::Binary(Box::new(left), "or".into(), Box::new(right));
+            left = Expr::Binary(Box::new(left), BinaryOp::Or, Box::new(right));
         }
         Ok(left)
     }
@@ -553,7 +553,7 @@ impl Parser {
         let mut left = self.parse_equality()?;
         while self.match_kind(&TokenKind::And) {
             let right = self.parse_equality()?;
-            left = Expr::Binary(Box::new(left), "and".into(), Box::new(right));
+            left = Expr::Binary(Box::new(left), BinaryOp::And, Box::new(right));
         }
         Ok(left)
     }
@@ -562,12 +562,12 @@ impl Parser {
         let mut left = self.parse_comparison()?;
         while let TokenKind::EqualEqual | TokenKind::NotEqual = self.peek_kind() {
             let op = match self.advance().kind {
-                TokenKind::EqualEqual => "==",
-                TokenKind::NotEqual => "!=",
+                TokenKind::EqualEqual => BinaryOp::Eq,
+                TokenKind::NotEqual => BinaryOp::Ne,
                 _ => unreachable!(),
             };
             let right = self.parse_comparison()?;
-            left = Expr::Binary(Box::new(left), op.into(), Box::new(right));
+            left = Expr::Binary(Box::new(left), op, Box::new(right));
         }
         Ok(left)
     }
@@ -576,14 +576,14 @@ impl Parser {
         let mut left = self.parse_additive()?;
         while let TokenKind::Less | TokenKind::LessEqual | TokenKind::Greater | TokenKind::GreaterEqual = self.peek_kind() {
             let op = match self.advance().kind {
-                TokenKind::Less => "<",
-                TokenKind::LessEqual => "<=",
-                TokenKind::Greater => ">",
-                TokenKind::GreaterEqual => ">=",
+                TokenKind::Less => BinaryOp::Lt,
+                TokenKind::LessEqual => BinaryOp::Le,
+                TokenKind::Greater => BinaryOp::Gt,
+                TokenKind::GreaterEqual => BinaryOp::Ge,
                 _ => unreachable!(),
             };
             let right = self.parse_additive()?;
-            left = Expr::Binary(Box::new(left), op.into(), Box::new(right));
+            left = Expr::Binary(Box::new(left), op, Box::new(right));
         }
         Ok(left)
     }
@@ -592,12 +592,12 @@ impl Parser {
         let mut left = self.parse_multiplicative()?;
         while let TokenKind::Plus | TokenKind::Minus = self.peek_kind() {
             let op = match self.advance().kind {
-                TokenKind::Plus => "+",
-                TokenKind::Minus => "-",
+                TokenKind::Plus => BinaryOp::Add,
+                TokenKind::Minus => BinaryOp::Sub,
                 _ => unreachable!(),
             };
             let right = self.parse_multiplicative()?;
-            left = Expr::Binary(Box::new(left), op.into(), Box::new(right));
+            left = Expr::Binary(Box::new(left), op, Box::new(right));
         }
         Ok(left)
     }
@@ -606,13 +606,13 @@ impl Parser {
         let mut left = self.parse_power()?;
         while let TokenKind::Star | TokenKind::Slash | TokenKind::Percent = self.peek_kind() {
             let op = match self.advance().kind {
-                TokenKind::Star => "*",
-                TokenKind::Slash => "/",
-                TokenKind::Percent => "%",
+                TokenKind::Star => BinaryOp::Mul,
+                TokenKind::Slash => BinaryOp::Div,
+                TokenKind::Percent => BinaryOp::Mod,
                 _ => unreachable!(),
             };
             let right = self.parse_power()?;
-            left = Expr::Binary(Box::new(left), op.into(), Box::new(right));
+            left = Expr::Binary(Box::new(left), op, Box::new(right));
         }
         Ok(left)
     }
@@ -621,7 +621,7 @@ impl Parser {
         let left = self.parse_unary()?;
         if self.match_kind(&TokenKind::Caret) {
             let right = self.parse_power()?;
-            Ok(Expr::Binary(Box::new(left), "^".into(), Box::new(right)))
+            Ok(Expr::Binary(Box::new(left), BinaryOp::Pow, Box::new(right)))
         } else {
             Ok(left)
         }
@@ -630,10 +630,10 @@ impl Parser {
     fn parse_unary(&mut self) -> Result<Expr, String> {
         if self.match_kind(&TokenKind::Minus) {
             let expr = self.parse_unary()?;
-            Ok(Expr::Unary("-".into(), Box::new(expr)))
+            Ok(Expr::Unary(UnaryOp::Neg, Box::new(expr)))
         } else if self.match_kind(&TokenKind::Not) {
             let expr = self.parse_unary()?;
-            Ok(Expr::Unary("not".into(), Box::new(expr)))
+            Ok(Expr::Unary(UnaryOp::Not, Box::new(expr)))
         } else {
             self.parse_primary()
         }

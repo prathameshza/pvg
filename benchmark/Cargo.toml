@@ -1,0 +1,13 @@
+[package]
+name = "pvg_benchmark"
+version = "0.1.0"
+edition = "2021"
+description = "Comprehensive Memory, Latency, CPU Throughput and Stress Benchmark Suite for PVG"
+
+[[bin]]
+name = "pvg_benchmark"
+path = "src/main.rs"
+
+[dependencies]
+pvg = { path = "../pvg" }
+tiny-skia = "0.11"
