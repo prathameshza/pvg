@@ -12,13 +12,13 @@
   
   <link rel="stylesheet" href="style.css">
   
-  <!-- PVG Web Component Engine & Reference Presets -->
-  <script src="../pvg_web_gui/pvg.js"></script>
-  <script src="../pvg_web_gui/presets.js"></script>
+  <!-- Loads the unmodified PVG engine and presets from docs/pvg_web_gui -->
+  <script src="pvg_web_gui/pvg.js"></script>
+  <script src="pvg_web_gui/presets.js"></script>
 </head>
 <body>
 
-  <!-- Ambient Glow Elements -->
+  <!-- Ambient Background Glow Elements -->
   <div class="ambient-glow glow-cyan"></div>
   <div class="ambient-glow glow-pink"></div>
 
@@ -41,7 +41,7 @@
 
       <div class="nav-actions">
         <!-- Direct Pointer to the Web GUI -->
-        <a href="../pvg_web_gui/index.html" class="btn btn-primary nav-cta">
+        <a href="pvg_web_gui/index.html" class="btn btn-primary nav-cta">
           <span>Launch Web Studio</span>
           <span class="btn-arrow">↗</span>
         </a>
@@ -68,7 +68,7 @@
 
         <div class="hero-cta-group">
           <!-- Primary Navigation to Web GUI Studio -->
-          <a href="../pvg_web_gui/index.html" class="btn btn-primary btn-lg">
+          <a href="pvg_web_gui/index.html" class="btn btn-primary btn-lg">
             <span>⚡ Open Web Studio (Live IDE)</span>
             <span class="btn-arrow">↗</span>
           </a>
@@ -115,7 +115,7 @@
           </div>
           <div class="window-footer">
             <span class="footer-tag">Custom Element: &lt;pvg-view&gt;</span>
-            <a href="../pvg_web_gui/index.html" class="footer-link">Edit in Studio ↗</a>
+            <a href="pvg_web_gui/index.html" class="footer-link">Edit in Studio ↗</a>
           </div>
         </div>
       </div>
@@ -179,7 +179,7 @@
             <h2 class="section-title">Interactive Live Playground</h2>
             <p class="section-subtitle">Select any reference preset to watch the PVG runtime compile and evaluate in real time.</p>
           </div>
-          <a href="../pvg_web_gui/index.html" class="btn btn-primary">
+          <a href="pvg_web_gui/index.html" class="btn btn-primary">
             <span>Open Full Code Studio</span>
             <span class="btn-arrow">↗</span>
           </a>
@@ -187,9 +187,7 @@
       </div>
 
       <!-- Preset Selector Tabs -->
-      <div class="preset-tabs" id="preset-tab-container">
-        <!-- Injected via JavaScript -->
-      </div>
+      <div class="preset-tabs" id="preset-tab-container"></div>
 
       <div class="demo-split">
         <!-- Code View Pane -->
@@ -236,7 +234,7 @@
             <h4>1. Standard HTML Integration</h4>
           </div>
           <pre class="embed-code"><code>&lt;!-- 1. Include PVG Runtime --&gt;
-&lt;script src="pvg.js"&gt;&lt;/script&gt;
+&lt;script src="pvg_web_gui/pvg.js"&gt;&lt;/script&gt;
 
 &lt;!-- 2. Drop the Component with inline PVG script --&gt;
 &lt;pvg-view autoplay interactive render="canvas"&gt;
@@ -418,14 +416,14 @@
     </div>
   </section>
 
-  <!-- Call to Action Banner -->
+  <!-- Call to Action Section -->
   <section class="section cta-section">
     <div class="container">
       <div class="cta-card">
         <h2 class="cta-title">Ready to build with Procedural Vector Graphics?</h2>
         <p class="cta-subtitle">Jump straight into the web-based IDE with real-time compilation, or integrate PVG into your Rust projects.</p>
         <div class="cta-actions">
-          <a href="../pvg_web_gui/index.html" class="btn btn-primary btn-lg">
+          <a href="pvg_web_gui/index.html" class="btn btn-primary btn-lg">
             <span>Launch Web Studio</span>
             <span class="btn-arrow">↗</span>
           </a>
@@ -452,7 +450,7 @@
       <div class="footer-links-group">
         <div class="footer-col">
           <h5>Navigation</h5>
-          <a href="../pvg_web_gui/index.html">Web Studio (IDE)</a>
+          <a href="pvg_web_gui/index.html">Web Studio (IDE)</a>
           <a href="#features">Features</a>
           <a href="#live-demo">Playground</a>
           <a href="#specs">Language Spec</a>
@@ -460,16 +458,15 @@
 
         <div class="footer-col">
           <h5>Ecosystem</h5>
-          <a href="../pvg_web_gui/index.html">Web Component</a>
+          <a href="pvg_web_gui/index.html">Web Component</a>
           <a href="#benchmarks">Benchmark Suite</a>
-          <a href="../pvg_win_gui/README.md">Native Windows Studio</a>
-          <a href="../transpilers/Cargo.toml">CLI Transpilers</a>
+          <a href="#specs">Architecture Specs</a>
         </div>
       </div>
     </div>
 
     <div class="container footer-bottom">
-      <p> PVG Open Source Project. Zero GPU Dependency. Sub-50KB Memory Footprint.</p>
+      <p>© PVG Open Source Project. Zero GPU Dependency. Sub-50KB Memory Footprint.</p>
     </div>
   </footer>
 

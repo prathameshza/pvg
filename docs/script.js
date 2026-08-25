@@ -15,8 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnResetDemoTime = document.getElementById('btn-reset-demo-time');
   const btnCopyCode = document.getElementById('btn-copy-code');
 
-  // 1. Fallback Presets if presets.js is not loaded
-  const presets = window.PVG_PRESETS || [
+  // 1. Reference Presets from docs/pvg_web_gui/presets.js or fallback
+  const presets = window.PVG_PRESETS || window.PVG?.presets || [
     {
       name: '🌀 Radar Scanner',
       code: `PVG 0.1\ncanvas 600 600\n  background #080a0f\n\nset cx = 300\nset cy = 300\nset sweep = time * 2.0\n\nfor r_idx from 1 to 4\n  circle\n    center [cx, cy]\n    radius r_idx * 55\n    fill none\n    stroke #103b42\n    width 1.5\n\nfor trail from 0 to 20\n  set a = sweep - trail * 0.035\n  line\n    from [cx, cy]\n    to   [cx + 230 * cos(a), cy + 230 * sin(a)]\n    stroke #00ffcc\n    width 2\n    opacity (1.0 - trail / 20) * 0.45\n\nline\n  from [cx, cy]\n  to   [cx + 230 * cos(sweep), cy + 230 * sin(sweep)]\n  stroke #ffffff\n  width 2.5\n\ncircle\n  center [cx, cy]\n  radius 8\n  fill #00ffcc`
@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let currentPresetIndex = 0;
 
-  // 2. Initialize Hero Viewport with the first preset
+  // 2. Initialize Hero Viewport with first preset
   if (heroView && presets.length > 0) {
     heroView.code = presets[0].code;
     heroView.play();
