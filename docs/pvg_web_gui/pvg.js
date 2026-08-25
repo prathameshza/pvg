@@ -5,6 +5,50 @@
  */
 
 // ==========================================
+// 0. INDENTATION NORMALIZER (DEDENT HELPER)
+// ==========================================
+
+function dedentCode(text) {
+  if (!text) return '';
+  const lines = text.split(/\r?\n/);
+  while (lines.length > 0 && lines[0].trim().length === 0) {
+    lines.shift();
+  }
+  while (lines.length > 0 && lines[lines.length - 1].trim().length === 0) {
+    lines.pop();
+  }
+  if (lines.length === 0) return '';
+
+  let minIndent = Infinity;
+  for (const line of lines) {
+    if (line.trim().length === 0) continue;
+    const match = line.match(/^( +)/);
+    const indent = match ? match[1].length : 0;
+    if (indent < minIndent) {
+      minIndent = indent;
+    }
+  }
+
+  if (minIndent === Infinity || minIndent === 0) {
+    return lines.join('\n');
+  }
+
+  return lines.map(line => {
+    if (line.trim().length === 0) return '';
+    return line.startsWith(' '.repeat(minIndent)) ? line.slice(minIndent) : line.trimStart();
+  }).join('\n');
+}
+
+function detectLoopDuration(source) {
+  if (!source) return 2.0;
+  const match = source.match(/time\s*%\s*([0-9]+(?:\.[0-9]+)?)/);
+  if (match && parseFloat(match[1]) > 0) {
+    return parseFloat(match[1]);
+  }
+  return 2.0; // Standard 2.0s loop cycle
+}
+
+// ==========================================
 // 1. AST & COLOR PRIMITIVES
 // ==========================================
 
@@ -224,8 +268,8 @@ class Token {
 
 class Lexer {
   constructor(source) {
-    this.source = source;
-    this.lines = source.split(/\r?\n/);
+    this.source = dedentCode(source);
+    this.lines = this.source.split(/\r?\n/);
     this.currentLineIdx = 0;
     this.indentStack = [0];
   }
@@ -1542,7 +1586,8 @@ class Evaluator {
 // ==========================================
 
 function compilePVG(source, time = 0.0) {
-  const lexer = new Lexer(source);
+  const cleanSource = dedentCode(source);
+  const lexer = new Lexer(cleanSource);
   const tokens = lexer.tokenizeAll();
   const parser = new Parser(tokens);
   const ast = parser.parseDocument();
@@ -1660,45 +1705,40 @@ function renderDrawListToCanvas(ctx, drawList, originX, originY, zoom) {
   ctx.restore();
 }
 
-function exportToSvgString(drawList) {
-  let svg = `<svg viewBox="0 0 ${drawList.canvasWidth} ${drawList.canvasHeight}" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">\n`;
-
-  if (drawList.background && !drawList.background.isNone) {
-    svg += `  <rect width="100%" height="100%" fill="${drawList.background.toSvgString()}" />\n`;
+function formatSvgStyle(s) {
+  let attrs = `fill="${s.fill.toSvgString()}"`;
+  if (!s.stroke.isNone && s.width > 0) {
+    attrs += ` stroke="${s.stroke.toSvgString()}" stroke-width="${s.width.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"`;
+  } else {
+    attrs += ` stroke="none"`;
   }
+  if (Math.abs(s.opacity - 1.0) > 0.001) {
+    attrs += ` opacity="${s.opacity.toFixed(3)}"`;
+  }
+  return attrs;
+}
 
-  const formatStyle = (s) => {
-    let attrs = `fill="${s.fill.toSvgString()}"`;
-    if (!s.stroke.isNone && s.width > 0) {
-      attrs += ` stroke="${s.stroke.toSvgString()}" stroke-width="${s.width.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"`;
-    } else {
-      attrs += ` stroke="none"`;
-    }
-    if (Math.abs(s.opacity - 1.0) > 0.001) {
-      attrs += ` opacity="${s.opacity.toFixed(3)}"`;
-    }
-    return attrs;
-  };
-
-  for (const cmd of drawList.items) {
+function emitSvgCommands(items, indent = '  ') {
+  let out = '';
+  for (const cmd of items) {
     switch (cmd.type) {
       case 'Circle':
-        svg += `  <circle cx="${cmd.center[0].toFixed(2)}" cy="${cmd.center[1].toFixed(2)}" r="${cmd.radius.toFixed(2)}" ${formatStyle(cmd.style)} />\n`;
+        out += `${indent}<circle cx="${cmd.center[0].toFixed(2)}" cy="${cmd.center[1].toFixed(2)}" r="${cmd.radius.toFixed(2)}" ${formatSvgStyle(cmd.style)} />\n`;
         break;
       case 'Ellipse':
-        svg += `  <ellipse cx="${cmd.center[0].toFixed(2)}" cy="${cmd.center[1].toFixed(2)}" rx="${cmd.radius[0].toFixed(2)}" ry="${cmd.radius[1].toFixed(2)}" ${formatStyle(cmd.style)} />\n`;
+        out += `${indent}<ellipse cx="${cmd.center[0].toFixed(2)}" cy="${cmd.center[1].toFixed(2)}" rx="${cmd.radius[0].toFixed(2)}" ry="${cmd.radius[1].toFixed(2)}" ${formatSvgStyle(cmd.style)} />\n`;
         break;
       case 'Rectangle': {
         const rxAttr = cmd.cornerRadius > 0 ? ` rx="${cmd.cornerRadius.toFixed(2)}" ry="${cmd.cornerRadius.toFixed(2)}"` : '';
-        svg += `  <rect x="${cmd.pos[0].toFixed(2)}" y="${cmd.pos[1].toFixed(2)}" width="${cmd.size[0].toFixed(2)}" height="${cmd.size[1].toFixed(2)}"${rxAttr} ${formatStyle(cmd.style)} />\n`;
+        out += `${indent}<rect x="${cmd.pos[0].toFixed(2)}" y="${cmd.pos[1].toFixed(2)}" width="${cmd.size[0].toFixed(2)}" height="${cmd.size[1].toFixed(2)}"${rxAttr} ${formatSvgStyle(cmd.style)} />\n`;
         break;
       }
       case 'Line':
-        svg += `  <line x1="${cmd.from[0].toFixed(2)}" y1="${cmd.from[1].toFixed(2)}" x2="${cmd.to[0].toFixed(2)}" y2="${cmd.to[1].toFixed(2)}" ${formatStyle(cmd.style)} />\n`;
+        out += `${indent}<line x1="${cmd.from[0].toFixed(2)}" y1="${cmd.from[1].toFixed(2)}" x2="${cmd.to[0].toFixed(2)}" y2="${cmd.to[1].toFixed(2)}" ${formatSvgStyle(cmd.style)} />\n`;
         break;
       case 'Polygon': {
         const pts = cmd.points.map((p) => `${p[0].toFixed(2)},${p[1].toFixed(2)}`).join(' ');
-        svg += `  <polygon points="${pts}" ${formatStyle(cmd.style)} />\n`;
+        out += `${indent}<polygon points="${pts}" ${formatSvgStyle(cmd.style)} />\n`;
         break;
       }
       case 'Path': {
@@ -1708,7 +1748,7 @@ function exportToSvgString(drawList) {
             case 'Start': d.push(`M ${pCmd.pt[0].toFixed(2)} ${pCmd.pt[1].toFixed(2)}`); break;
             case 'Line': d.push(`L ${pCmd.pt[0].toFixed(2)} ${pCmd.pt[1].toFixed(2)}`); break;
             case 'Quad': d.push(`Q ${pCmd.cp[0].toFixed(2)} ${pCmd.cp[1].toFixed(2)}, ${pCmd.ep[0].toFixed(2)} ${pCmd.ep[1].toFixed(2)}`); break;
-            case 'Curve': d.push(`C ${pCmd.c1[0].toFixed(2)} ${pCmd.c1[1].toFixed(2)}, ${pCmd.c2[0].toFixed(2)} ${pCmd.c2[1].toFixed(2)}, ${pCmd.ep[0].toFixed(2)} ${pCmd.ep[1].toFixed(2)}`); break;
+            case 'Curve': d.push(`C ${pCmd.c1[0].toFixed(2)} ${pCmd.c1[1].toFixed(2)}, ${pCmd.c2[0].toFixed(2)} ${pCmd.c2[1].toFixed(2)}, ${pCmd.ep[0].toFixed(2)} ${pCmd.ep[0].toFixed(2)}`); break;
             case 'Arc': {
               const r = pCmd.radius;
               const delta = pCmd.endAngle - pCmd.startAngle;
@@ -1731,10 +1771,69 @@ function exportToSvgString(drawList) {
             case 'Close': d.push('Z'); break;
           }
         }
-        svg += `  <path d="${d.join(' ')}" ${formatStyle(cmd.style)} />\n`;
+        out += `${indent}<path d="${d.join(' ')}" ${formatSvgStyle(cmd.style)} />\n`;
         break;
       }
     }
+  }
+  return out;
+}
+
+function exportToSvgString(drawList) {
+  let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+  svg += `<svg viewBox="0 0 ${drawList.canvasWidth} ${drawList.canvasHeight}" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">\n`;
+
+  if (drawList.background && !drawList.background.isNone) {
+    svg += `  <rect width="100%" height="100%" fill="${drawList.background.toSvgString()}" />\n`;
+  }
+
+  svg += emitSvgCommands(drawList.items, '  ');
+  svg += `</svg>\n`;
+  return svg;
+}
+
+function exportToAnimatedSvgString(sourceCode, duration = 2.0, fps = 30) {
+  const totalFrames = Math.max(2, Math.round(duration * fps));
+  const frames = [];
+
+  for (let i = 0; i < totalFrames; i++) {
+    const t = (i / totalFrames) * duration;
+    const drawList = compilePVG(sourceCode, t);
+    frames.push(drawList);
+  }
+
+  if (frames.length === 0) return '';
+
+  const first = frames[0];
+  let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+  svg += `<svg viewBox="0 0 ${first.canvasWidth} ${first.canvasHeight}" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">\n`;
+
+  if (first.background && !first.background.isNone) {
+    svg += `  <rect width="100%" height="100%" fill="${first.background.toSvgString()}" />\n`;
+  }
+
+  const n = totalFrames;
+  for (let i = 0; i < n; i++) {
+    let valuesStr, keyTimesStr;
+    if (i === 0) {
+      const t1 = (1.0 / n).toFixed(4);
+      valuesStr = 'visible;hidden';
+      keyTimesStr = `0; ${t1}`;
+    } else if (i === n - 1) {
+      const t0 = ((n - 1.0) / n).toFixed(4);
+      valuesStr = 'hidden;visible';
+      keyTimesStr = `0; ${t0}`;
+    } else {
+      const t0 = (i / n).toFixed(4);
+      const t1 = ((i + 1) / n).toFixed(4);
+      valuesStr = 'hidden;visible;hidden';
+      keyTimesStr = `0; ${t0}; ${t1}`;
+    }
+
+    svg += `  <g>\n`;
+    svg += `    <animate attributeName="visibility" values="${valuesStr}" keyTimes="${keyTimesStr}" dur="${duration.toFixed(2)}s" repeatCount="indefinite" calcMode="discrete" />\n`;
+    svg += emitSvgCommands(frames[i].items, '    ');
+    svg += `  </g>\n`;
   }
 
   svg += `</svg>\n`;
@@ -1820,6 +1919,7 @@ class PvgView extends HTMLElement {
     this._isPlaying = false;
     this._isVisible = true;
     this._isAnimatedDoc = false;
+    this._manuallySetCode = false;
 
     // Pan & Zoom
     this._panX = 0;
@@ -1920,6 +2020,10 @@ class PvgView extends HTMLElement {
     return this._isVisible;
   }
 
+  get isAnimated() {
+    return this._isAnimatedDoc;
+  }
+
   get time() {
     return this._currentTime;
   }
@@ -1934,8 +2038,15 @@ class PvgView extends HTMLElement {
   }
 
   set code(val) {
-    this._sourceCode = String(val || '');
-    this.extractAndCompile();
+    this._sourceCode = dedentCode(String(val || ''));
+    this._manuallySetCode = true;
+    this._isAnimatedDoc =
+      this._sourceCode.includes('time') ||
+      this._sourceCode.includes(' t ') ||
+      this._sourceCode.includes('(t)') ||
+      this._sourceCode.includes('* t');
+    this._setupRenderSurface();
+    this.renderAt(this._currentTime);
   }
 
   get src() {
@@ -1991,7 +2102,7 @@ class PvgView extends HTMLElement {
 
     // 3. Child Mutation Observer (watches <script type="text/pvg">)
     this._mutationObserver = new MutationObserver(() => {
-      if (!this.hasAttribute('src') && !this.hasAttribute('code')) {
+      if (!this.hasAttribute('src') && !this.hasAttribute('code') && !this._manuallySetCode) {
         this.extractAndCompile();
       }
     });
@@ -2031,7 +2142,8 @@ class PvgView extends HTMLElement {
     if (name === 'src') {
       this._fetchSrc(newValue);
     } else if (name === 'code') {
-      this._sourceCode = newValue || '';
+      this._sourceCode = dedentCode(newValue || '');
+      this._manuallySetCode = true;
       this.extractAndCompile();
     } else if (name === 'render') {
       this._setupRenderSurface();
@@ -2082,7 +2194,13 @@ class PvgView extends HTMLElement {
     this.dispatchEvent(new CustomEvent('seek', { detail: { time: this._currentTime } }));
   }
 
-  exportSvg() {
+  exportSvg(options = {}) {
+    const isAnimated = options.animated !== undefined ? options.animated : this._isAnimatedDoc;
+    if (isAnimated && this._sourceCode) {
+      const duration = options.duration || detectLoopDuration(this._sourceCode);
+      const fps = options.fps || 30;
+      return exportToAnimatedSvgString(this._sourceCode, duration, fps);
+    }
     if (!this._currentDrawList) return '';
     return exportToSvgString(this._currentDrawList);
   }
@@ -2108,7 +2226,7 @@ class PvgView extends HTMLElement {
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}: Failed to fetch '${url}'`);
       const text = await resp.text();
-      this._sourceCode = text;
+      this._sourceCode = dedentCode(text);
       this.extractAndCompile();
     } catch (err) {
       this._showError(err.message);
@@ -2120,14 +2238,14 @@ class PvgView extends HTMLElement {
   extractAndCompile() {
     if (this.hasAttribute('src')) return;
 
-    if (!this.hasAttribute('code')) {
+    if (!this.hasAttribute('code') && !this._manuallySetCode) {
       const scriptTag = this.querySelector('script[type="text/pvg"], script[type="text/plain"]');
       if (scriptTag) {
-        this._sourceCode = scriptTag.textContent.trim();
+        this._sourceCode = dedentCode(scriptTag.textContent);
       } else {
-        const rawText = this.textContent.trim();
-        if (rawText.length > 0) {
-          this._sourceCode = rawText;
+        const rawText = this.textContent;
+        if (rawText && rawText.trim().length > 0) {
+          this._sourceCode = dedentCode(rawText);
         }
       }
     }
@@ -2319,6 +2437,9 @@ window.PVG = {
   compile: compilePVG,
   render: renderDrawListToCanvas,
   exportSvg: exportToSvgString,
+  exportAnimatedSvg: exportToAnimatedSvgString,
+  detectLoopDuration,
+  dedent: dedentCode,
   PvgView,
   get presets() {
     return window.PVG_PRESETS || [];

@@ -1,0 +1,75 @@
+PVG 0.1
+canvas 80 72
+  background #000000
+
+set fg = #f97316
+set t2 = time % 2.0
+set in_jump = (t2 >= 0.6) and (t2 <= 1.2)
+set jump_y = in_jump ? (-30 * sin(((t2 - 0.6) / 0.6) * PI)) : 0
+set leg = (time % 0.2) < 0.1
+
+# UI Borders & Indicators
+rect
+  pos [0.5, 0.5]
+  size [79, 71]
+  stroke fg
+  opacity 0.2
+  fill none
+rect
+  pos [0.5, 0.5]
+  size [79, 4]
+  stroke fg
+  opacity 0.5
+  fill none
+rect
+  pos [2, 2]
+  size [8, 1]
+  fill fg
+rect
+  pos [66, 2]
+  size [12, 1]
+  fill fg
+
+# Procedural Moving Ground Track
+for i from 0 to 21
+  set gx = i * 4 - ((time * 50) % 4)
+  line
+    from [gx, 54]
+    to   [gx + 1, 54]
+    stroke fg
+    opacity 0.3
+
+# Moving Cactus
+group
+  pos [80 - (t2 / 2.0) * 140, 18]
+  rect
+    pos [0, 26]
+    size [3, 10]
+    fill fg
+  rect
+    pos [-2, 28]
+    size [2, 4]
+    fill fg
+  rect
+    pos [3, 29]
+    size [2, 3]
+    fill fg
+
+# Animated Dino
+group
+  pos [0, 30.2222 + jump_y]
+  polygon
+    fill fg
+    points [12.56,12.22] [13.44,12.22] [13.44,14] [14.33,14] [14.33,14.89] [15.22,14.89] [15.22,15.78] [17,15.78] [17,14.89] [17.89,14.89] [17.89,14] [19.22,14] [19.22,13.11] [20.56,13.11] [20.56,12.22] [21.44,12.22] [21.44,6.44] [22.33,6.44] [22.33,5.56] [29.44,5.56] [29.44,6.44] [30.33,6.44] [30.33,10.44] [25.89,10.44] [25.89,11.33] [28.56,11.33] [28.56,12.22] [25,12.22] [25,14] [26.78,14] [26.78,15.78] [25.89,15.78] [25.89,14.89] [25,14.89] [25,18] [24.11,18] [24.11,19.33] [23.22,19.33] [23.22,20.22] [22.33,20.22] [22.33,21.11] [15.22,21.11] [15.22,20.22] [14.33,20.22] [14.33,19.33] [13.44,19.33] [13.44,18.44] [12.56,18.44] [12.56,17.56]
+  rect
+    pos [23.22, 6.89]
+    size [0.89, 0.89]
+    fill #000
+  rect
+    pos [17, 21.11]
+    size [1.78, leg ? 2.67 : 0.89]
+    fill fg
+  rect
+    pos [21.44, 21.11]
+    size [1.78, leg ? 0.89 : 2.67]
+    fill fg

@@ -57,8 +57,16 @@
       <button id="btn-reset-view" title="Reset view">Reset View</button>
       <div class="separator"></div>
 
-      <button id="btn-export-svg" title="Export as standalone SVG file">📥 SVG</button>
+      <!-- SVG Export Dropdown -->
+      <div class="dropdown" id="dropdown-svg">
+        <button id="btn-export-svg" title="Export as standalone SVG file">📥 SVG ▾</button>
+        <div class="dropdown-menu">
+          <button class="dropdown-item" data-mode="auto">SVG (Auto / Animated)</button>
+          <button class="dropdown-item" data-mode="static">SVG (Static Frame)</button>
+        </div>
+      </div>
       
+      <!-- PNG Export Dropdown -->
       <div class="dropdown" id="dropdown-png">
         <button id="btn-export-png" title="Export as raster PNG">📥 PNG ▾</button>
         <div class="dropdown-menu">
@@ -165,8 +173,11 @@
       const lblStatus = document.getElementById('lbl-status');
       const lblLines = document.getElementById('lbl-lines');
       const lblCursorPos = document.getElementById('lbl-cursor-pos');
+
+      const dropdownSvg = document.getElementById('dropdown-svg');
       const btnExportSvg = document.getElementById('btn-export-svg');
       const dropdownPng = document.getElementById('dropdown-png');
+      const btnExportPng = document.getElementById('btn-export-png');
 
       const modalEmbed = document.getElementById('modal-embed');
       const btnEmbed = document.getElementById('btn-embed');
@@ -319,27 +330,42 @@
         }
       });
 
-      // SVG Export
-      btnExportSvg.addEventListener('click', () => {
-        const svgData = mainView.exportSvg();
+      // SVG Export Handler (Supports Animated SMIL & Static)
+      function triggerSvgDownload(forceStatic = false) {
+        const isAnimated = !forceStatic && mainView.isAnimated;
+        const svgData = mainView.exportSvg({ animated: isAnimated });
         if (!svgData) return;
         const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'export.svg';
+        a.download = isAnimated ? 'export_animated.svg' : 'export.svg';
         a.click();
         URL.revokeObjectURL(url);
+      }
+
+      btnExportSvg.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdownSvg.classList.toggle('open');
+        dropdownPng.classList.remove('open');
+      });
+
+      document.querySelectorAll('#dropdown-svg .dropdown-item').forEach((item) => {
+        item.addEventListener('click', () => {
+          const mode = item.dataset.mode;
+          triggerSvgDownload(mode === 'static');
+        });
       });
 
       // PNG Export Menu
-      const btnExportPng = document.getElementById('btn-export-png');
       btnExportPng.addEventListener('click', (e) => {
         e.stopPropagation();
         dropdownPng.classList.toggle('open');
+        dropdownSvg.classList.remove('open');
       });
 
       window.addEventListener('click', () => {
+        dropdownSvg.classList.remove('open');
         dropdownPng.classList.remove('open');
       });
 
