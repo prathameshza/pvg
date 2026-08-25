@@ -17,6 +17,13 @@ pub fn get_reference_presets() -> Vec<TestCase> {
             is_animated: true,
         },
         TestCase {
+            name: "telemetry_card".to_string(),
+            category: "Preset".to_string(),
+            description: "Telemetry Card with dynamic Text primitives, font families, and multi-alignment".to_string(),
+            source: include_str!("../../presets/telemetry_card.pvg").to_string(),
+            is_animated: true,
+        },
+        TestCase {
             name: "dial".to_string(),
             category: "Preset".to_string(),
             description: "Technical Dashboard Dial with circular arcs, ternary ticks, and needle gauge".to_string(),

@@ -38,6 +38,11 @@ const PRESETS: &[PresetItem] = &[
         fallback: include_str!("../../presets/radar.pvg"),
     },
     PresetItem {
+        name: "Telemetry Card (Text)",
+        path: "presets/telemetry_card.pvg",
+        fallback: include_str!("../../presets/telemetry_card.pvg"),
+    },
+    PresetItem {
         name: "Dashboard Dial",
         path: "presets/dial.pvg",
         fallback: include_str!("../../presets/dial.pvg"),
@@ -376,7 +381,7 @@ impl eframe::App for PvgApp {
             ui.add_space(3.0);
         });
 
-        // Bottom Diagnostics & Telemetry Bar (Rock-steady formatting without jitter)
+        // Bottom Diagnostics & Telemetry Bar
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
             ui.add_space(2.0);
             ui.horizontal(|ui| {

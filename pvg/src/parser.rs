@@ -243,6 +243,11 @@ impl Parser {
                 self.skip_newlines();
                 self.parse_path()
             }
+            TokenKind::Text => {
+                self.advance();
+                self.skip_newlines();
+                self.parse_text()
+            }
             TokenKind::Group => {
                 self.advance();
                 self.skip_newlines();
@@ -490,6 +495,41 @@ impl Parser {
         self.expect(TokenKind::Dedent)?;
 
         Ok(Stmt::Path(PathNode { fill, stroke, width, opacity, commands }))
+    }
+
+    fn parse_text(&mut self) -> Result<Stmt, String> {
+        self.expect(TokenKind::Indent)?;
+        let mut pos = None;
+        let mut content = None;
+        let mut size = None;
+        let mut font = None;
+        let mut align = None;
+        let mut fill = None;
+        let mut stroke = None;
+        let mut width = None;
+        let mut opacity = None;
+
+        while self.peek_kind() != &TokenKind::Dedent && self.peek_kind() != &TokenKind::Eof {
+            match self.peek_kind() {
+                TokenKind::Pos => { self.advance(); pos = Some(self.parse_expression()?); }
+                TokenKind::Content | TokenKind::Text => { self.advance(); content = Some(self.parse_expression()?); }
+                TokenKind::Size => { self.advance(); size = Some(self.parse_expression()?); }
+                TokenKind::Font => { self.advance(); font = Some(self.parse_expression()?); }
+                TokenKind::Align => { self.advance(); align = Some(self.parse_expression()?); }
+                TokenKind::Fill => { self.advance(); fill = Some(self.parse_expression()?); }
+                TokenKind::Stroke => { self.advance(); stroke = Some(self.parse_expression()?); }
+                TokenKind::Width => { self.advance(); width = Some(self.parse_expression()?); }
+                TokenKind::Opacity => { self.advance(); opacity = Some(self.parse_expression()?); }
+                TokenKind::Newline => { self.advance(); }
+                other => return Err(format!("Line {}: Invalid text property {:?}", self.peek().line, other)),
+            }
+            self.skip_newlines();
+        }
+        self.expect(TokenKind::Dedent)?;
+
+        let pos = pos.ok_or_else(|| "Text requires 'pos [x, y]'".to_string())?;
+        let content = content.ok_or_else(|| "Text requires 'content <expr>' or 'text <expr>'".to_string())?;
+        Ok(Stmt::Text(TextNode { pos, content, size, font, align, fill, stroke, width, opacity }))
     }
 
     fn parse_group(&mut self) -> Result<Stmt, String> {

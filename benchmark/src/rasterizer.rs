@@ -1,7 +1,22 @@
 use pvg::ast::Color;
-use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand, DrawStyle};
+use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand, DrawStyle, TextAlign};
 use std::f64::consts::PI;
 use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
+
+pub fn escape_xml(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
 
 pub fn color_to_svg(col: &Color) -> String {
     match col {
@@ -90,6 +105,17 @@ pub fn emit_svg(draw_list: &DrawList) -> String {
                     "  <polygon points=\"{}\" {} />\n",
                     pts_str.join(" "),
                     format_svg_attributes(style)
+                ));
+            }
+            DrawCmd::Text { pos, content, size, font_family, align, style } => {
+                let anchor = match align {
+                    TextAlign::Left => "start",
+                    TextAlign::Center => "middle",
+                    TextAlign::Right => "end",
+                };
+                out.push_str(&format!(
+                    "  <text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" font-family=\"{}\" text-anchor=\"{}\" dominant-baseline=\"hanging\" {}>{}</text>\n",
+                    pos.0, pos.1, size, font_family, anchor, format_svg_attributes(style), escape_xml(content)
                 ));
             }
             DrawCmd::Path { commands, style } => {
@@ -276,6 +302,7 @@ pub fn rasterize_skia(draw_list: &DrawList, scale: f32) -> Result<Pixmap, String
                     }
                 }
             }
+            DrawCmd::Text { .. } => {}
             DrawCmd::Path { commands, style } => {
                 let mut pb = PathBuilder::new();
                 let mut has_commands = false;

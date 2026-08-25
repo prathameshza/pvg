@@ -1,7 +1,7 @@
 use eframe::egui::{Color32, Painter, Pos2, Rect, Stroke};
 use eframe::epaint::PathShape;
 use pvg::ast::Color as PvgColor;
-use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand, DrawStyle};
+use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand, DrawStyle, TextAlign};
 use std::f32::consts::PI as PI_F32;
 use std::f64::consts::PI as PI_F64;
 use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect as SkiaRect, Stroke as SkiaStroke, Transform};
@@ -15,6 +15,21 @@ pub fn to_egui_color(col: &PvgColor, opacity: f64) -> Color32 {
         }
         PvgColor::None => Color32::TRANSPARENT,
     }
+}
+
+pub fn escape_xml(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 pub fn render_draw_list(painter: &Painter, draw_list: &DrawList, origin: Pos2, zoom: f32) {
@@ -111,6 +126,22 @@ pub fn render_draw_list(painter: &Painter, draw_list: &DrawList, origin: Pos2, z
                 if stroke.width > 0.0 && stroke.color != Color32::TRANSPARENT {
                     painter.add(PathShape::closed_line(screen_pts, stroke));
                 }
+            }
+
+            DrawCmd::Text { pos, content, size, font_family, align, style } => {
+                let screen_pos = to_screen(*pos);
+                let fill_c = to_egui_color(&style.fill, style.opacity);
+                let egui_align = match align {
+                    TextAlign::Left => eframe::egui::Align2::LEFT_TOP,
+                    TextAlign::Center => eframe::egui::Align2::CENTER_TOP,
+                    TextAlign::Right => eframe::egui::Align2::RIGHT_TOP,
+                };
+                let font_fam = match font_family.to_lowercase().as_str() {
+                    "mono" | "monospace" | "code" => eframe::egui::FontFamily::Monospace,
+                    _ => eframe::egui::FontFamily::Proportional,
+                };
+                let font_id = eframe::egui::FontId::new((*size as f32) * zoom, font_fam);
+                painter.text(screen_pos, egui_align, content, font_id, fill_c);
             }
 
             DrawCmd::Path { commands, style } => {
@@ -336,6 +367,17 @@ pub fn export_svg(draw_list: &DrawList) -> String {
                     ));
                 }
             }
+            DrawCmd::Text { pos, content, size, font_family, align, style } => {
+                let anchor = match align {
+                    TextAlign::Left => "start",
+                    TextAlign::Center => "middle",
+                    TextAlign::Right => "end",
+                };
+                out.push_str(&format!(
+                    "  <text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" font-family=\"{}\" text-anchor=\"{}\" dominant-baseline=\"hanging\" {}>{}</text>\n",
+                    pos.0, pos.1, size, font_family, anchor, format_style(style), escape_xml(content)
+                ));
+            }
             DrawCmd::Path { commands, style } => {
                 let mut d = Vec::new();
                 for c in commands {
@@ -520,6 +562,7 @@ pub fn rasterize_png(draw_list: &DrawList, scale: f32) -> Result<Vec<u8>, String
                     }
                 }
             }
+            DrawCmd::Text { .. } => {}
             DrawCmd::Path { commands, style } => {
                 let mut pb = PathBuilder::new();
                 let mut has_commands = false;
@@ -549,7 +592,7 @@ pub fn rasterize_png(draw_list: &DrawList, scale: f32) -> Result<Vec<u8>, String
                                 pb.move_to(c1.0 as f32, c1.1 as f32);
                                 has_commands = true;
                             }
-                            pb.cubic_to(c1.0 as f32, c1.1 as f32, c2.0 as f32, c2.1 as f32, ep.0 as f32, ep.1 as f32);
+                            pb.cubic_to(c1.0 as f32, c1.1 as f32, c2.0 as f32, c2.1 as f32, ep.0 as f32, ep.0 as f32);
                         }
                         DrawPathCommand::Arc { center, radius, start_angle, end_angle } => {
                             let delta = end_angle - start_angle;

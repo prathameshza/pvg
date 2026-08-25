@@ -41,6 +41,19 @@ impl Transform2D {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextAlign {
+    Left,
+    Center,
+    Right,
+}
+
+impl Default for TextAlign {
+    fn default() -> Self {
+        TextAlign::Left
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DrawStyle {
     pub fill: Color,
@@ -89,6 +102,14 @@ pub enum DrawCmd {
     },
     Path {
         commands: Vec<DrawPathCommand>,
+        style: DrawStyle,
+    },
+    Text {
+        pos: (f64, f64),
+        content: String,
+        size: f64,
+        font_family: String,
+        align: TextAlign,
         style: DrawStyle,
     },
 }

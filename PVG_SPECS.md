@@ -12,7 +12,7 @@
         ▼ (Single-Pass Tokenizer & Recursive Descent Parser)
 [ Abstract Syntax Tree (AST) ] (~10–25 KB)
         │
-        ▼ (Procedural Evaluator: Loops, Math, Scope Resolution)
+        ▼ (Procedural Evaluator: Loops, Math, Typography, Scope Resolution)
 [ Flat 2D Draw List (Contiguous Structs) ] (~15–35 KB)
         │
    ┌────┴───────────────────────────┬────────────────────────────┐
@@ -21,18 +21,18 @@
 (egui / Skia / Window)     (W3C SMIL Animation)        (1-Line Scanline Buffer)
 ```
 
-1. **Procedural Native:** Native support for variables, dynamic loops, user-defined functions, trigonometry, and non-linear mathematical expressions directly in the graphics definition.
+1. **Procedural Native:** Native support for variables, dynamic loops, user-defined functions, typography, trigonometry, and mathematical expressions directly in the graphics definition.
 2. **Deterministic & Pure:** Identical source text evaluates to the identical scene graph across all operating systems, CPU architectures, and runtime backends.
-3. **Ultra-Low Resource Footprint:** Designed to compile and evaluate inside `< 50 KB` of heap memory with execution times under $0.2\text{ ms}$ per frame on a single CPU thread.
+3. **Ultra-Low Resource Footprint:** Compiles and evaluates inside `< 50 KB` of heap memory with execution times under $0.2\text{ ms}$ per frame on a single CPU thread.
 4. **No XML/DOM Overhead:** Eliminates deeply nested closing tags, XML namespaces, and heavy browser DOM hierarchies.
-5. **Algebraic Curve Simplicity:** Replaces SVG's computationally heavy endpoint-to-center elliptical arc matrix inversions with direct center-radius-angle trigonometry and quadratic Béziers.
+5. **Algebraic Curve & Text Simplicity:** Replaces SVG's heavy endpoint-to-center elliptical arc matrix inversions with direct forward trigonometry and provides a zero-overhead text and font layout primitive.
 
 ---
 
 ## 2. Lexical Grammar
 
 ### 2.1 File Encoding & Structure
-* **Encoding:** UTF-8.
+* **Encoding:** UTF-8. Multi-byte Unicode characters in string literals (e.g. `°`, `©`, `™`, emojis) are natively decoded without byte fragmentation.
 * **Header:** A PVG document **must** begin with the header `PVG <major>.<minor>` on the first non-empty line (e.g., `PVG 0.1`).
 * **Line Termination:** Newlines (`\n` or `\r\n`) terminate statements.
 * **Indentation:** Exactly **2 spaces** per indentation level. Tabs (`\t`) are forbidden to eliminate cross-platform layout ambiguity.
@@ -57,14 +57,21 @@ unit   = "deg" | "rad" ;
   *Example:* `180deg` evaluates directly to `3.141592653589793`.
 * **Radians Suffix (`rad`):** Expresses raw radians (e.g., `1.5rad`).
 
-### 2.4 2D Coordinate & Vector Literals
+### 2.4 String Literals
+Strings are enclosed in double quotes (`"..."`) and support standard escape sequences (`\n`, `\t`, `\r`, `\"`, `\\`):
+```ebnf
+string = '"' , { character | escape_sequence } , '"' ;
+```
+* *Examples:* `"ENGINE SPEED"`, `"Telemetry Active\nStatus: OK"`, `"60 °C"`
+
+### 2.5 2D Coordinate & Vector Literals
 To eliminate operator ambiguity with arithmetic expressions, all 2D vector coordinates **must** use bracket delimiters:
 ```ebnf
 vector2 = "[" , expression , "," , expression , "]" ;
 ```
 * *Examples:* `[100, 200]`, `[cx + r * cos(a), cy + r * sin(a)]`, `[x - 10, y + 5]`
 
-### 2.5 Color Literals
+### 2.6 Color Literals
 * **Hex Color:** `#RGB`, `#RRGGBB`, `#RRGGBBAA` (e.g., `#fff`, `#00ffcc`, `#ff005580`).
 * **Keywords:** `black`, `white`, `red`, `green`, `blue`, `yellow`, `cyan`, `magenta`, `none`, `transparent`.
 * **Functional Form:** `rgb(r, g, b)` and `rgba(r, g, b, a)` where $r, g, b \in [0, 255]$ and $a \in [0.0, 1.0]$.
@@ -93,6 +100,7 @@ Statement       ::= SetStmt
                   | RectStmt
                   | LineStmt
                   | PolygonStmt
+                  | TextStmt
                   | PathStmt
                   | GroupStmt ;
 
@@ -122,6 +130,9 @@ LineProp        ::= ( "from" Vector2 | "to" Vector2 | StyleProp ) NEWLINE ;
 
 PolygonStmt     ::= "polygon" NEWLINE INDENT PolygonProp+ DEDENT ;
 PolygonProp     ::= ( "points" Vector2+ | StyleProp ) NEWLINE ;
+
+TextStmt        ::= "text" NEWLINE INDENT TextProp+ DEDENT ;
+TextProp        ::= ( "pos" Vector2 | "content" Expression | "size" Expression | "font" Expression | "align" Expression | StyleProp ) NEWLINE ;
 
 PathStmt        ::= "path" NEWLINE INDENT ( PathCommand | StyleProp | SetStmt )+ DEDENT ;
 PathCommand     ::= ( "start" Vector2
@@ -154,14 +165,22 @@ Expressions are evaluated dynamically from highest to lowest precedence:
 | **2** | `^` | Exponentiation / Power | Right |
 | **3** | `-` (unary), `not` | Negation, Logical NOT | Right |
 | **4** | `*`, `/`, `%` | Multiplication, Division, Modulus | Left |
-| **5** | `+`, `-` | Addition, Subtraction | Left |
+| **5** | `+`, `-` | Addition / String Concatenation, Subtraction | Left |
 | **6** | `<`, `<=`, `>`, `>=` | Relational comparisons | Left |
 | **7** | `==`, `!=` | Equality / Inequality | Left |
 | **8** | `and` | Logical AND | Left |
 | **9** | `or` | Logical OR | Left |
 | **10 (Lowest)**| `? :` | Ternary conditional | Right |
 
-### Built-in Constants & Math Functions
+### 4.1 String Concatenation & Automatic Coercion
+The addition operator `+` serves as a high-performance string concatenation operator when either operand is a `String`. Numbers and booleans coerce automatically:
+```pvg
+set speed = 3200
+set label = "Speed: " + speed + " RPM"     # Evaluates to "Speed: 3200 RPM"
+set status = "System OK: " + true           # Evaluates to "System OK: true"
+```
+
+### 4.2 Built-in Constants & Math Functions
 * **Constants:** `PI` ($3.14159265...$), `TAU` ($6.28318530...$).
 * **Trigonometry:** `sin(x)`, `cos(x)`, `tan(x)`.
 * **Algebraic & Rounding:** `sqrt(x)`, `abs(x)`, `pow(base, exp)`, `floor(x)`, `ceil(x)`, `round(x)`.
@@ -212,13 +231,12 @@ for i from 0 to 10
     center [100 + i * 20, 200 + offset]
     radius 5
 ```
-Every conformant PVG runtime initializes the RNG state identically given the same seed.
 
 ---
 
-## 6. 2D Geometry Primitives
+## 6. 2D Geometry & Typography Primitives
 
-All geometric nodes inherit parent `group` styles unless explicitly overridden.
+All visual nodes inherit parent `group` styles unless explicitly overridden.
 
 ### 6.1 Circle
 ```pvg
@@ -262,6 +280,26 @@ polygon
   fill color
   stroke color
 ```
+
+### 6.6 Text & Typography
+```pvg
+text
+  pos [x, y]            # Mandatory anchor position coordinate
+  content string/expr   # Mandatory text content (string literal or evaluated expression)
+  size number           # Optional font size in pixels (default: 16.0)
+  font string           # Optional font family ("sans", "mono", "serif", or custom; default: "sans-serif")
+  align string          # Optional horizontal alignment ("left", "center", "right"; default: "left")
+  fill color            # Optional text fill color (default: black)
+  opacity number        # Optional alpha multiplier in [0.0, 1.0] (default: 1.0)
+```
+
+#### Typography Layout Specifications
+* **Vertical Baseline:** Conforms to `dominant-baseline="hanging"` / `top-aligned` relative to `pos [x, y]`.
+* **Horizontal Anchor:**
+  * `"left"`: Positional `[x, y]` represents the top-left boundary of the text.
+  * `"center"`: Positional `[x, y]` represents the top-center anchor.
+  * `"right"`: Positional `[x, y]` represents the top-right boundary.
+* **Transform Inheritance:** Text anchors rotate, scale, and translate deterministically under parent `group` transforms.
 
 ---
 
@@ -349,11 +387,6 @@ circle
   fill #00ffcc
 ```
 
-### 9.1 Static vs. Animated Execution
-* **Static Contexts (e.g., CLI Export to Static SVG/PNG):** `time = 0.0` or a specified timestamp via `-t <sec>`.
-* **Real-time Contexts (e.g., GUI Studio, Game Engine Integration):** Evaluates `doc` per frame with the current timeline delta $\Delta t$ at 60+ FPS.
-* **Transpiled Animated SVG Contexts:** Samples the procedural timeline across a bounded periodic loop (e.g., 30 frames over 3.0s) and compiles into standard W3C declarative SMIL animation tags.
-
 ---
 
 ## 10. Memory Arena & Runtime Safety Limits
@@ -367,26 +400,137 @@ To guarantee safety when opening untrusted documents and to prevent denial-of-se
 | `MAX_SCENE_PRIMITIVES`| $50,000$ | Limits maximum output draw commands |
 | `WORKING_HEAP_BUDGET` | $< 50\text{ KB}$ | Bounded memory allocation for AST + Scene List |
 
-### 10.1 Working Memory Allocation Breakdown
-```
-┌───────────────────────────────┬───────────────────────────┐
-│ Component                     │ Measured Heap Footprint   │
-├───────────────────────────────┼───────────────────────────┤
-│ Parser Token Ring Buffer      │ 2 KB – 4 KB               │
-│ AST & Symbol Table            │ 8 KB – 16 KB              │
-│ Flat Draw List (1000 shapes)  │ 16 KB – 32 KB             │
-│ Active Edge Table (AET)       │ 4 KB – 8 KB               │
-│ Single Scanline Buffer (1024) │ 4.096 KB (1024 x 4 bytes) │
-├───────────────────────────────┼───────────────────────────┤
-│ Total Peak Memory Footprint   │ ~22 KB – 64 KB (Passed)   │
-└───────────────────────────────┴───────────────────────────┘
-```
-
 ---
 
 ## 11. Complete Reference Benchmark Presets
 
-### Preset 1: Radar Scanner (`presets/radar.pvg`)
+### Preset 1: Telemetry Dashboard Card (`presets/telemetry_card.pvg`)
+```pvg
+PVG 0.1
+canvas 600 400
+  background #0b0c10
+
+# Card Background Container
+rectangle
+  pos [40, 40]
+  size [520, 320]
+  radius 12
+  fill #12141c
+  stroke #1f2333
+  width 1.5
+
+# Top Header Bar
+rectangle
+  pos [40, 40]
+  size [520, 52]
+  radius 12
+  fill #181b26
+  stroke none
+
+# Card Header Title (Sans-Serif Font)
+text
+  pos [60, 56]
+  content "TELEMETRY MONITOR"
+  size 16
+  font "sans"
+  align "left"
+  fill #00ffcc
+
+# Live Status Beacon
+circle
+  center [480, 66]
+  radius 4
+  fill #00e676
+
+text
+  pos [495, 58]
+  content "LIVE"
+  size 13
+  font "mono"
+  align "left"
+  fill #00e676
+
+# Dynamic Animated Values
+set rpm = floor(3200 + 400 * sin(time * 3.0))
+set temp = floor(68 + 8 * cos(time * 2.0))
+
+# Left Metric Card
+rectangle
+  pos [60, 115]
+  size [225, 110]
+  radius 8
+  fill #171922
+  stroke #282c3f
+  width 1
+
+text
+  pos [80, 130]
+  content "ENGINE SPEED"
+  size 12
+  font "sans"
+  align "left"
+  fill #8f96b0
+
+text
+  pos [80, 155]
+  content "" + rpm + " RPM"
+  size 28
+  font "mono"
+  align "left"
+  fill #ffffff
+
+# Right Metric Card
+rectangle
+  pos [315, 115]
+  size [225, 110]
+  radius 8
+  fill #171922
+  stroke #282c3f
+  width 1
+
+text
+  pos [335, 130]
+  content "CORE TEMP"
+  size 12
+  font "sans"
+  align "left"
+  fill #8f96b0
+
+text
+  pos [335, 155]
+  content "" + temp + " °C"
+  size 28
+  font "mono"
+  align "left"
+  fill #ff3355
+
+# Multi-alignment Footer
+text
+  pos [60, 310]
+  content "LEFT: System OK"
+  size 12
+  font "mono"
+  align "left"
+  fill #5e6278
+
+text
+  pos [300, 310]
+  content "CENTER: 60 FPS"
+  size 12
+  font "mono"
+  align "center"
+  fill #5e6278
+
+text
+  pos [540, 310]
+  content "RIGHT: Time " + floor(time) + "s"
+  size 12
+  font "mono"
+  align "right"
+  fill #5e6278
+```
+
+### Preset 2: Radar Scanner (`presets/radar.pvg`)
 ```pvg
 PVG 0.1
 canvas 600 600
@@ -472,7 +616,7 @@ circle
   width 2
 ```
 
-### Preset 2: Technical Dashboard Dial (`presets/dial.pvg`)
+### Preset 3: Technical Dashboard Dial (`presets/dial.pvg`)
 ```pvg
 PVG 0.1
 canvas 600 600

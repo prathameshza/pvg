@@ -1,0 +1,122 @@
+PVG 0.1
+canvas 600 400
+  background #0b0c10
+
+# Card Background Container
+rectangle
+  pos [40, 40]
+  size [520, 320]
+  radius 12
+  fill #12141c
+  stroke #1f2333
+  width 1.5
+
+# Top Header Bar
+rectangle
+  pos [40, 40]
+  size [520, 52]
+  radius 12
+  fill #181b26
+  stroke none
+
+# Card Header Title (Sans-Serif Font)
+text
+  pos [60, 56]
+  content "TELEMETRY MONITOR"
+  size 16
+  font "sans"
+  align "left"
+  fill #00ffcc
+
+# Live Status Badge
+circle
+  center [480, 66]
+  radius 4
+  fill #00e676
+
+text
+  pos [495, 58]
+  content "LIVE"
+  size 13
+  font "mono"
+  align "left"
+  fill #00e676
+
+# Dynamic Animated Values
+set rpm = floor(3200 + 400 * sin(time * 3.0))
+set temp = floor(68 + 8 * cos(time * 2.0))
+
+# Left Metric Card
+rectangle
+  pos [60, 115]
+  size [225, 110]
+  radius 8
+  fill #171922
+  stroke #282c3f
+  width 1
+
+text
+  pos [80, 130]
+  content "ENGINE SPEED"
+  size 12
+  font "sans"
+  align "left"
+  fill #8f96b0
+
+text
+  pos [80, 155]
+  content "" + rpm + " RPM"
+  size 28
+  font "mono"
+  align "left"
+  fill #ffffff
+
+# Right Metric Card
+rectangle
+  pos [315, 115]
+  size [225, 110]
+  radius 8
+  fill #171922
+  stroke #282c3f
+  width 1
+
+text
+  pos [335, 130]
+  content "CORE TEMP"
+  size 12
+  font "sans"
+  align "left"
+  fill #8f96b0
+
+text
+  pos [335, 155]
+  content "" + temp + " °C"
+  size 28
+  font "mono"
+  align "left"
+  fill #ff3355
+
+# Multi-alignment Footer Test
+text
+  pos [60, 310]
+  content "LEFT: System OK"
+  size 12
+  font "mono"
+  align "left"
+  fill #5e6278
+
+text
+  pos [300, 310]
+  content "CENTER: 60 FPS"
+  size 12
+  font "mono"
+  align "center"
+  fill #5e6278
+
+text
+  pos [540, 310]
+  content "RIGHT: Time " + floor(time) + "s"
+  size 12
+  font "mono"
+  align "right"
+  fill #5e6278

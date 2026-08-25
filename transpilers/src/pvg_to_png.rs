@@ -174,6 +174,8 @@ pub fn rasterize_draw_list(draw_list: &DrawList, scale: f32) -> Result<Pixmap, S
                 }
             }
 
+            DrawCmd::Text { .. } => {}
+
             DrawCmd::Path { commands, style } => {
                 let mut pb = PathBuilder::new();
                 let mut has_commands = false;

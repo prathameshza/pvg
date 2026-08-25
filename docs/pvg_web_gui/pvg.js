@@ -5,7 +5,7 @@
  */
 
 // ==========================================
-// 0. INDENTATION NORMALIZER (DEDENT HELPER)
+// 0. INDENTATION NORMALIZER & UTILITIES
 // ==========================================
 
 function dedentCode(text) {
@@ -46,6 +46,15 @@ function detectLoopDuration(source) {
     return parseFloat(match[1]);
   }
   return 2.0; // Standard 2.0s loop cycle
+}
+
+function escapeXml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 // ==========================================
@@ -202,13 +211,14 @@ const TokenKind = {
   Else: 'Else',
   Seed: 'Seed',
 
-  // Shape Primitives
+  // Shape & Visual Primitives
   Circle: 'Circle',
   Ellipse: 'Ellipse',
   Rectangle: 'Rectangle',
   Line: 'Line',
   Polygon: 'Polygon',
   Path: 'Path',
+  Text: 'Text',
   Group: 'Group',
 
   // Properties
@@ -217,6 +227,9 @@ const TokenKind = {
   Pos: 'Pos',
   Size: 'Size',
   Points: 'Points',
+  Content: 'Content',
+  Font: 'Font',
+  Align: 'Align',
   Fill: 'Fill',
   Stroke: 'Stroke',
   Width: 'Width',
@@ -429,7 +442,7 @@ class Lexer {
       if (c === '/') { tokens.push(new Token(TokenKind.Slash, '/', lineNum, col)); i++; continue; }
       if (c === '%') { tokens.push(new Token(TokenKind.Percent, '%', lineNum, col)); i++; continue; }
 
-      // String literals
+      // UTF-8 Clean String Literals
       if (c === '"') {
         i++;
         let strVal = '';
@@ -517,12 +530,16 @@ class Lexer {
           case 'line': kind = TokenKind.Line; break;
           case 'polygon': kind = TokenKind.Polygon; break;
           case 'path': kind = TokenKind.Path; break;
+          case 'text': kind = TokenKind.Text; break;
           case 'group': kind = TokenKind.Group; break;
           case 'center': kind = TokenKind.Center; break;
           case 'radius': kind = TokenKind.Radius; break;
           case 'pos': kind = TokenKind.Pos; break;
           case 'size': kind = TokenKind.Size; break;
           case 'points': kind = TokenKind.Points; break;
+          case 'content': kind = TokenKind.Content; break;
+          case 'font': kind = TokenKind.Font; break;
+          case 'align': kind = TokenKind.Align; break;
           case 'fill': kind = TokenKind.Fill; break;
           case 'stroke': kind = TokenKind.Stroke; break;
           case 'width': kind = TokenKind.Width; break;
@@ -774,6 +791,10 @@ class Parser {
         this.advance();
         this.skipNewlines();
         return this.parsePath();
+      case TokenKind.Text:
+        this.advance();
+        this.skipNewlines();
+        return this.parseText();
       case TokenKind.Group:
         this.advance();
         this.skipNewlines();
@@ -991,6 +1012,34 @@ class Parser {
     }
     this.expect(TokenKind.Dedent);
     return { type: 'Path', fill, stroke, width, opacity, commands };
+  }
+
+  parseText() {
+    this.expect(TokenKind.Indent);
+    let pos = null, content = null, size = null, font = null, align = null;
+    let fill = null, stroke = null, width = null, opacity = null;
+
+    while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
+      switch (this.peek().kind) {
+        case TokenKind.Pos: this.advance(); pos = this.parseExpression(); break;
+        case TokenKind.Content:
+        case TokenKind.Text: this.advance(); content = this.parseExpression(); break;
+        case TokenKind.Size: this.advance(); size = this.parseExpression(); break;
+        case TokenKind.Font: this.advance(); font = this.parseExpression(); break;
+        case TokenKind.Align: this.advance(); align = this.parseExpression(); break;
+        case TokenKind.Fill: this.advance(); fill = this.parseExpression(); break;
+        case TokenKind.Stroke: this.advance(); stroke = this.parseExpression(); break;
+        case TokenKind.Width: this.advance(); width = this.parseExpression(); break;
+        case TokenKind.Opacity: this.advance(); opacity = this.parseExpression(); break;
+        case TokenKind.Newline: this.advance(); break;
+        default:
+          throw new Error(`Line ${this.peek().line}: Invalid text property '${this.peek().kind}'`);
+      }
+      this.skipNewlines();
+    }
+    this.expect(TokenKind.Dedent);
+    if (!pos || !content) throw new Error("Text requires 'pos [x, y]' and 'content <expr>'");
+    return { type: 'Text', pos, content, size, font, align, fill, stroke, width, opacity };
   }
 
   parseGroup() {
@@ -1361,6 +1410,37 @@ class Evaluator {
         this.drawList.push({ type: 'Polygon', points, style });
         return null;
       }
+      case 'Text': {
+        const posRaw = this.asVec2(this.evalExpr(stmt.pos, locals));
+        const content = this.asString(this.evalExpr(stmt.content, locals));
+        const size = stmt.size ? this.asNumber(this.evalExpr(stmt.size, locals)) : 16.0;
+        const fontFamily = stmt.font ? this.asString(this.evalExpr(stmt.font, locals)) : 'sans-serif';
+        let align = 'left';
+        if (stmt.align) {
+          const a = this.asString(this.evalExpr(stmt.align, locals)).toLowerCase();
+          if (a === 'center') align = 'center';
+          else if (a === 'right') align = 'right';
+          else align = 'left';
+        }
+
+        const style = this.currentStyle();
+        if (stmt.fill) style.fill = this.asColor(this.evalExpr(stmt.fill, locals));
+        if (stmt.stroke) style.stroke = this.asColor(this.evalExpr(stmt.stroke, locals));
+        if (stmt.width) style.width = this.asNumber(this.evalExpr(stmt.width, locals));
+        if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
+
+        const pos = this.currentTransform().transformPoint(posRaw);
+        this.drawList.push({
+          type: 'Text',
+          pos,
+          content,
+          size,
+          fontFamily,
+          align,
+          style,
+        });
+        return null;
+      }
       case 'Path': {
         const style = this.currentStyle();
         if (stmt.fill) style.fill = this.asColor(this.evalExpr(stmt.fill, locals));
@@ -1503,7 +1583,12 @@ class Evaluator {
         const l = this.evalExpr(expr.left, locals);
         const r = this.evalExpr(expr.right, locals);
         switch (expr.op) {
-          case '+': return this.asNumber(l) + this.asNumber(r);
+          case '+': {
+            if (typeof l === 'string' || typeof r === 'string') {
+              return `${l}${r}`;
+            }
+            return this.asNumber(l) + this.asNumber(r);
+          }
           case '-': return this.asNumber(l) - this.asNumber(r);
           case '*': return this.asNumber(l) * this.asNumber(r);
           case '/': {
@@ -1559,6 +1644,13 @@ class Evaluator {
     if (typeof val === 'number') return val;
     if (typeof val === 'boolean') return val ? 1.0 : 0.0;
     throw new Error(`Expected number, got ${JSON.stringify(val)}`);
+  }
+
+  asString(val) {
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number') return val.toString();
+    if (typeof val === 'boolean') return val.toString();
+    throw new Error(`Expected string or displayable value, got ${JSON.stringify(val)}`);
   }
 
   asVec2(val) {
@@ -1678,6 +1770,31 @@ function renderDrawListToCanvas(ctx, drawList, originX, originY, zoom) {
         if (hasStroke) ctx.stroke();
         break;
       }
+      case 'Text': {
+        const [x, y] = cmd.pos;
+        const sizePx = cmd.size;
+        let fontFam = cmd.fontFamily || 'sans-serif';
+        const fLower = fontFam.toLowerCase();
+        if (fLower === 'mono' || fLower === 'monospace' || fLower === 'code') {
+          fontFam = '"Fira Code", "JetBrains Mono", Consolas, monospace';
+        } else if (fLower === 'sans' || fLower === 'sans-serif') {
+          fontFam = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        } else if (fLower === 'serif') {
+          fontFam = 'Georgia, "Times New Roman", serif';
+        }
+
+        ctx.font = `${sizePx}px ${fontFam}`;
+        ctx.textAlign = cmd.align; // 'left', 'center', 'right'
+        ctx.textBaseline = 'top';
+
+        if (hasFill) {
+          ctx.fillText(cmd.content, x, y);
+        }
+        if (hasStroke) {
+          ctx.strokeText(cmd.content, x, y);
+        }
+        break;
+      }
       case 'Path': {
         ctx.beginPath();
         for (const pCmd of cmd.commands) {
@@ -1739,6 +1856,13 @@ function emitSvgCommands(items, indent = '  ') {
       case 'Polygon': {
         const pts = cmd.points.map((p) => `${p[0].toFixed(2)},${p[1].toFixed(2)}`).join(' ');
         out += `${indent}<polygon points="${pts}" ${formatSvgStyle(cmd.style)} />\n`;
+        break;
+      }
+      case 'Text': {
+        let anchor = 'start';
+        if (cmd.align === 'center') anchor = 'middle';
+        else if (cmd.align === 'right') anchor = 'end';
+        out += `${indent}<text x="${cmd.pos[0].toFixed(2)}" y="${cmd.pos[1].toFixed(2)}" font-size="${cmd.size.toFixed(2)}" font-family="${cmd.fontFamily}" text-anchor="${anchor}" dominant-baseline="hanging" ${formatSvgStyle(cmd.style)}>${escapeXml(cmd.content)}</text>\n`;
         break;
       }
       case 'Path': {

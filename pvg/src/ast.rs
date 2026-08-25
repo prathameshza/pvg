@@ -162,6 +162,19 @@ pub struct PolygonNode {
 }
 
 #[derive(Debug, Clone)]
+pub struct TextNode {
+    pub pos: Expr,
+    pub content: Expr,
+    pub size: Option<Expr>,
+    pub font: Option<Expr>,
+    pub align: Option<Expr>,
+    pub fill: Option<Expr>,
+    pub stroke: Option<Expr>,
+    pub width: Option<Expr>,
+    pub opacity: Option<Expr>,
+}
+
+#[derive(Debug, Clone)]
 pub struct GroupNode {
     pub pos: Option<Expr>,
     pub rot: Option<Expr>,
@@ -208,6 +221,7 @@ pub enum Stmt {
     Line(LineNode),
     Polygon(PolygonNode),
     Path(PathNode),
+    Text(TextNode),
     Group(GroupNode),
 }
 

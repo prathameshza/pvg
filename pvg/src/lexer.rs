@@ -29,13 +29,14 @@ pub enum TokenKind {
     Else,
     Seed,
 
-    // Shapes
+    // Shapes & Elements
     Circle,
     Ellipse,
     Rectangle,
     Line,
     Polygon,
     Path,
+    Text,
     Group,
 
     // Properties
@@ -44,6 +45,9 @@ pub enum TokenKind {
     Pos,
     Size,
     Points,
+    Content,
+    Font,
+    Align,
     Fill,
     Stroke,
     Width,
@@ -299,30 +303,37 @@ impl<'a> Lexer<'a> {
             if b == b'/' { tokens.push(Token { kind: TokenKind::Slash, line: line_num, col }); i += 1; continue; }
             if b == b'%' { tokens.push(Token { kind: TokenKind::Percent, line: line_num, col }); i += 1; continue; }
 
+            // UTF-8 Clean String Tokenizer
             if b == b'"' {
                 i += 1;
                 let mut s = String::new();
                 let mut closed = false;
-                while i < len {
-                    if bytes[i] == b'\\' && i + 1 < len {
-                        match bytes[i + 1] {
-                            b'n' => s.push('\n'),
-                            b't' => s.push('\t'),
-                            b'r' => s.push('\r'),
-                            b'\"' => s.push('\"'),
-                            b'\\' => s.push('\\'),
-                            other => s.push(other as char),
+                let remaining = &text[i..];
+                let mut chars = remaining.char_indices();
+
+                while let Some((c_idx, ch)) = chars.next() {
+                    if ch == '\\' {
+                        if let Some((_, next_ch)) = chars.next() {
+                            match next_ch {
+                                'n' => s.push('\n'),
+                                't' => s.push('\t'),
+                                'r' => s.push('\r'),
+                                '"' => s.push('"'),
+                                '\\' => s.push('\\'),
+                                other => s.push(other),
+                            }
+                        } else {
+                            break;
                         }
-                        i += 2;
-                    } else if bytes[i] == b'"' {
+                    } else if ch == '"' {
                         closed = true;
-                        i += 1;
+                        i += c_idx + 1;
                         break;
                     } else {
-                        s.push(bytes[i] as char);
-                        i += 1;
+                        s.push(ch);
                     }
                 }
+
                 if !closed {
                     return Err(format!("Line {}: Unclosed string literal.", line_num));
                 }
@@ -382,12 +393,16 @@ impl<'a> Lexer<'a> {
                     "line" => TokenKind::Line,
                     "polygon" => TokenKind::Polygon,
                     "path" => TokenKind::Path,
+                    "text" => TokenKind::Text,
                     "group" => TokenKind::Group,
                     "center" => TokenKind::Center,
                     "radius" => TokenKind::Radius,
                     "pos" => TokenKind::Pos,
                     "size" => TokenKind::Size,
                     "points" => TokenKind::Points,
+                    "content" => TokenKind::Content,
+                    "font" => TokenKind::Font,
+                    "align" => TokenKind::Align,
                     "fill" => TokenKind::Fill,
                     "stroke" => TokenKind::Stroke,
                     "width" => TokenKind::Width,

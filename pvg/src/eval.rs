@@ -35,6 +35,21 @@ impl Value {
         }
     }
 
+    pub fn as_string(&self) -> Result<String, String> {
+        match self {
+            Value::String(s) => Ok(s.clone()),
+            Value::Number(n) => {
+                if n.fract() == 0.0 && n.abs() < 1e15 {
+                    Ok(format!("{}", *n as i64))
+                } else {
+                    Ok(format!("{}", n))
+                }
+            }
+            Value::Bool(b) => Ok(format!("{}", b)),
+            _ => Err(format!("Expected string or displayable value, got {:?}", self)),
+        }
+    }
+
     pub fn is_truthy(&self) -> bool {
         match self {
             Value::Bool(b) => *b,
@@ -326,6 +341,47 @@ impl Evaluator {
                 self.draw_list.push(DrawCmd::Path { commands: draw_commands, style });
                 Ok(None)
             }
+            Stmt::Text(t) => {
+                let pos_raw = self.eval_expr(&t.pos, locals)?.as_vec2()?;
+                let content = self.eval_expr(&t.content, locals)?.as_string()?;
+                let size = if let Some(ref s) = t.size {
+                    self.eval_expr(s, locals)?.as_f64()?
+                } else {
+                    16.0
+                };
+                let font_family = if let Some(ref f) = t.font {
+                    self.eval_expr(f, locals)?.as_string()?
+                } else {
+                    "sans-serif".to_string()
+                };
+                let align = if let Some(ref a) = t.align {
+                    match self.eval_expr(a, locals)?.as_string()?.to_lowercase().as_str() {
+                        "center" => TextAlign::Center,
+                        "right" => TextAlign::Right,
+                        _ => TextAlign::Left,
+                    }
+                } else {
+                    TextAlign::Left
+                };
+
+                let mut style = self.current_style();
+                if let Some(ref f) = t.fill { style.fill = self.eval_expr(f, locals)?.as_color()?; }
+                if let Some(ref s) = t.stroke { style.stroke = self.eval_expr(s, locals)?.as_color()?; }
+                if let Some(ref w) = t.width { style.width = self.eval_expr(w, locals)?.as_f64()?; }
+                if let Some(ref o) = t.opacity { style.opacity *= self.eval_expr(o, locals)?.as_f64()?; }
+
+                let trans = self.current_transform();
+                let pos = trans.transform_point(pos_raw);
+                self.draw_list.push(DrawCmd::Text {
+                    pos,
+                    content,
+                    size,
+                    font_family,
+                    align,
+                    style,
+                });
+                Ok(None)
+            }
             Stmt::Group(g) => {
                 let mut local_trans = Transform2D::identity();
                 if let Some(ref p) = g.pos {
@@ -417,7 +473,27 @@ impl Evaluator {
                 let l_val = self.eval_expr(left, locals)?;
                 let r_val = self.eval_expr(right, locals)?;
                 match op {
-                    BinaryOp::Add => Ok(Value::Number(l_val.as_f64()? + r_val.as_f64()?)),
+                    BinaryOp::Add => {
+                        match (l_val, r_val) {
+                            (Value::String(s1), Value::String(s2)) => Ok(Value::String(format!("{}{}", s1, s2))),
+                            (Value::String(s1), Value::Number(n2)) => {
+                                if n2.fract() == 0.0 && n2.abs() < 1e15 {
+                                    Ok(Value::String(format!("{}{}", s1, n2 as i64)))
+                                } else {
+                                    Ok(Value::String(format!("{}{}", s1, n2)))
+                                }
+                            }
+                            (Value::Number(n1), Value::String(s2)) => {
+                                if n1.fract() == 0.0 && n1.abs() < 1e15 {
+                                    Ok(Value::String(format!("{}{}", n1 as i64, s2)))
+                                } else {
+                                    Ok(Value::String(format!("{}{}", n1, s2)))
+                                }
+                            }
+                            (Value::String(s1), Value::Bool(b2)) => Ok(Value::String(format!("{}{}", s1, b2))),
+                            (l, r) => Ok(Value::Number(l.as_f64()? + r.as_f64()?)),
+                        }
+                    }
                     BinaryOp::Sub => Ok(Value::Number(l_val.as_f64()? - r_val.as_f64()?)),
                     BinaryOp::Mul => Ok(Value::Number(l_val.as_f64()? * r_val.as_f64()?)),
                     BinaryOp::Div => {

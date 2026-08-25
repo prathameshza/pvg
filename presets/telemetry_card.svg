@@ -1,0 +1,514 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="600" height="400" viewBox="0 0 600 400" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="#0b0c10" />
+  <g>
+    <animate attributeName="visibility" values="visible;hidden" keyTimes="0; 0.0333" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3200 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">76 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 0s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.0333; 0.0667" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3318 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">75 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 0s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.0667; 0.1000" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3425 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">75 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 0s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.1000; 0.1333" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3513 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">74 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 0s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.1333; 0.1667" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3572 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">73 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 0s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.1667; 0.2000" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3598 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">72 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 0s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.2000; 0.2333" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3589 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">70 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 0s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.2333; 0.2667" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3545 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">69 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 0s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.2667; 0.3000" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3470 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">67 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 0s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.3000; 0.3333" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3370 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">66 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 0s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.3333; 0.3667" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3256 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">64 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 1s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.3667; 0.4000" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3136 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">63 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 1s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.4000; 0.4333" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3022 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">62 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 1s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.4333; 0.4667" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">2924 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">61 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 1s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.4667; 0.5000" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">2851 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">60 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 1s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.5000; 0.5333" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">2808 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">60 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 1s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.5333; 0.5667" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">2801 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">60 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 1s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.5667; 0.6000" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">2829 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">60 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 1s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.6000; 0.6333" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">2890 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">60 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 1s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.6333; 0.6667" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">2979 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">61 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 1s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.6667; 0.7000" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3088 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">62 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 2s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.7000; 0.7333" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3206 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">64 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 2s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.7333; 0.7667" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3324 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">65 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 2s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.7667; 0.8000" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3431 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">67 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 2s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.8000; 0.8333" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3517 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">68 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 2s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.8333; 0.8667" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3575 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">70 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 2s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.8667; 0.9000" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3599 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">71 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 2s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.9000; 0.9333" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3587 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">73 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 2s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible;hidden" keyTimes="0; 0.9333; 0.9667" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3541 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">74 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 2s</text>
+  </g>
+  <g>
+    <animate attributeName="visibility" values="hidden;visible" keyTimes="0; 0.9667" dur="3.0s" repeatCount="indefinite" calcMode="discrete" />
+    <rect x="40.00" y="40.00" width="520.00" height="320.00" rx="12.00" ry="12.00" fill="#12141c" stroke="#1f2333" stroke-width="1.50" />
+    <rect x="40.00" y="40.00" width="520.00" height="52.00" rx="12.00" ry="12.00" fill="#181b26" stroke="none" />
+    <text x="60.00" y="56.00" font-size="16.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#00ffcc" stroke="none">TELEMETRY MONITOR</text>
+    <circle cx="480.00" cy="66.00" r="4.00" fill="#00e676" stroke="none" />
+    <text x="495.00" y="58.00" font-size="13.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#00e676" stroke="none">LIVE</text>
+    <rect x="60.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="80.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">ENGINE SPEED</text>
+    <text x="80.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ffffff" stroke="none">3465 RPM</text>
+    <rect x="315.00" y="115.00" width="225.00" height="110.00" rx="8.00" ry="8.00" fill="#171922" stroke="#282c3f" stroke-width="1.00" />
+    <text x="335.00" y="130.00" font-size="12.00" font-family="sans" text-anchor="start" dominant-baseline="hanging" fill="#8f96b0" stroke="none">CORE TEMP</text>
+    <text x="335.00" y="155.00" font-size="28.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#ff3355" stroke="none">75 °C</text>
+    <text x="60.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="start" dominant-baseline="hanging" fill="#5e6278" stroke="none">LEFT: System OK</text>
+    <text x="300.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="middle" dominant-baseline="hanging" fill="#5e6278" stroke="none">CENTER: 60 FPS</text>
+    <text x="540.00" y="310.00" font-size="12.00" font-family="mono" text-anchor="end" dominant-baseline="hanging" fill="#5e6278" stroke="none">RIGHT: Time 2s</text>
+  </g>
+</svg>
