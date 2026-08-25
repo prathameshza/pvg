@@ -16,6 +16,17 @@ This standalone benchmark suite delivers high-precision profiling of the Procedu
 
 ---
 
+## 🖥️ Benchmark Platform Testbed Environment
+
+The reference benchmark results were executed on the following system configuration:
+
+* **Machine:** Lenovo LOQ 15ARP9 (83JC)
+* **Processor:** AMD Ryzen™ 5 7235HS (4 Cores, 8 Threads @ 3.20 GHz)
+* **Installed Memory:** 24.0 GB Physical RAM
+* **Operating System:** Microsoft Windows 11 Home Single Language (64-bit, Build 26200)
+
+---
+
 ## Running Benchmarks
 
 ### 1. Run the Full Suite

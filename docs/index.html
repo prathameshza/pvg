@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PVG - Deterministic Procedural Vector Graphics Engine</title>
+  <meta name="description" content="PVG (Procedural Vector Graphics) is a deterministic 2D vector graphics language combining declarative clarity with programmatic loops, trigonometry, and microsecond CPU evaluation.">
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="style.css">
+  
+  <!-- PVG Web Component Engine & Reference Presets -->
+  <script src="../pvg_web_gui/pvg.js"></script>
+  <script src="../pvg_web_gui/presets.js"></script>
+</head>
+<body>
+
+  <!-- Ambient Glow Elements -->
+  <div class="ambient-glow glow-cyan"></div>
+  <div class="ambient-glow glow-pink"></div>
+
+  <!-- Navigation Bar -->
+  <header id="navbar">
+    <div class="nav-container">
+      <a href="#hero" class="brand">
+        <span class="brand-bolt">⚡</span>
+        <span class="brand-title">PVG</span>
+        <span class="brand-version">0.1</span>
+      </a>
+
+      <nav class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#live-demo">Interactive Demo</a>
+        <a href="#specs">Language Spec</a>
+        <a href="#benchmarks">Benchmarks</a>
+        <a href="#web-component">&lt;pvg-view&gt;</a>
+      </nav>
+
+      <div class="nav-actions">
+        <!-- Direct Pointer to the Web GUI -->
+        <a href="../pvg_web_gui/index.html" class="btn btn-primary nav-cta">
+          <span>Launch Web Studio</span>
+          <span class="btn-arrow">↗</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section id="hero" class="section">
+    <div class="container hero-grid">
+      <div class="hero-content">
+        <div class="pill-badge">
+          <span class="pill-dot"></span>
+          <span>PVG 0.1 · Deterministic Vector Language</span>
+        </div>
+        
+        <h1 class="hero-heading">
+          Procedural Vector Graphics for <span class="text-gradient">Modern Computing</span>
+        </h1>
+        
+        <p class="hero-description">
+          A high-performance 2D scene description language combining the declarative clarity of vector graphics with native loops, functions, and trigonometry. Designed for microsecond CPU evaluation, zero GPU dependency, and sub-50KB memory footprints.
+        </p>
+
+        <div class="hero-cta-group">
+          <!-- Primary Navigation to Web GUI Studio -->
+          <a href="../pvg_web_gui/index.html" class="btn btn-primary btn-lg">
+            <span>⚡ Open Web Studio (Live IDE)</span>
+            <span class="btn-arrow">↗</span>
+          </a>
+          <a href="#specs" class="btn btn-secondary btn-lg">
+            <span>View Architecture Spec</span>
+          </a>
+        </div>
+
+        <!-- Telemetry Stats Strip -->
+        <div class="hero-metrics">
+          <div class="metric-card">
+            <span class="metric-val">&lt; 0.04 ms</span>
+            <span class="metric-lbl">Frame Eval Latency</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-val">&lt; 50 KB</span>
+            <span class="metric-lbl">Memory Footprint</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-val">0 GPU</span>
+            <span class="metric-lbl">Pure CPU Determinism</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-val">60+ FPS</span>
+            <span class="metric-lbl">Real-time Animation</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Hero Visual Preview Powered by <pvg-view> -->
+      <div class="hero-visual">
+        <div class="preview-window">
+          <div class="window-header">
+            <div class="window-dots">
+              <span class="dot red"></span>
+              <span class="dot yellow"></span>
+              <span class="dot green"></span>
+            </div>
+            <div class="window-title">live_viewport.pvg</div>
+            <div class="window-status" id="hero-status-pill">60 FPS · 0.02ms</div>
+          </div>
+          <div class="window-canvas-container">
+            <pvg-view id="hero-pvg-view" interactive autoplay render="canvas"></pvg-view>
+          </div>
+          <div class="window-footer">
+            <span class="footer-tag">Custom Element: &lt;pvg-view&gt;</span>
+            <a href="../pvg_web_gui/index.html" class="footer-link">Edit in Studio ↗</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Key Architecture Features -->
+  <section id="features" class="section">
+    <div class="container">
+      <div class="section-header text-center">
+        <h2 class="section-title">Why Procedural Vector Graphics?</h2>
+        <p class="section-subtitle">Eliminating SVG’s DOM bloat, heavy matrix inversions, and rigid declarative limits.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🔄</div>
+          <h3>Native Procedural Control</h3>
+          <p>Write dynamic <code>for</code> loops, <code>while</code> loops, <code>if/else</code> branches, and user-defined <code>def</code> functions directly inside the graphics source.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📐</div>
+          <h3>Direct Trigonometric Arcs</h3>
+          <p>Replaces SVG's computationally heavy endpoint-to-center elliptical arc matrix inversions with direct center-radius-angle forward trigonometry.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">⏱️</div>
+          <h3>Native 60 FPS Timeline</h3>
+          <p>Built-in <code>time</code> and <code>t</code> clock variables enable deterministic procedural oscillations, rotations, and organic waveforms out of the box.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🎲</div>
+          <h3>Deterministic Xorshift RNG</h3>
+          <p>Integrated 64-bit pseudo-random number generator with <code>seed &lt;N&gt;</code> and <code>random(min, max)</code> for 100% reproducible generative art.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🪶</div>
+          <h3>Sub-50 KB Bounded Heap</h3>
+          <p>Evaluates entire scenes directly into flat contiguous 2D draw lists with strict loop limits and safe recursion bounds to avoid DoS vulnerabilities.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🧩</div>
+          <h3>Drop-In Web Component</h3>
+          <p>Embed with <code>&lt;pvg-view&gt;</code> into any modern web framework (React, Vue, Svelte, Astro) with canvas, SVG, or interactive pan/zoom modes.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive Demo & Preset Explorer -->
+  <section id="live-demo" class="section bg-alt">
+    <div class="container">
+      <div class="section-header">
+        <div class="header-split">
+          <div>
+            <h2 class="section-title">Interactive Live Playground</h2>
+            <p class="section-subtitle">Select any reference preset to watch the PVG runtime compile and evaluate in real time.</p>
+          </div>
+          <a href="../pvg_web_gui/index.html" class="btn btn-primary">
+            <span>Open Full Code Studio</span>
+            <span class="btn-arrow">↗</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Preset Selector Tabs -->
+      <div class="preset-tabs" id="preset-tab-container">
+        <!-- Injected via JavaScript -->
+      </div>
+
+      <div class="demo-split">
+        <!-- Code View Pane -->
+        <div class="demo-pane code-pane">
+          <div class="pane-bar">
+            <span class="pane-label">Source Code (PVG 0.1)</span>
+            <button class="btn btn-sm" id="btn-copy-code">Copy Source</button>
+          </div>
+          <pre class="code-viewport"><code id="demo-code-display"># Loading code...</code></pre>
+        </div>
+
+        <!-- Render View Pane -->
+        <div class="demo-pane render-pane">
+          <div class="pane-bar">
+            <span class="pane-label">Real-Time Viewport</span>
+            <div class="pane-controls">
+              <button class="btn btn-sm" id="btn-toggle-play">⏸ Pause</button>
+              <button class="btn btn-sm" id="btn-reset-demo-time">⏮ Reset</button>
+            </div>
+          </div>
+          <div class="demo-canvas-wrapper">
+            <pvg-view id="demo-pvg-view" interactive autoplay render="canvas"></pvg-view>
+          </div>
+          <div class="pane-footer">
+            <span id="demo-telemetry">Primitives: 0 | Latency: 0.00 ms</span>
+            <span class="time-display" id="demo-time-display">0.00s</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Web Component & Quick Integration -->
+  <section id="web-component" class="section">
+    <div class="container">
+      <div class="section-header text-center">
+        <h2 class="section-title">Embed &lt;pvg-view&gt; Anywhere</h2>
+        <p class="section-subtitle">Standard W3C Custom Element with zero external dependencies.</p>
+      </div>
+
+      <div class="embed-showcase-grid">
+        <div class="embed-card">
+          <div class="card-header">
+            <h4>1. Standard HTML Integration</h4>
+          </div>
+          <pre class="embed-code"><code>&lt;!-- 1. Include PVG Runtime --&gt;
+&lt;script src="pvg.js"&gt;&lt;/script&gt;
+
+&lt;!-- 2. Drop the Component with inline PVG script --&gt;
+&lt;pvg-view autoplay interactive render="canvas"&gt;
+  &lt;script type="text/pvg"&gt;
+    PVG 0.1
+    canvas 400 400
+      background #000000
+
+    circle
+      center [200, 200]
+      radius 50 + 20 * sin(time * 3)
+      fill #00ffcc
+  &lt;/script&gt;
+&lt;/pvg-view&gt;</code></pre>
+        </div>
+
+        <div class="embed-card">
+          <div class="card-header">
+            <h4>2. Remote File & Reactive Props</h4>
+          </div>
+          <pre class="embed-code"><code>&lt;!-- Load standalone .pvg files directly --&gt;
+&lt;pvg-view src="presets/radar.pvg" autoplay render="svg"&gt;&lt;/pvg-view&gt;
+
+&lt;!-- Control execution via JavaScript --&gt;
+&lt;script&gt;
+  const view = document.querySelector('pvg-view');
+  view.time = 1.25; // Scrub timeline
+  view.play();      // Start 60 FPS loop
+  
+  // High-res raster PNG export
+  const blob = await view.toPngBlob(4); // 4x Ultra HD
+&lt;/script&gt;</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Language Grammar & Quick Reference -->
+  <section id="specs" class="section bg-alt">
+    <div class="container">
+      <div class="section-header text-center">
+        <h2 class="section-title">Language Architecture & Specs</h2>
+        <p class="section-subtitle">A clean, indentation-based syntax designed for readability and single-pass parsing.</p>
+      </div>
+
+      <div class="spec-grid">
+        <div class="spec-block">
+          <h3>2D Geometric Primitives</h3>
+          <ul class="spec-list">
+            <li><code>circle</code> center [x, y], radius r, fill, stroke, width, opacity</li>
+            <li><code>ellipse</code> center [x, y], radius [rx, ry], fill, stroke</li>
+            <li><code>rectangle</code> pos [x, y], size [w, h], radius r</li>
+            <li><code>line</code> from [x1, y1], to [x2, y2], stroke, width</li>
+            <li><code>polygon</code> points [x1, y1] [x2, y2] [x3, y3] ...</li>
+            <li><code>group</code> pos [tx, ty], rot θ, scale [sx, sy], opacity</li>
+          </ul>
+        </div>
+
+        <div class="spec-block">
+          <h3>Lean Path Sub-Commands</h3>
+          <ul class="spec-list">
+            <li><code>start [x, y]</code> Subpath starting anchor point</li>
+            <li><code>line [x, y]</code> Straight segment to destination</li>
+            <li><code>quad [cx, cy] [x, y]</code> Quadratic Bézier curve</li>
+            <li><code>curve [c1x, c1y] [c2x, c2y] [x, y]</code> Cubic Bézier</li>
+            <li><code>arc [cx, cy] r start_deg end_deg</code> Forward trig arc</li>
+            <li><code>close</code> Connects path back to subpath start</li>
+          </ul>
+        </div>
+
+        <div class="spec-block">
+          <h3>Expressions & Operators</h3>
+          <ul class="spec-list">
+            <li><strong>Unit Suffixes:</strong> <code>180deg</code> (auto-rad), <code>1.5rad</code></li>
+            <li><strong>Vectors:</strong> Bracket syntax <code>[x + 10, y * cos(a)]</code></li>
+            <li><strong>Conditionals:</strong> Ternary <code>is_major ? 18 : 8</code></li>
+            <li><strong>Operators:</strong> <code>^</code> (pow), <code>%</code>, <code>and</code>, <code>or</code>, <code>not</code></li>
+            <li><strong>Math Functions:</strong> <code>sin, cos, tan, sqrt, abs, pow, min, max, floor, ceil, round</code></li>
+            <li><strong>RNG:</strong> <code>seed 42891</code> & <code>random(min, max)</code></li>
+          </ul>
+        </div>
+
+        <div class="spec-block">
+          <h3>Multi-Backend Pipeline</h3>
+          <ul class="spec-list">
+            <li><strong>Rust Core:</strong> Single-pass Lexer, Parser & Evaluator</li>
+            <li><strong>Native Windows GUI:</strong> eframe / egui screen-space adaptive curve tessellation</li>
+            <li><strong>Transpilers:</strong> Compiles to W3C SVG (with SMIL animations) and multi-scale PNG</li>
+            <li><strong>Web IDE:</strong> Pure vanilla JS engine with <code>&lt;pvg-view&gt;</code></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Benchmark Summary with System Specs -->
+  <section id="benchmarks" class="section">
+    <div class="container">
+      <div class="section-header text-center">
+        <h2 class="section-title">High-Precision Microsecond Benchmarks</h2>
+        <p class="section-subtitle">
+          Measured using PVG's zero-dependency Rust Tracking Allocator and microsecond clock timers.
+        </p>
+      </div>
+
+      <!-- Testbed Hardware Platform Specification Strip -->
+      <div class="benchmark-env-bar">
+        <div class="env-badge-title">🧪 Benchmark Platform Testbed:</div>
+        <div class="env-chips">
+          <span class="env-chip"><span class="env-icon">💻</span><strong>System:</strong> Lenovo LOQ 15ARP9 (x64)</span>
+          <span class="env-chip"><span class="env-icon">⚡</span><strong>CPU:</strong> AMD Ryzen 5 7235HS (4 Cores / 8 Threads @ 3.20 GHz)</span>
+          <span class="env-chip"><span class="env-icon">🧠</span><strong>Memory:</strong> 24.0 GB RAM</span>
+          <span class="env-chip"><span class="env-icon">🪟</span><strong>OS:</strong> Windows 11 Home Single Language (64-bit)</span>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <table class="benchmark-table">
+          <thead>
+            <tr>
+              <th>Benchmark Case</th>
+              <th>Category</th>
+              <th>Shapes</th>
+              <th>Mean Latency</th>
+              <th>P95 Latency</th>
+              <th>Peak Heap</th>
+              <th>Spec Target</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>radar.pvg</strong></td>
+              <td>Preset</td>
+              <td>35</td>
+              <td>16.42 µs</td>
+              <td>19.10 µs</td>
+              <td>4.12 KB</td>
+              <td><span class="tag-pass">✓ PASS</span></td>
+            </tr>
+            <tr>
+              <td><strong>dial.pvg</strong></td>
+              <td>Preset</td>
+              <td>28</td>
+              <td>12.85 µs</td>
+              <td>15.20 µs</td>
+              <td>3.84 KB</td>
+              <td><span class="tag-pass">✓ PASS</span></td>
+            </tr>
+            <tr>
+              <td><strong>grid.pvg</strong></td>
+              <td>Preset</td>
+              <td>128</td>
+              <td>24.30 µs</td>
+              <td>28.50 µs</td>
+              <td>8.25 KB</td>
+              <td><span class="tag-pass">✓ PASS</span></td>
+            </tr>
+            <tr>
+              <td><strong>stress_10k_primitives</strong></td>
+              <td>Stress</td>
+              <td>10,000</td>
+              <td>182.40 µs</td>
+              <td>198.10 µs</td>
+              <td>38.60 KB</td>
+              <td><span class="tag-pass">✓ PASS</span></td>
+            </tr>
+            <tr>
+              <td><strong>stress_math_and_trig</strong></td>
+              <td>Stress</td>
+              <td>1,500</td>
+              <td>42.10 µs</td>
+              <td>48.20 µs</td>
+              <td>12.40 KB</td>
+              <td><span class="tag-pass">✓ PASS</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Call to Action Banner -->
+  <section class="section cta-section">
+    <div class="container">
+      <div class="cta-card">
+        <h2 class="cta-title">Ready to build with Procedural Vector Graphics?</h2>
+        <p class="cta-subtitle">Jump straight into the web-based IDE with real-time compilation, or integrate PVG into your Rust projects.</p>
+        <div class="cta-actions">
+          <a href="../pvg_web_gui/index.html" class="btn btn-primary btn-lg">
+            <span>Launch Web Studio</span>
+            <span class="btn-arrow">↗</span>
+          </a>
+          <a href="https://github.com" target="_blank" rel="noreferrer" class="btn btn-secondary btn-lg">
+            <span>View GitHub Repository</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer id="footer">
+    <div class="container footer-content">
+      <div class="footer-brand">
+        <div class="brand">
+          <span class="brand-bolt">⚡</span>
+          <span class="brand-title">PVG</span>
+          <span class="brand-version">0.1</span>
+        </div>
+        <p>Deterministic, microsecond 2D vector graphics & procedural scene description language.</p>
+      </div>
+
+      <div class="footer-links-group">
+        <div class="footer-col">
+          <h5>Navigation</h5>
+          <a href="../pvg_web_gui/index.html">Web Studio (IDE)</a>
+          <a href="#features">Features</a>
+          <a href="#live-demo">Playground</a>
+          <a href="#specs">Language Spec</a>
+        </div>
+
+        <div class="footer-col">
+          <h5>Ecosystem</h5>
+          <a href="../pvg_web_gui/index.html">Web Component</a>
+          <a href="#benchmarks">Benchmark Suite</a>
+          <a href="../pvg_win_gui/README.md">Native Windows Studio</a>
+          <a href="../transpilers/Cargo.toml">CLI Transpilers</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="container footer-bottom">
+      <p> PVG Open Source Project. Zero GPU Dependency. Sub-50KB Memory Footprint.</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
