@@ -1,4 +1,5 @@
 use crate::ast::Color;
+use crate::error::PvgError;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
@@ -88,7 +89,7 @@ pub enum TokenKind {
     Not,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
     pub line: usize,
@@ -108,7 +109,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn tokenize_all(&mut self) -> Result<Vec<Token>, String> {
+    pub fn tokenize_all(&mut self) -> Result<Vec<Token>, PvgError> {
         let mut tokens = Vec::new();
         let mut line_num = 0;
 
@@ -122,9 +123,10 @@ impl<'a> Lexer<'a> {
             }
 
             if spaces < bytes.len() && bytes[spaces] == b'\t' {
-                return Err(format!(
-                    "Line {}: Tabs are forbidden. Use 2 spaces for indentation.",
-                    line_num
+                return Err(PvgError::lex(
+                    line_num,
+                    spaces + 1,
+                    "Tabs are forbidden. Use 2 spaces for indentation.",
                 ));
             }
 
@@ -152,7 +154,11 @@ impl<'a> Lexer<'a> {
                     } else if spaces == last {
                         break;
                     } else {
-                        return Err(format!("Line {}: Inconsistent indentation level.", line_num));
+                        return Err(PvgError::lex(
+                            line_num,
+                            spaces + 1,
+                            "Inconsistent indentation level.",
+                        ));
                     }
                 }
             }
@@ -190,7 +196,7 @@ impl<'a> Lexer<'a> {
         line_num: usize,
         col_offset: usize,
         tokens: &mut Vec<Token>,
-    ) -> Result<(), String> {
+    ) -> Result<(), PvgError> {
         let bytes = text.as_bytes();
         let len = bytes.len();
         let mut i = 0;
@@ -335,7 +341,7 @@ impl<'a> Lexer<'a> {
                 }
 
                 if !closed {
-                    return Err(format!("Line {}: Unclosed string literal.", line_num));
+                    return Err(PvgError::lex(line_num, col, "Unclosed string literal."));
                 }
                 tokens.push(Token { kind: TokenKind::String(s), line: line_num, col });
                 continue;
@@ -353,7 +359,7 @@ impl<'a> Lexer<'a> {
                 let num_str = std::str::from_utf8(&bytes[start..i]).unwrap();
                 let mut val = num_str
                     .parse::<f64>()
-                    .map_err(|e| format!("Line {}: {}", line_num, e))?;
+                    .map_err(|e| PvgError::lex(line_num, col, format!("Invalid number: {}", e)))?;
 
                 if i + 3 <= len && &bytes[i..i + 3] == b"deg" {
                     val = val.to_radians();
@@ -434,9 +440,10 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            return Err(format!(
-                "Line {}, Col {}: Unexpected character '{}'.",
-                line_num, col, b as char
+            return Err(PvgError::lex(
+                line_num,
+                col,
+                format!("Unexpected character '{}'.", b as char),
             ));
         }
 

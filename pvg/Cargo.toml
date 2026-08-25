@@ -2,6 +2,27 @@
 name = "pvg"
 version = "0.1.0"
 edition = "2021"
-description = "Deterministic Procedural Vector Graphics Core Engine"
+rust-version = "1.70"
+description = "Deterministic Procedural Vector Graphics (PVG) core engine with microsecond CPU evaluation"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/prathameshza/pvg"
+homepage = "https://prathameshza.github.io/pvg/"
+documentation = "https://docs.rs/pvg"
+keywords = ["vector-graphics", "procedural", "graphics", "svg", "2d"]
+categories = ["graphics", "rendering", "parser-implementations", "multimedia"]
 
 [dependencies]
+# PVG is pure, zero-dependency Rust
+
+[[example]]
+name = "basic_compile"
+path = "examples/basic_compile.rs"
+
+[[example]]
+name = "animated_clock"
+path = "examples/animated_clock.rs"
+
+[[example]]
+name = "ast_caching"
+path = "examples/ast_caching.rs"

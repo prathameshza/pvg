@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::error::PvgError;
 use crate::lexer::{Token, TokenKind};
 
 pub struct Parser {
@@ -36,14 +37,15 @@ impl Parser {
         }
     }
 
-    fn expect(&mut self, kind: TokenKind) -> Result<Token, String> {
+    fn expect(&mut self, kind: TokenKind) -> Result<Token, PvgError> {
         let tok = self.peek().clone();
         if std::mem::discriminant(&tok.kind) == std::mem::discriminant(&kind) {
             Ok(self.advance())
         } else {
-            Err(format!(
-                "Line {}, Col {}: Expected {:?}, found {:?}",
-                tok.line, tok.col, kind, tok.kind
+            Err(PvgError::parse(
+                tok.line,
+                tok.col,
+                format!("Expected {:?}, found {:?}", kind, tok.kind),
             ))
         }
     }
@@ -54,7 +56,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_document(&mut self) -> Result<Document, String> {
+    pub fn parse_document(&mut self) -> Result<Document, PvgError> {
         self.skip_newlines();
 
         // 1. Header: PVG 0.1
@@ -62,7 +64,12 @@ impl Parser {
         let ver_tok = self.advance();
         let version = match ver_tok.kind {
             TokenKind::Number(v) => (v.floor() as u32, ((v - v.floor()) * 10.0).round() as u32),
-            _ => return Err(format!("Line {}: Expected version number after PVG (e.g. 0.1)", ver_tok.line)),
+            _ => {
+                return Err(PvgError::parse_line(
+                    ver_tok.line,
+                    "Expected version number after PVG (e.g. 0.1)",
+                ));
+            }
         };
         self.skip_newlines();
 
@@ -72,11 +79,11 @@ impl Parser {
         let h_tok = self.advance();
         let width = match w_tok.kind {
             TokenKind::Number(w) => w,
-            _ => return Err(format!("Line {}: Expected canvas width number.", w_tok.line)),
+            _ => return Err(PvgError::parse_line(w_tok.line, "Expected canvas width number.")),
         };
         let height = match h_tok.kind {
             TokenKind::Number(h) => h,
-            _ => return Err(format!("Line {}: Expected canvas height number.", h_tok.line)),
+            _ => return Err(PvgError::parse_line(h_tok.line, "Expected canvas height number.")),
         };
 
         let mut bg = None;
@@ -85,7 +92,12 @@ impl Parser {
                 let bg_tok = self.advance();
                 bg = match bg_tok.kind {
                     TokenKind::Color(c) => Some(c),
-                    _ => return Err(format!("Line {}: Expected color for canvas background.", bg_tok.line)),
+                    _ => {
+                        return Err(PvgError::parse_line(
+                            bg_tok.line,
+                            "Expected color for canvas background.",
+                        ));
+                    }
                 };
             }
             self.skip_newlines();
@@ -115,13 +127,20 @@ impl Parser {
         })
     }
 
-    fn parse_statement(&mut self) -> Result<Stmt, String> {
-        match self.peek_kind().clone() {
+    fn parse_statement(&mut self) -> Result<Stmt, PvgError> {
+        let peek_tok = self.peek().clone();
+        match peek_tok.kind {
             TokenKind::Set => {
                 self.advance();
                 let name = match self.advance().kind {
                     TokenKind::Ident(s) => s,
-                    t => return Err(format!("Line {}: Expected variable name after 'set', found {:?}", self.peek().line, t)),
+                    t => {
+                        return Err(PvgError::parse(
+                            self.peek().line,
+                            self.peek().col,
+                            format!("Expected variable name after 'set', found {:?}", t),
+                        ));
+                    }
                 };
                 self.expect(TokenKind::Equal)?;
                 let expr = self.parse_expression()?;
@@ -139,7 +158,7 @@ impl Parser {
                 self.advance();
                 let name = match self.advance().kind {
                     TokenKind::Ident(s) => s,
-                    _ => return Err(format!("Line {}: Expected function name.", self.peek().line)),
+                    _ => return Err(PvgError::parse_line(self.peek().line, "Expected function name.")),
                 };
                 self.expect(TokenKind::LParen)?;
                 let mut params = Vec::new();
@@ -164,7 +183,7 @@ impl Parser {
                 self.advance();
                 let var = match self.advance().kind {
                     TokenKind::Ident(s) => s,
-                    _ => return Err(format!("Line {}: Expected loop variable name.", self.peek().line)),
+                    _ => return Err(PvgError::parse_line(self.peek().line, "Expected loop variable name.")),
                 };
                 self.expect(TokenKind::From)?;
                 let from_expr = self.parse_expression()?;
@@ -271,14 +290,21 @@ impl Parser {
                     self.expect(TokenKind::RParen)?;
                     Ok(Stmt::Call(func_name, args))
                 } else {
-                    Err(format!("Line {}: Unexpected identifier in statement position.", self.peek().line))
+                    Err(PvgError::parse_line(
+                        self.peek().line,
+                        "Unexpected identifier in statement position.",
+                    ))
                 }
             }
-            other => Err(format!("Line {}: Unexpected statement token {:?}", self.peek().line, other)),
+            other => Err(PvgError::parse(
+                self.peek().line,
+                self.peek().col,
+                format!("Unexpected statement token {:?}", other),
+            )),
         }
     }
 
-    fn parse_block(&mut self) -> Result<Vec<Stmt>, String> {
+    fn parse_block(&mut self) -> Result<Vec<Stmt>, PvgError> {
         self.expect(TokenKind::Indent)?;
         let mut stmts = Vec::new();
         while self.peek_kind() != &TokenKind::Dedent && self.peek_kind() != &TokenKind::Eof {
@@ -293,7 +319,7 @@ impl Parser {
         Ok(stmts)
     }
 
-    fn parse_circle(&mut self) -> Result<Stmt, String> {
+    fn parse_circle(&mut self) -> Result<Stmt, PvgError> {
         self.expect(TokenKind::Indent)?;
         let mut center = None;
         let mut radius = None;
@@ -311,18 +337,24 @@ impl Parser {
                 TokenKind::Width => { self.advance(); width = Some(self.parse_expression()?); }
                 TokenKind::Opacity => { self.advance(); opacity = Some(self.parse_expression()?); }
                 TokenKind::Newline => { self.advance(); }
-                other => return Err(format!("Line {}: Invalid circle property {:?}", self.peek().line, other)),
+                other => {
+                    return Err(PvgError::parse(
+                        self.peek().line,
+                        self.peek().col,
+                        format!("Invalid circle property {:?}", other),
+                    ));
+                }
             }
             self.skip_newlines();
         }
         self.expect(TokenKind::Dedent)?;
 
-        let center = center.ok_or_else(|| "Circle requires 'center [x, y]'".to_string())?;
-        let radius = radius.ok_or_else(|| "Circle requires 'radius r'".to_string())?;
+        let center = center.ok_or_else(|| PvgError::parse_line(self.peek().line, "Circle requires 'center [x, y]'"))?;
+        let radius = radius.ok_or_else(|| PvgError::parse_line(self.peek().line, "Circle requires 'radius r'"))?;
         Ok(Stmt::Circle(CircleNode { center, radius, fill, stroke, width, opacity }))
     }
 
-    fn parse_ellipse(&mut self) -> Result<Stmt, String> {
+    fn parse_ellipse(&mut self) -> Result<Stmt, PvgError> {
         self.expect(TokenKind::Indent)?;
         let mut center = None;
         let mut radius = None;
@@ -340,18 +372,24 @@ impl Parser {
                 TokenKind::Width => { self.advance(); width = Some(self.parse_expression()?); }
                 TokenKind::Opacity => { self.advance(); opacity = Some(self.parse_expression()?); }
                 TokenKind::Newline => { self.advance(); }
-                other => return Err(format!("Line {}: Invalid ellipse property {:?}", self.peek().line, other)),
+                other => {
+                    return Err(PvgError::parse(
+                        self.peek().line,
+                        self.peek().col,
+                        format!("Invalid ellipse property {:?}", other),
+                    ));
+                }
             }
             self.skip_newlines();
         }
         self.expect(TokenKind::Dedent)?;
 
-        let center = center.ok_or_else(|| "Ellipse requires 'center [x, y]'".to_string())?;
-        let radius = radius.ok_or_else(|| "Ellipse requires 'radius [rx, ry]'".to_string())?;
+        let center = center.ok_or_else(|| PvgError::parse_line(self.peek().line, "Ellipse requires 'center [x, y]'"))?;
+        let radius = radius.ok_or_else(|| PvgError::parse_line(self.peek().line, "Ellipse requires 'radius [rx, ry]'"))?;
         Ok(Stmt::Ellipse(EllipseNode { center, radius, fill, stroke, width, opacity }))
     }
 
-    fn parse_rectangle(&mut self) -> Result<Stmt, String> {
+    fn parse_rectangle(&mut self) -> Result<Stmt, PvgError> {
         self.expect(TokenKind::Indent)?;
         let mut pos = None;
         let mut size = None;
@@ -371,18 +409,24 @@ impl Parser {
                 TokenKind::Width => { self.advance(); width = Some(self.parse_expression()?); }
                 TokenKind::Opacity => { self.advance(); opacity = Some(self.parse_expression()?); }
                 TokenKind::Newline => { self.advance(); }
-                other => return Err(format!("Line {}: Invalid rectangle property {:?}", self.peek().line, other)),
+                other => {
+                    return Err(PvgError::parse(
+                        self.peek().line,
+                        self.peek().col,
+                        format!("Invalid rectangle property {:?}", other),
+                    ));
+                }
             }
             self.skip_newlines();
         }
         self.expect(TokenKind::Dedent)?;
 
-        let pos = pos.ok_or_else(|| "Rectangle requires 'pos [x, y]'".to_string())?;
-        let size = size.ok_or_else(|| "Rectangle requires 'size [w, h]'".to_string())?;
+        let pos = pos.ok_or_else(|| PvgError::parse_line(self.peek().line, "Rectangle requires 'pos [x, y]'"))?;
+        let size = size.ok_or_else(|| PvgError::parse_line(self.peek().line, "Rectangle requires 'size [w, h]'"))?;
         Ok(Stmt::Rectangle(RectNode { pos, size, radius, fill, stroke, width, opacity }))
     }
 
-    fn parse_line(&mut self) -> Result<Stmt, String> {
+    fn parse_line(&mut self) -> Result<Stmt, PvgError> {
         self.expect(TokenKind::Indent)?;
         let mut from = None;
         let mut to = None;
@@ -398,18 +442,24 @@ impl Parser {
                 TokenKind::Width => { self.advance(); width = Some(self.parse_expression()?); }
                 TokenKind::Opacity => { self.advance(); opacity = Some(self.parse_expression()?); }
                 TokenKind::Newline => { self.advance(); }
-                other => return Err(format!("Line {}: Invalid line property {:?}", self.peek().line, other)),
+                other => {
+                    return Err(PvgError::parse(
+                        self.peek().line,
+                        self.peek().col,
+                        format!("Invalid line property {:?}", other),
+                    ));
+                }
             }
             self.skip_newlines();
         }
         self.expect(TokenKind::Dedent)?;
 
-        let from = from.ok_or_else(|| "Line requires 'from [x, y]'".to_string())?;
-        let to = to.ok_or_else(|| "Line requires 'to [x, y]'".to_string())?;
+        let from = from.ok_or_else(|| PvgError::parse_line(self.peek().line, "Line requires 'from [x, y]'"))?;
+        let to = to.ok_or_else(|| PvgError::parse_line(self.peek().line, "Line requires 'to [x, y]'"))?;
         Ok(Stmt::Line(LineNode { from, to, stroke, width, opacity }))
     }
 
-    fn parse_polygon(&mut self) -> Result<Stmt, String> {
+    fn parse_polygon(&mut self) -> Result<Stmt, PvgError> {
         self.expect(TokenKind::Indent)?;
         let mut points = Vec::new();
         let mut fill = None;
@@ -430,7 +480,13 @@ impl Parser {
                 TokenKind::Width => { self.advance(); width = Some(self.parse_expression()?); }
                 TokenKind::Opacity => { self.advance(); opacity = Some(self.parse_expression()?); }
                 TokenKind::Newline => { self.advance(); }
-                other => return Err(format!("Line {}: Invalid polygon property {:?}", self.peek().line, other)),
+                other => {
+                    return Err(PvgError::parse(
+                        self.peek().line,
+                        self.peek().col,
+                        format!("Invalid polygon property {:?}", other),
+                    ));
+                }
             }
             self.skip_newlines();
         }
@@ -439,7 +495,7 @@ impl Parser {
         Ok(Stmt::Polygon(PolygonNode { points, fill, stroke, width, opacity }))
     }
 
-    fn parse_path(&mut self) -> Result<Stmt, String> {
+    fn parse_path(&mut self) -> Result<Stmt, PvgError> {
         self.expect(TokenKind::Indent)?;
         let mut fill = None;
         let mut stroke = None;
@@ -453,7 +509,13 @@ impl Parser {
                     self.advance();
                     let name = match self.advance().kind {
                         TokenKind::Ident(s) => s,
-                        t => return Err(format!("Line {}: Expected variable name after 'set', found {:?}", self.peek().line, t)),
+                        t => {
+                            return Err(PvgError::parse(
+                                self.peek().line,
+                                self.peek().col,
+                                format!("Expected variable name after 'set', found {:?}", t),
+                            ));
+                        }
                     };
                     self.expect(TokenKind::Equal)?;
                     let expr = self.parse_expression()?;
@@ -488,7 +550,13 @@ impl Parser {
                 }
                 TokenKind::Close => { self.advance(); commands.push(PathCommand::Close); }
                 TokenKind::Newline => { self.advance(); }
-                other => return Err(format!("Line {}: Invalid path property/command {:?}", self.peek().line, other)),
+                other => {
+                    return Err(PvgError::parse(
+                        self.peek().line,
+                        self.peek().col,
+                        format!("Invalid path property/command {:?}", other),
+                    ));
+                }
             }
             self.skip_newlines();
         }
@@ -497,7 +565,7 @@ impl Parser {
         Ok(Stmt::Path(PathNode { fill, stroke, width, opacity, commands }))
     }
 
-    fn parse_text(&mut self) -> Result<Stmt, String> {
+    fn parse_text(&mut self) -> Result<Stmt, PvgError> {
         self.expect(TokenKind::Indent)?;
         let mut pos = None;
         let mut content = None;
@@ -521,18 +589,24 @@ impl Parser {
                 TokenKind::Width => { self.advance(); width = Some(self.parse_expression()?); }
                 TokenKind::Opacity => { self.advance(); opacity = Some(self.parse_expression()?); }
                 TokenKind::Newline => { self.advance(); }
-                other => return Err(format!("Line {}: Invalid text property {:?}", self.peek().line, other)),
+                other => {
+                    return Err(PvgError::parse(
+                        self.peek().line,
+                        self.peek().col,
+                        format!("Invalid text property {:?}", other),
+                    ));
+                }
             }
             self.skip_newlines();
         }
         self.expect(TokenKind::Dedent)?;
 
-        let pos = pos.ok_or_else(|| "Text requires 'pos [x, y]'".to_string())?;
-        let content = content.ok_or_else(|| "Text requires 'content <expr>' or 'text <expr>'".to_string())?;
+        let pos = pos.ok_or_else(|| PvgError::parse_line(self.peek().line, "Text requires 'pos [x, y]'"))?;
+        let content = content.ok_or_else(|| PvgError::parse_line(self.peek().line, "Text requires 'content <expr>' or 'text <expr>'"))?;
         Ok(Stmt::Text(TextNode { pos, content, size, font, align, fill, stroke, width, opacity }))
     }
 
-    fn parse_group(&mut self) -> Result<Stmt, String> {
+    fn parse_group(&mut self) -> Result<Stmt, PvgError> {
         self.expect(TokenKind::Indent)?;
         let mut pos = None;
         let mut rot = None;
@@ -560,11 +634,11 @@ impl Parser {
         Ok(Stmt::Group(GroupNode { pos, rot, scale, opacity, fill, stroke, body }))
     }
 
-    pub fn parse_expression(&mut self) -> Result<Expr, String> {
+    pub fn parse_expression(&mut self) -> Result<Expr, PvgError> {
         self.parse_ternary()
     }
 
-    fn parse_ternary(&mut self) -> Result<Expr, String> {
+    fn parse_ternary(&mut self) -> Result<Expr, PvgError> {
         let cond = self.parse_logical_or()?;
         if self.match_kind(&TokenKind::Question) {
             let true_branch = self.parse_expression()?;
@@ -580,7 +654,7 @@ impl Parser {
         }
     }
 
-    fn parse_logical_or(&mut self) -> Result<Expr, String> {
+    fn parse_logical_or(&mut self) -> Result<Expr, PvgError> {
         let mut left = self.parse_logical_and()?;
         while self.match_kind(&TokenKind::Or) {
             let right = self.parse_logical_and()?;
@@ -589,7 +663,7 @@ impl Parser {
         Ok(left)
     }
 
-    fn parse_logical_and(&mut self) -> Result<Expr, String> {
+    fn parse_logical_and(&mut self) -> Result<Expr, PvgError> {
         let mut left = self.parse_equality()?;
         while self.match_kind(&TokenKind::And) {
             let right = self.parse_equality()?;
@@ -598,7 +672,7 @@ impl Parser {
         Ok(left)
     }
 
-    fn parse_equality(&mut self) -> Result<Expr, String> {
+    fn parse_equality(&mut self) -> Result<Expr, PvgError> {
         let mut left = self.parse_comparison()?;
         while let TokenKind::EqualEqual | TokenKind::NotEqual = self.peek_kind() {
             let op = match self.advance().kind {
@@ -612,7 +686,7 @@ impl Parser {
         Ok(left)
     }
 
-    fn parse_comparison(&mut self) -> Result<Expr, String> {
+    fn parse_comparison(&mut self) -> Result<Expr, PvgError> {
         let mut left = self.parse_additive()?;
         while let TokenKind::Less | TokenKind::LessEqual | TokenKind::Greater | TokenKind::GreaterEqual = self.peek_kind() {
             let op = match self.advance().kind {
@@ -628,7 +702,7 @@ impl Parser {
         Ok(left)
     }
 
-    fn parse_additive(&mut self) -> Result<Expr, String> {
+    fn parse_additive(&mut self) -> Result<Expr, PvgError> {
         let mut left = self.parse_multiplicative()?;
         while let TokenKind::Plus | TokenKind::Minus = self.peek_kind() {
             let op = match self.advance().kind {
@@ -642,7 +716,7 @@ impl Parser {
         Ok(left)
     }
 
-    fn parse_multiplicative(&mut self) -> Result<Expr, String> {
+    fn parse_multiplicative(&mut self) -> Result<Expr, PvgError> {
         let mut left = self.parse_power()?;
         while let TokenKind::Star | TokenKind::Slash | TokenKind::Percent = self.peek_kind() {
             let op = match self.advance().kind {
@@ -657,7 +731,7 @@ impl Parser {
         Ok(left)
     }
 
-    fn parse_power(&mut self) -> Result<Expr, String> {
+    fn parse_power(&mut self) -> Result<Expr, PvgError> {
         let left = self.parse_unary()?;
         if self.match_kind(&TokenKind::Caret) {
             let right = self.parse_power()?;
@@ -667,7 +741,7 @@ impl Parser {
         }
     }
 
-    fn parse_unary(&mut self) -> Result<Expr, String> {
+    fn parse_unary(&mut self) -> Result<Expr, PvgError> {
         if self.match_kind(&TokenKind::Minus) {
             let expr = self.parse_unary()?;
             Ok(Expr::Unary(UnaryOp::Neg, Box::new(expr)))
@@ -679,7 +753,7 @@ impl Parser {
         }
     }
 
-    fn parse_primary(&mut self) -> Result<Expr, String> {
+    fn parse_primary(&mut self) -> Result<Expr, PvgError> {
         let tok = self.advance();
         match tok.kind {
             TokenKind::Number(n) => Ok(Expr::Number(n)),
@@ -719,7 +793,11 @@ impl Parser {
                     Ok(Expr::Ident(s))
                 }
             }
-            other => Err(format!("Line {}: Unexpected token in expression: {:?}", tok.line, other)),
+            other => Err(PvgError::parse(
+                tok.line,
+                tok.col,
+                format!("Unexpected token in expression: {:?}", other),
+            )),
         }
     }
 }

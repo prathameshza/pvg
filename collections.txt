@@ -52,7 +52,7 @@ Below is this file's contents:
         ▼ (Single-Pass Tokenizer & Recursive Descent Parser)
 [ Abstract Syntax Tree (AST) ] (~10–25 KB)
         │
-        ▼ (Procedural Evaluator: Loops, Math, Scope Resolution)
+        ▼ (Procedural Evaluator: Loops, Math, Typography, Scope Resolution)
 [ Flat 2D Draw List (Contiguous Structs) ] (~15–35 KB)
         │
    ┌────┴───────────────────────────┬────────────────────────────┐
@@ -61,18 +61,18 @@ Below is this file's contents:
 (egui / Skia / Window)     (W3C SMIL Animation)        (1-Line Scanline Buffer)
 ```
 
-1. **Procedural Native:** Native support for variables, dynamic loops, user-defined functions, trigonometry, and non-linear mathematical expressions directly in the graphics definition.
+1. **Procedural Native:** Native support for variables, dynamic loops, user-defined functions, typography, trigonometry, and mathematical expressions directly in the graphics definition.
 2. **Deterministic & Pure:** Identical source text evaluates to the identical scene graph across all operating systems, CPU architectures, and runtime backends.
-3. **Ultra-Low Resource Footprint:** Designed to compile and evaluate inside `< 50 KB` of heap memory with execution times under $0.2\text{ ms}$ per frame on a single CPU thread.
+3. **Ultra-Low Resource Footprint:** Compiles and evaluates inside `< 50 KB` of heap memory with execution times under $0.2\text{ ms}$ per frame on a single CPU thread.
 4. **No XML/DOM Overhead:** Eliminates deeply nested closing tags, XML namespaces, and heavy browser DOM hierarchies.
-5. **Algebraic Curve Simplicity:** Replaces SVG's computationally heavy endpoint-to-center elliptical arc matrix inversions with direct center-radius-angle trigonometry and quadratic Béziers.
+5. **Algebraic Curve & Text Simplicity:** Replaces SVG's heavy endpoint-to-center elliptical arc matrix inversions with direct forward trigonometry and provides a zero-overhead text and font layout primitive.
 
 ---
 
 ## 2. Lexical Grammar
 
 ### 2.1 File Encoding & Structure
-* **Encoding:** UTF-8.
+* **Encoding:** UTF-8. Multi-byte Unicode characters in string literals (e.g. `°`, `©`, `™`, emojis) are natively decoded without byte fragmentation.
 * **Header:** A PVG document **must** begin with the header `PVG <major>.<minor>` on the first non-empty line (e.g., `PVG 0.1`).
 * **Line Termination:** Newlines (`\n` or `\r\n`) terminate statements.
 * **Indentation:** Exactly **2 spaces** per indentation level. Tabs (`\t`) are forbidden to eliminate cross-platform layout ambiguity.
@@ -97,14 +97,21 @@ unit   = "deg" | "rad" ;
   *Example:* `180deg` evaluates directly to `3.141592653589793`.
 * **Radians Suffix (`rad`):** Expresses raw radians (e.g., `1.5rad`).
 
-### 2.4 2D Coordinate & Vector Literals
+### 2.4 String Literals
+Strings are enclosed in double quotes (`"..."`) and support standard escape sequences (`\n`, `\t`, `\r`, `\"`, `\\`):
+```ebnf
+string = '"' , { character | escape_sequence } , '"' ;
+```
+* *Examples:* `"ENGINE SPEED"`, `"Telemetry Active\nStatus: OK"`, `"60 °C"`
+
+### 2.5 2D Coordinate & Vector Literals
 To eliminate operator ambiguity with arithmetic expressions, all 2D vector coordinates **must** use bracket delimiters:
 ```ebnf
 vector2 = "[" , expression , "," , expression , "]" ;
 ```
 * *Examples:* `[100, 200]`, `[cx + r * cos(a), cy + r * sin(a)]`, `[x - 10, y + 5]`
 
-### 2.5 Color Literals
+### 2.6 Color Literals
 * **Hex Color:** `#RGB`, `#RRGGBB`, `#RRGGBBAA` (e.g., `#fff`, `#00ffcc`, `#ff005580`).
 * **Keywords:** `black`, `white`, `red`, `green`, `blue`, `yellow`, `cyan`, `magenta`, `none`, `transparent`.
 * **Functional Form:** `rgb(r, g, b)` and `rgba(r, g, b, a)` where $r, g, b \in [0, 255]$ and $a \in [0.0, 1.0]$.
@@ -133,6 +140,7 @@ Statement       ::= SetStmt
                   | RectStmt
                   | LineStmt
                   | PolygonStmt
+                  | TextStmt
                   | PathStmt
                   | GroupStmt ;
 
@@ -162,6 +170,9 @@ LineProp        ::= ( "from" Vector2 | "to" Vector2 | StyleProp ) NEWLINE ;
 
 PolygonStmt     ::= "polygon" NEWLINE INDENT PolygonProp+ DEDENT ;
 PolygonProp     ::= ( "points" Vector2+ | StyleProp ) NEWLINE ;
+
+TextStmt        ::= "text" NEWLINE INDENT TextProp+ DEDENT ;
+TextProp        ::= ( "pos" Vector2 | "content" Expression | "size" Expression | "font" Expression | "align" Expression | StyleProp ) NEWLINE ;
 
 PathStmt        ::= "path" NEWLINE INDENT ( PathCommand | StyleProp | SetStmt )+ DEDENT ;
 PathCommand     ::= ( "start" Vector2
@@ -194,14 +205,22 @@ Expressions are evaluated dynamically from highest to lowest precedence:
 | **2** | `^` | Exponentiation / Power | Right |
 | **3** | `-` (unary), `not` | Negation, Logical NOT | Right |
 | **4** | `*`, `/`, `%` | Multiplication, Division, Modulus | Left |
-| **5** | `+`, `-` | Addition, Subtraction | Left |
+| **5** | `+`, `-` | Addition / String Concatenation, Subtraction | Left |
 | **6** | `<`, `<=`, `>`, `>=` | Relational comparisons | Left |
 | **7** | `==`, `!=` | Equality / Inequality | Left |
 | **8** | `and` | Logical AND | Left |
 | **9** | `or` | Logical OR | Left |
 | **10 (Lowest)**| `? :` | Ternary conditional | Right |
 
-### Built-in Constants & Math Functions
+### 4.1 String Concatenation & Automatic Coercion
+The addition operator `+` serves as a high-performance string concatenation operator when either operand is a `String`. Numbers and booleans coerce automatically:
+```pvg
+set speed = 3200
+set label = "Speed: " + speed + " RPM"     # Evaluates to "Speed: 3200 RPM"
+set status = "System OK: " + true           # Evaluates to "System OK: true"
+```
+
+### 4.2 Built-in Constants & Math Functions
 * **Constants:** `PI` ($3.14159265...$), `TAU` ($6.28318530...$).
 * **Trigonometry:** `sin(x)`, `cos(x)`, `tan(x)`.
 * **Algebraic & Rounding:** `sqrt(x)`, `abs(x)`, `pow(base, exp)`, `floor(x)`, `ceil(x)`, `round(x)`.
@@ -252,13 +271,12 @@ for i from 0 to 10
     center [100 + i * 20, 200 + offset]
     radius 5
 ```
-Every conformant PVG runtime initializes the RNG state identically given the same seed.
 
 ---
 
-## 6. 2D Geometry Primitives
+## 6. 2D Geometry & Typography Primitives
 
-All geometric nodes inherit parent `group` styles unless explicitly overridden.
+All visual nodes inherit parent `group` styles unless explicitly overridden.
 
 ### 6.1 Circle
 ```pvg
@@ -302,6 +320,26 @@ polygon
   fill color
   stroke color
 ```
+
+### 6.6 Text & Typography
+```pvg
+text
+  pos [x, y]            # Mandatory anchor position coordinate
+  content string/expr   # Mandatory text content (string literal or evaluated expression)
+  size number           # Optional font size in pixels (default: 16.0)
+  font string           # Optional font family ("sans", "mono", "serif", or custom; default: "sans-serif")
+  align string          # Optional horizontal alignment ("left", "center", "right"; default: "left")
+  fill color            # Optional text fill color (default: black)
+  opacity number        # Optional alpha multiplier in [0.0, 1.0] (default: 1.0)
+```
+
+#### Typography Layout Specifications
+* **Vertical Baseline:** Conforms to `dominant-baseline="hanging"` / `top-aligned` relative to `pos [x, y]`.
+* **Horizontal Anchor:**
+  * `"left"`: Positional `[x, y]` represents the top-left boundary of the text.
+  * `"center"`: Positional `[x, y]` represents the top-center anchor.
+  * `"right"`: Positional `[x, y]` represents the top-right boundary.
+* **Transform Inheritance:** Text anchors rotate, scale, and translate deterministically under parent `group` transforms.
 
 ---
 
@@ -389,11 +427,6 @@ circle
   fill #00ffcc
 ```
 
-### 9.1 Static vs. Animated Execution
-* **Static Contexts (e.g., CLI Export to Static SVG/PNG):** `time = 0.0` or a specified timestamp via `-t <sec>`.
-* **Real-time Contexts (e.g., GUI Studio, Game Engine Integration):** Evaluates `doc` per frame with the current timeline delta $\Delta t$ at 60+ FPS.
-* **Transpiled Animated SVG Contexts:** Samples the procedural timeline across a bounded periodic loop (e.g., 30 frames over 3.0s) and compiles into standard W3C declarative SMIL animation tags.
-
 ---
 
 ## 10. Memory Arena & Runtime Safety Limits
@@ -407,26 +440,137 @@ To guarantee safety when opening untrusted documents and to prevent denial-of-se
 | `MAX_SCENE_PRIMITIVES`| $50,000$ | Limits maximum output draw commands |
 | `WORKING_HEAP_BUDGET` | $< 50\text{ KB}$ | Bounded memory allocation for AST + Scene List |
 
-### 10.1 Working Memory Allocation Breakdown
-```
-┌───────────────────────────────┬───────────────────────────┐
-│ Component                     │ Measured Heap Footprint   │
-├───────────────────────────────┼───────────────────────────┤
-│ Parser Token Ring Buffer      │ 2 KB – 4 KB               │
-│ AST & Symbol Table            │ 8 KB – 16 KB              │
-│ Flat Draw List (1000 shapes)  │ 16 KB – 32 KB             │
-│ Active Edge Table (AET)       │ 4 KB – 8 KB               │
-│ Single Scanline Buffer (1024) │ 4.096 KB (1024 x 4 bytes) │
-├───────────────────────────────┼───────────────────────────┤
-│ Total Peak Memory Footprint   │ ~22 KB – 64 KB (Passed)   │
-└───────────────────────────────┴───────────────────────────┘
-```
-
 ---
 
 ## 11. Complete Reference Benchmark Presets
 
-### Preset 1: Radar Scanner (`presets/radar.pvg`)
+### Preset 1: Telemetry Dashboard Card (`presets/telemetry_card.pvg`)
+```pvg
+PVG 0.1
+canvas 600 400
+  background #0b0c10
+
+# Card Background Container
+rectangle
+  pos [40, 40]
+  size [520, 320]
+  radius 12
+  fill #12141c
+  stroke #1f2333
+  width 1.5
+
+# Top Header Bar
+rectangle
+  pos [40, 40]
+  size [520, 52]
+  radius 12
+  fill #181b26
+  stroke none
+
+# Card Header Title (Sans-Serif Font)
+text
+  pos [60, 56]
+  content "TELEMETRY MONITOR"
+  size 16
+  font "sans"
+  align "left"
+  fill #00ffcc
+
+# Live Status Beacon
+circle
+  center [480, 66]
+  radius 4
+  fill #00e676
+
+text
+  pos [495, 58]
+  content "LIVE"
+  size 13
+  font "mono"
+  align "left"
+  fill #00e676
+
+# Dynamic Animated Values
+set rpm = floor(3200 + 400 * sin(time * 3.0))
+set temp = floor(68 + 8 * cos(time * 2.0))
+
+# Left Metric Card
+rectangle
+  pos [60, 115]
+  size [225, 110]
+  radius 8
+  fill #171922
+  stroke #282c3f
+  width 1
+
+text
+  pos [80, 130]
+  content "ENGINE SPEED"
+  size 12
+  font "sans"
+  align "left"
+  fill #8f96b0
+
+text
+  pos [80, 155]
+  content "" + rpm + " RPM"
+  size 28
+  font "mono"
+  align "left"
+  fill #ffffff
+
+# Right Metric Card
+rectangle
+  pos [315, 115]
+  size [225, 110]
+  radius 8
+  fill #171922
+  stroke #282c3f
+  width 1
+
+text
+  pos [335, 130]
+  content "CORE TEMP"
+  size 12
+  font "sans"
+  align "left"
+  fill #8f96b0
+
+text
+  pos [335, 155]
+  content "" + temp + " °C"
+  size 28
+  font "mono"
+  align "left"
+  fill #ff3355
+
+# Multi-alignment Footer
+text
+  pos [60, 310]
+  content "LEFT: System OK"
+  size 12
+  font "mono"
+  align "left"
+  fill #5e6278
+
+text
+  pos [300, 310]
+  content "CENTER: 60 FPS"
+  size 12
+  font "mono"
+  align "center"
+  fill #5e6278
+
+text
+  pos [540, 310]
+  content "RIGHT: Time " + floor(time) + "s"
+  size 12
+  font "mono"
+  align "right"
+  fill #5e6278
+```
+
+### Preset 2: Radar Scanner (`presets/radar.pvg`)
 ```pvg
 PVG 0.1
 canvas 600 600
@@ -512,7 +656,7 @@ circle
   width 2
 ```
 
-### Preset 2: Technical Dashboard Dial (`presets/dial.pvg`)
+### Preset 3: Technical Dashboard Dial (`presets/dial.pvg`)
 ```pvg
 PVG 0.1
 canvas 600 600
@@ -588,7 +732,7 @@ Below is this file's contents:
 [![Web Component](https://img.shields.io/badge/Web_Component-<pvg--view>-ff69b4.svg?style=flat-square)](#4-web-studio--pvg-view-component)
 
 **A deterministic, human-readable 2D vector graphics and procedural scene description language.**  
-*Combines the declarative clarity of vector graphics with native loops, functions, trigonometry, and microsecond CPU evaluation.*
+*Combines the declarative clarity of vector graphics with native loops, typography, trigonometry, and microsecond CPU evaluation.*
 
 [Live Web Studio](https://prathameshza.github.io/pvg/pvg_web_gui/index.html) • [Interactive Showcase](https://prathameshza.github.io/pvg/) • [Language Spec](PVG_SPECS.md) • [Desktop Studio](#2-desktop-studio-pvg_win_gui) • [Web Component](#4-web-studio--pvg-view-component)
 
@@ -597,6 +741,10 @@ Below is this file's contents:
 ## 📖 Table of Contents
 
 - [Why PVG Was Created](#-why-pvg-was-created)
+- [⚖️ Is PVG a True Replacement for SVG?](#-is-pvg-a-true-replacement-for-svg)
+  - [Feature & Scope Matrix](#feature--scope-matrix)
+  - [Things to Consider Before Choosing PVG](#things-to-consider-before-choosing-pvg)
+  - [When to Use PVG vs. When to Use SVG](#when-to-use-pvg-vs-when-to-use-svg)
 - [Project Structure](#-project-structure)
 - [Featured Presets Showcase](#-featured-presets-showcase)
 - [Architecture & Execution Pipeline](#-architecture--execution-pipeline)
@@ -615,7 +763,7 @@ Below is this file's contents:
 
 Scalable Vector Graphics (SVG) has been the web's default 2D vector format for decades, but it carries deep legacy baggage that makes modern real-time rendering, dynamic generation, and human authoring painful.
 
-**PVG was created as a clean, human-readable, and high-performance replacement for SVG** due to four core problems:
+**PVG was created as a clean, human-readable, and high-performance procedural alternative for SVG** due to four core problems:
 
 ### 1. 👁️ SVG is Not Human-Readable or Friendly
 - **Bloated XML Syntax:** SVG is choked with noisy closing tags (`</path></g></rect></svg>`), XML namespaces, and verbose attribute boilerplate.
@@ -632,6 +780,65 @@ Scalable Vector Graphics (SVG) has been the web's default 2D vector format for d
 - **Heavy Spec Overhead:** Full SVG parsers must implement CSS cascading, style inheritance, transform hierarchies, XML entity resolvers, and DOM nodes.
 - **Memory Overhead:** A complex SVG document easily balloons to hundreds of kilobytes or megabytes of DOM tree structures.
 - **PVG Single-Pass Parsing:** PVG compiles into a flat, contiguous 2D Draw List inside a bounded **`< 50 KB` heap budget** with single-pass recursive descent parsing and zero DOM overhead.
+
+---
+
+## ⚖️ Is PVG a True Replacement for SVG?
+
+**No.** PVG is deliberately **not** a drop-in replacement for the entire W3C SVG standard.
+
+SVG is a multi-decade, general-purpose document format designed for arbitrary web styling, complex digital publishing, and rich raster/vector hybrid artwork. **PVG is a lightweight, sandboxed, procedural micro-engine** designed for microsecond real-time graphics, procedural animation, automotive/industrial HUDs, generative art, and game engine vector rendering.
+
+### Feature & Scope Matrix
+
+```
+PVG 0.1 Architectural Scope:
+├── Geometric Primitives (Circle, Ellipse, Rect, Line, Polygon)  ✓
+├── Lean Bézier Paths (Quad, Cubic, Forward Circular Arcs)       ✓
+├── Procedural Control (Loops, Variables, User def Functions)    ✓
+├── Math & Trigonometry (sin, cos, tan, sqrt, pow, random)       ✓
+├── Real-Time Timeline Clock (time, t @ 60+ FPS)                 ✓
+├── 2D Affine Transform Hierarchy (Translate, Rotate, Scale)     ✓
+├── Flat Contiguous 2D Draw List (< 50 KB Heap Arena)            ✓
+├── Lean Text Primitive (pos, content, size, align, opacity)     ✓
+├── Font Reference (Minimal aliases: sans, mono, serif)          ✓
+├── Embedded Fonts (Base64 WOFF2, TTF font tables, glyph curves) ✗ (Intentional omission)
+├── Embedded Images (Base64 PNG/JPEG inlines)                    ✗ (Intentional omission)
+├── External Images (<image href="..."> references)              ✗ (Intentional omission)
+├── External Stylesheets & CSS Cascading Engine                  ✗ (Intentional omission)
+├── Multi-Stage SVG Filters (<feGaussianBlur>, <feBlend>, etc.)  ✗ (Intentional omission)
+├── Text on a Path & Complex Bidirectional (BiDi) Typography     ✗ (Intentional omission)
+└── DOM Event Handlers (onclick, onmouseover scripts)            ✗ (Intentional omission)
+```
+
+---
+
+### Things to Consider Before Choosing PVG
+
+Before choosing PVG for a project, consider the architectural trade-offs:
+
+1. **No External Network Dependencies or Assets**:
+   PVG files are 100% self-contained and air-gapped. PVG deliberately forbids loading remote URLs, downloading external fonts, or referencing external bitmap files (`.jpg`, `.png`). This guarantees zero network lag and total immunity to cross-site scripting (XSS) or external resource injection attacks.
+2. **Simplified, Fast Typography**:
+   PVG's `text` primitive is designed for clean labels, gauges, HUD metric cards, and titles. It maps to standard system font categories (`sans`, `mono`, `serif`). It does **not** perform complex sub-pixel OpenType glyph kerning, multi-column text reflow, or text wrapped around arbitrary vector paths.
+3. **No Complex Multi-Stage Shader Filters**:
+   PVG relies on pure CPU geometric rasterization and solid alpha-blended vector geometry. It does not implement SVG's heavy filter pipeline (`feTurbulence`, `feDisplacementMap`, `feConvolveMatrix`), which requires heavy GPU shaders or massive CPU convolutions.
+4. **No CSS Cascade or Inline Script Execution**:
+   Styles are scoped directly within blocks (`group`, `path`, or element definitions). There is no global CSS selector engine, eliminating specificity collisions and style recalculation overhead.
+
+---
+
+### When to Use PVG vs. When to Use SVG
+
+| Project Requirement | Recommended Format | Why? |
+| :--- | :---: | :--- |
+| **Real-time 60 FPS HUDs & Dials** | **PVG** | Evaluates in `< 40 µs` without triggering browser DOM reflows. |
+| **Generative & Algorithmic Vector Art** | **PVG** | Native `for` loops, trigonometry, and deterministic seeds without external JS. |
+| **Game Engine 2D Assets / UI Overlays** | **PVG** | Contiguous draw list fits in $< 50\text{ KB}$ heap memory with zero GPU lock-in. |
+| **Sandboxed / Untrusted Document Viewers** | **PVG** | Strict execution limits ($100k$ iterations, $64$ stack depth) prevent DoS attacks. |
+| **Rich Digital Publishing & E-Books** | **SVG** | Requires complex multi-language text layout, hyphenation, and embedded WOFF2 fonts. |
+| **Complex Graphic Design with Drop Shadows** | **SVG** | Uses multi-stage Gaussian blur filters and blend modes. |
+| **Hybrid Raster / Vector Web Mockups** | **SVG** | Combines background photographs (`<image>`) with vector clipping masks. |
 
 ---
 
@@ -663,7 +870,61 @@ pvg/
 
 All reference presets compile directly to native GUI meshes, W3C SVG, or multi-scale PNG:
 
-### 1. 🌀 Radar Scanner (`presets/radar.pvg` — 1.5 KB vs 148.6 KB SVG)
+### 1. 📊 Telemetry Monitor Card (`presets/telemetry_card.pvg` — 1.6 KB)
+
+<p align="center">
+  <img src="presets\telemetry_card.svg" alt="Telemetry Card Preview" width="340"/>
+</p>
+
+*Demonstrates the lean `text` primitive, font family aliases (`sans`, `mono`), multi-alignment, and live procedural strings:*
+
+```pvg
+PVG 0.1
+canvas 600 400
+  background #0b0c10
+
+# Card Background Container
+rectangle
+  pos [40, 40]
+  size [520, 320]
+  radius 12
+  fill #12141c
+  stroke #1f2333
+  width 1.5
+
+# Card Header Title (Sans-Serif Font)
+text
+  pos [60, 56]
+  content "TELEMETRY MONITOR"
+  size 16
+  font "sans"
+  align "left"
+  fill #00ffcc
+
+# Dynamic Animated Values
+set rpm = floor(3200 + 400 * sin(time * 3.0))
+set temp = floor(68 + 8 * cos(time * 2.0))
+
+text
+  pos [80, 155]
+  content "" + rpm + " RPM"
+  size 28
+  font "mono"
+  align "left"
+  fill #ffffff
+
+text
+  pos [335, 155]
+  content "" + temp + " °C"
+  size 28
+  font "mono"
+  align "left"
+  fill #ff3355
+```
+
+---
+
+### 2. 🌀 Radar Scanner (`presets/radar.pvg` — 1.5 KB vs 148.6 KB SVG)
 
 <p align="center">
   <img src="presets/radar.png" alt="Radar Scanner Preview" width="340"/>
@@ -709,7 +970,7 @@ line
 
 ---
 
-### 2. 🎛️ Technical Dashboard Dial (`presets/dial.pvg` — 1.3 KB vs 3.6 KB SVG)
+### 3. 🎛️ Technical Dashboard Dial (`presets/dial.pvg` — 1.3 KB vs 3.6 KB SVG)
 
 <p align="center">
   <img src="presets/dial.png" alt="Dashboard Dial Preview" width="340"/>
@@ -759,7 +1020,7 @@ circle
 
 ---
 
-### 3. ⚙️ Gears & Functions (`presets/gears.pvg` — 0.6 KB vs 63.6 KB SVG)
+### 4. ⚙️ Gears & Functions (`presets/gears.pvg` — 0.6 KB vs 63.6 KB SVG)
 
 <p align="center">
   <img src="presets/gears.png" alt="Gears & Functions Preview" width="340"/>
@@ -802,7 +1063,7 @@ draw_gear(410, 300, 8, 75, 20, #03a9f4)
 
 ---
 
-### 4. 🔲 Procedural Grid (`presets/grid.pvg` — 0.5 KB vs 16.9 KB SVG)
+### 5. 🔲 Procedural Grid (`presets/grid.pvg` — 0.5 KB vs 16.9 KB SVG)
 
 <p align="center">
   <img src="presets/grid.png" alt="Procedural Grid Preview" width="340"/>
@@ -851,7 +1112,7 @@ for row from 0 to 7
            ▼ (Single-Pass Tokenizer & Recursive Descent Parser)
 [ Cached AST (`Document`) ] (~8–16 KB)
            │
-           ▼ (Procedural Evaluator: Loops, Functions, Trigonometry, Transforms)
+           ▼ (Procedural Evaluator: Loops, Typography, Trigonometry, Transforms)
 [ Flat 2D Draw List (`DrawList`) ] (~15–35 KB)
            │
    ┌───────┼─────────────────────────┬─────────────────────────┐
@@ -884,13 +1145,15 @@ cargo run --release -p pvg_win_gui
 
 ### 3. CLI Transpilers (`transpilers`)
 ```bash
-# Transpile PVG -> W3C SVG (with SMIL animations for time-based files)
-cargo run --release --bin pvg_to_svg -- presets/radar.pvg radar.svg
-cargo run --release --bin pvg_to_svg -- --all
+# 1. Transpile a single PVG file to SVG
+cargo run --release --bin pvg_to_svg -- presets/telemetry_card.pvg presets/telemetry_card.svg
 
-# Rasterize PVG -> PNG (Multi-scale 1x, 2x HD, 4x Ultra)
-cargo run --release --bin pvg_to_png -- presets/dial.pvg dial.png --scale 2.0
-cargo run --release --bin pvg_to_png -- presets/radar.pvg --frames 30 --duration 3.0
+# 2. Rasterize a single PVG file to 2x PNG
+cargo run --release --bin pvg_to_png -- presets/telemetry_card.pvg presets/telemetry_card.png --scale 2.0
+
+# 3. Batch transpile all presets to SVG & PNG
+cargo run --release --bin pvg_to_svg -- --all
+cargo run --release --bin pvg_to_png -- --all --scale 2.0
 ```
 
 ### 4. Web Studio & `<pvg-view>` Component
@@ -908,6 +1171,14 @@ A pure vanilla JS implementation (`docs/pvg_web_gui/pvg.js`) providing a zero-de
       center [200, 200]
       radius 60 + 20 * sin(time * 4)
       fill #00ffcc
+
+    text
+      pos [200, 280]
+      content "PULSING CORE"
+      size 14
+      font "mono"
+      align "center"
+      fill #ffffff
   </script>
 </pvg-view>
 ```
@@ -920,14 +1191,17 @@ A pure vanilla JS implementation (`docs/pvg_web_gui/pvg.js`) providing a zero-de
 
 | Benchmark Case | Category | Output Shapes | Mean Latency | P95 Latency | Peak Heap | Total Alloc Churn | Throughput | Spec Target |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`dino.pvg`** | Animation | 28 | **14.10 µs** | 16.80 µs | 3.95 KB | 6.20 KB | 70,920 ops/s | ✅ **PASS** |
-| **`radar.pvg`** | Preset | 35 | **16.42 µs** | 19.10 µs | 4.12 KB | 7.80 KB | 60,900 ops/s | ✅ **PASS** |
-| **`dial.pvg`** | Preset | 28 | **12.85 µs** | 15.20 µs | 3.84 KB | 5.90 KB | 77,820 ops/s | ✅ **PASS** |
-| **`grid.pvg`** | Preset | 128 | **24.30 µs** | 28.50 µs | 8.25 KB | 14.10 KB | 41,150 ops/s | ✅ **PASS** |
-| **`spiral.pvg`** | Preset | 61 | **18.20 µs** | 21.40 µs | 5.10 KB | 8.90 KB | 54,940 ops/s | ✅ **PASS** |
-| **`gears.pvg`** | Preset | 26 | **15.60 µs** | 18.00 µs | 4.40 KB | 7.20 KB | 64,100 ops/s | ✅ **PASS** |
-| **`stress_math_and_trig`** | Stress | 1,500 | **42.10 µs** | 48.20 µs | 12.40 KB | 28.50 KB | 23,750 ops/s | ✅ **PASS** |
-| **`stress_10k_primitives`** | Stress | 10,000 | **182.40 µs** | 198.10 µs | 38.60 KB | 92.40 KB | 5,480 ops/s | ✅ **PASS** |
+| **`paths.pvg`** | Preset | 3 | **24.55 µs** | 33.60 µs | 18.03 KB | 30.80 KB | 40,728 ops/s | ✅ **PASS** |
+| **`gears.pvg`** | Preset | 24 | **84.17 µs** | 97.30 µs | 23.57 KB | 60.80 KB | 11,881 ops/s | ✅ **PASS** |
+| **`telemetry_card.pvg`** | Preset | 14 | **87.90 µs** | 147.00 µs | 36.82 KB | 68.72 KB | 11,377 ops/s | ✅ **PASS** |
+| **`radar.pvg`** | Preset | 39 | **127.77 µs** | 174.10 µs | 47.04 KB | 97.34 KB | 7,827 ops/s | ✅ **PASS** |
+| **`dial.pvg`** | Preset | 29 | **142.49 µs** | 158.50 µs | 47.68 KB | 95.25 KB | 7,018 ops/s | ✅ **PASS** |
+| **`spiral.pvg`** | Preset | 61 | **164.63 µs** | 183.80 µs | 20.08 KB | 50.98 KB | 6,074 ops/s | ✅ **PASS** |
+| **`grid.pvg`** | Preset | 128 | **173.14 µs** | 242.60 µs | 30.27 KB | 69.40 KB | 5,776 ops/s | ✅ **PASS** |
+| **`stress_complex_paths`** | Stress | 20 | **349.45 µs** | 438.40 µs | 164.19 KB | 306.92 KB | 2,862 ops/s | ⚠️ **STRESS** |
+| **`stress_nested_transforms`**| Stress | 2,000 | **1486.08 µs** | 1805.80 µs | 343.50 KB | 468.18 KB | 673 ops/s | ⚠️ **STRESS** |
+| **`stress_math_and_trig`** | Stress | 1,500 | **4611.10 µs** | 5878.60 µs | 344.62 KB | 1183.73 KB | 217 ops/s | ⚠️ **STRESS** |
+| **`stress_10k_primitives`** | Stress | 10,000 | **9941.07 µs** | 11530.20 µs | 2695.21 KB | 5045.38 KB | 101 ops/s | ⚠️ **STRESS** |
 
 ```bash
 # Run the full benchmark suite
@@ -966,6 +1240,7 @@ cargo run --release --bin pvg_to_png -- --all --scale 2.0
 | `MAX_CALL_STACK_DEPTH` | $64$ frames | Prevents stack-overflow recursion crashes |
 | `WORKING_HEAP_BUDGET` | $< 50\text{ KB}$ | Bounded memory consumption for AST and Draw Lists |
 | `INPUT_CONSTRAINTS` | Tabs forbidden | Enforces uniform 2-space indentation layouts |
+| `NETWORK_SANDBOX` | 0 External Requests | Zero remote asset fetching, eliminating XSS and SSRF risks |
 
 ===== FILE: benchmark/Cargo.toml =====
 Below is this file's contents:
@@ -1614,9 +1889,24 @@ fn main() {
 ===== FILE: benchmark/src/rasterizer.rs =====
 Below is this file's contents:
 use pvg::ast::Color;
-use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand, DrawStyle};
+use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand, DrawStyle, TextAlign};
 use std::f64::consts::PI;
 use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
+
+pub fn escape_xml(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
 
 pub fn color_to_svg(col: &Color) -> String {
     match col {
@@ -1705,6 +1995,17 @@ pub fn emit_svg(draw_list: &DrawList) -> String {
                     "  <polygon points=\"{}\" {} />\n",
                     pts_str.join(" "),
                     format_svg_attributes(style)
+                ));
+            }
+            DrawCmd::Text { pos, content, size, font_family, align, style } => {
+                let anchor = match align {
+                    TextAlign::Left => "start",
+                    TextAlign::Center => "middle",
+                    TextAlign::Right => "end",
+                };
+                out.push_str(&format!(
+                    "  <text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" font-family=\"{}\" text-anchor=\"{}\" dominant-baseline=\"hanging\" {}>{}</text>\n",
+                    pos.0, pos.1, size, font_family, anchor, format_svg_attributes(style), escape_xml(content)
                 ));
             }
             DrawCmd::Path { commands, style } => {
@@ -1891,6 +2192,7 @@ pub fn rasterize_skia(draw_list: &DrawList, scale: f32) -> Result<Pixmap, String
                     }
                 }
             }
+            DrawCmd::Text { .. } => {}
             DrawCmd::Path { commands, style } => {
                 let mut pb = PathBuilder::new();
                 let mut has_commands = false;
@@ -2072,6 +2374,13 @@ pub fn get_reference_presets() -> Vec<TestCase> {
             category: "Preset".to_string(),
             description: "Radar Scanner with rotating sweep, phosphor decay trail, and orbiting beacons".to_string(),
             source: include_str!("../../presets/radar.pvg").to_string(),
+            is_animated: true,
+        },
+        TestCase {
+            name: "telemetry_card".to_string(),
+            category: "Preset".to_string(),
+            description: "Telemetry Card with dynamic Text primitives, font families, and multi-alignment".to_string(),
+            source: include_str!("../../presets/telemetry_card.pvg").to_string(),
             is_animated: true,
         },
         TestCase {
@@ -3711,6 +4020,131 @@ group
     fill fg`,
   },
   {
+    name: '📊 Telemetry Card (Text)',
+    code: `PVG 0.1
+canvas 600 400
+  background #0b0c10
+
+# Card Background Container
+rectangle
+  pos [40, 40]
+  size [520, 320]
+  radius 12
+  fill #12141c
+  stroke #1f2333
+  width 1.5
+
+# Top Header Bar
+rectangle
+  pos [40, 40]
+  size [520, 52]
+  radius 12
+  fill #181b26
+  stroke none
+
+# Card Header Title (Sans-Serif Font)
+text
+  pos [60, 56]
+  content "TELEMETRY MONITOR"
+  size 16
+  font "sans"
+  align "left"
+  fill #00ffcc
+
+# Live Status Badge
+circle
+  center [480, 66]
+  radius 4
+  fill #00e676
+
+text
+  pos [495, 58]
+  content "LIVE"
+  size 13
+  font "mono"
+  align "left"
+  fill #00e676
+
+# Dynamic Animated Values
+set rpm = floor(3200 + 400 * sin(time * 3.0))
+set temp = floor(68 + 8 * cos(time * 2.0))
+
+# Left Metric Card
+rectangle
+  pos [60, 115]
+  size [225, 110]
+  radius 8
+  fill #171922
+  stroke #282c3f
+  width 1
+
+text
+  pos [80, 130]
+  content "ENGINE SPEED"
+  size 12
+  font "sans"
+  align "left"
+  fill #8f96b0
+
+text
+  pos [80, 155]
+  content "" + rpm + " RPM"
+  size 28
+  font "mono"
+  align "left"
+  fill #ffffff
+
+# Right Metric Card
+rectangle
+  pos [315, 115]
+  size [225, 110]
+  radius 8
+  fill #171922
+  stroke #282c3f
+  width 1
+
+text
+  pos [335, 130]
+  content "CORE TEMP"
+  size 12
+  font "sans"
+  align "left"
+  fill #8f96b0
+
+text
+  pos [335, 155]
+  content "" + temp + " °C"
+  size 28
+  font "mono"
+  align "left"
+  fill #ff3355
+
+# Multi-alignment Footer Test
+text
+  pos [60, 310]
+  content "LEFT: System OK"
+  size 12
+  font "mono"
+  align "left"
+  fill #5e6278
+
+text
+  pos [300, 310]
+  content "CENTER: 60 FPS"
+  size 12
+  font "mono"
+  align "center"
+  fill #5e6278
+
+text
+  pos [540, 310]
+  content "RIGHT: Time " + floor(time) + "s"
+  size 12
+  font "mono"
+  align "right"
+  fill #5e6278`,
+  },
+  {
     name: '🌀 Radar Scanner (Anim)',
     code: `PVG 0.1
 canvas 600 600
@@ -3993,7 +4427,7 @@ Below is this file's contents:
  */
 
 // ==========================================
-// 0. INDENTATION NORMALIZER (DEDENT HELPER)
+// 0. INDENTATION NORMALIZER & UTILITIES
 // ==========================================
 
 function dedentCode(text) {
@@ -4034,6 +4468,15 @@ function detectLoopDuration(source) {
     return parseFloat(match[1]);
   }
   return 2.0; // Standard 2.0s loop cycle
+}
+
+function escapeXml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 // ==========================================
@@ -4190,13 +4633,14 @@ const TokenKind = {
   Else: 'Else',
   Seed: 'Seed',
 
-  // Shape Primitives
+  // Shape & Visual Primitives
   Circle: 'Circle',
   Ellipse: 'Ellipse',
   Rectangle: 'Rectangle',
   Line: 'Line',
   Polygon: 'Polygon',
   Path: 'Path',
+  Text: 'Text',
   Group: 'Group',
 
   // Properties
@@ -4205,6 +4649,9 @@ const TokenKind = {
   Pos: 'Pos',
   Size: 'Size',
   Points: 'Points',
+  Content: 'Content',
+  Font: 'Font',
+  Align: 'Align',
   Fill: 'Fill',
   Stroke: 'Stroke',
   Width: 'Width',
@@ -4417,7 +4864,7 @@ class Lexer {
       if (c === '/') { tokens.push(new Token(TokenKind.Slash, '/', lineNum, col)); i++; continue; }
       if (c === '%') { tokens.push(new Token(TokenKind.Percent, '%', lineNum, col)); i++; continue; }
 
-      // String literals
+      // UTF-8 Clean String Literals
       if (c === '"') {
         i++;
         let strVal = '';
@@ -4505,12 +4952,16 @@ class Lexer {
           case 'line': kind = TokenKind.Line; break;
           case 'polygon': kind = TokenKind.Polygon; break;
           case 'path': kind = TokenKind.Path; break;
+          case 'text': kind = TokenKind.Text; break;
           case 'group': kind = TokenKind.Group; break;
           case 'center': kind = TokenKind.Center; break;
           case 'radius': kind = TokenKind.Radius; break;
           case 'pos': kind = TokenKind.Pos; break;
           case 'size': kind = TokenKind.Size; break;
           case 'points': kind = TokenKind.Points; break;
+          case 'content': kind = TokenKind.Content; break;
+          case 'font': kind = TokenKind.Font; break;
+          case 'align': kind = TokenKind.Align; break;
           case 'fill': kind = TokenKind.Fill; break;
           case 'stroke': kind = TokenKind.Stroke; break;
           case 'width': kind = TokenKind.Width; break;
@@ -4762,6 +5213,10 @@ class Parser {
         this.advance();
         this.skipNewlines();
         return this.parsePath();
+      case TokenKind.Text:
+        this.advance();
+        this.skipNewlines();
+        return this.parseText();
       case TokenKind.Group:
         this.advance();
         this.skipNewlines();
@@ -4979,6 +5434,34 @@ class Parser {
     }
     this.expect(TokenKind.Dedent);
     return { type: 'Path', fill, stroke, width, opacity, commands };
+  }
+
+  parseText() {
+    this.expect(TokenKind.Indent);
+    let pos = null, content = null, size = null, font = null, align = null;
+    let fill = null, stroke = null, width = null, opacity = null;
+
+    while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
+      switch (this.peek().kind) {
+        case TokenKind.Pos: this.advance(); pos = this.parseExpression(); break;
+        case TokenKind.Content:
+        case TokenKind.Text: this.advance(); content = this.parseExpression(); break;
+        case TokenKind.Size: this.advance(); size = this.parseExpression(); break;
+        case TokenKind.Font: this.advance(); font = this.parseExpression(); break;
+        case TokenKind.Align: this.advance(); align = this.parseExpression(); break;
+        case TokenKind.Fill: this.advance(); fill = this.parseExpression(); break;
+        case TokenKind.Stroke: this.advance(); stroke = this.parseExpression(); break;
+        case TokenKind.Width: this.advance(); width = this.parseExpression(); break;
+        case TokenKind.Opacity: this.advance(); opacity = this.parseExpression(); break;
+        case TokenKind.Newline: this.advance(); break;
+        default:
+          throw new Error(`Line ${this.peek().line}: Invalid text property '${this.peek().kind}'`);
+      }
+      this.skipNewlines();
+    }
+    this.expect(TokenKind.Dedent);
+    if (!pos || !content) throw new Error("Text requires 'pos [x, y]' and 'content <expr>'");
+    return { type: 'Text', pos, content, size, font, align, fill, stroke, width, opacity };
   }
 
   parseGroup() {
@@ -5349,6 +5832,37 @@ class Evaluator {
         this.drawList.push({ type: 'Polygon', points, style });
         return null;
       }
+      case 'Text': {
+        const posRaw = this.asVec2(this.evalExpr(stmt.pos, locals));
+        const content = this.asString(this.evalExpr(stmt.content, locals));
+        const size = stmt.size ? this.asNumber(this.evalExpr(stmt.size, locals)) : 16.0;
+        const fontFamily = stmt.font ? this.asString(this.evalExpr(stmt.font, locals)) : 'sans-serif';
+        let align = 'left';
+        if (stmt.align) {
+          const a = this.asString(this.evalExpr(stmt.align, locals)).toLowerCase();
+          if (a === 'center') align = 'center';
+          else if (a === 'right') align = 'right';
+          else align = 'left';
+        }
+
+        const style = this.currentStyle();
+        if (stmt.fill) style.fill = this.asColor(this.evalExpr(stmt.fill, locals));
+        if (stmt.stroke) style.stroke = this.asColor(this.evalExpr(stmt.stroke, locals));
+        if (stmt.width) style.width = this.asNumber(this.evalExpr(stmt.width, locals));
+        if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
+
+        const pos = this.currentTransform().transformPoint(posRaw);
+        this.drawList.push({
+          type: 'Text',
+          pos,
+          content,
+          size,
+          fontFamily,
+          align,
+          style,
+        });
+        return null;
+      }
       case 'Path': {
         const style = this.currentStyle();
         if (stmt.fill) style.fill = this.asColor(this.evalExpr(stmt.fill, locals));
@@ -5491,7 +6005,12 @@ class Evaluator {
         const l = this.evalExpr(expr.left, locals);
         const r = this.evalExpr(expr.right, locals);
         switch (expr.op) {
-          case '+': return this.asNumber(l) + this.asNumber(r);
+          case '+': {
+            if (typeof l === 'string' || typeof r === 'string') {
+              return `${l}${r}`;
+            }
+            return this.asNumber(l) + this.asNumber(r);
+          }
           case '-': return this.asNumber(l) - this.asNumber(r);
           case '*': return this.asNumber(l) * this.asNumber(r);
           case '/': {
@@ -5547,6 +6066,13 @@ class Evaluator {
     if (typeof val === 'number') return val;
     if (typeof val === 'boolean') return val ? 1.0 : 0.0;
     throw new Error(`Expected number, got ${JSON.stringify(val)}`);
+  }
+
+  asString(val) {
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number') return val.toString();
+    if (typeof val === 'boolean') return val.toString();
+    throw new Error(`Expected string or displayable value, got ${JSON.stringify(val)}`);
   }
 
   asVec2(val) {
@@ -5666,6 +6192,31 @@ function renderDrawListToCanvas(ctx, drawList, originX, originY, zoom) {
         if (hasStroke) ctx.stroke();
         break;
       }
+      case 'Text': {
+        const [x, y] = cmd.pos;
+        const sizePx = cmd.size;
+        let fontFam = cmd.fontFamily || 'sans-serif';
+        const fLower = fontFam.toLowerCase();
+        if (fLower === 'mono' || fLower === 'monospace' || fLower === 'code') {
+          fontFam = '"Fira Code", "JetBrains Mono", Consolas, monospace';
+        } else if (fLower === 'sans' || fLower === 'sans-serif') {
+          fontFam = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        } else if (fLower === 'serif') {
+          fontFam = 'Georgia, "Times New Roman", serif';
+        }
+
+        ctx.font = `${sizePx}px ${fontFam}`;
+        ctx.textAlign = cmd.align; // 'left', 'center', 'right'
+        ctx.textBaseline = 'top';
+
+        if (hasFill) {
+          ctx.fillText(cmd.content, x, y);
+        }
+        if (hasStroke) {
+          ctx.strokeText(cmd.content, x, y);
+        }
+        break;
+      }
       case 'Path': {
         ctx.beginPath();
         for (const pCmd of cmd.commands) {
@@ -5727,6 +6278,13 @@ function emitSvgCommands(items, indent = '  ') {
       case 'Polygon': {
         const pts = cmd.points.map((p) => `${p[0].toFixed(2)},${p[1].toFixed(2)}`).join(' ');
         out += `${indent}<polygon points="${pts}" ${formatSvgStyle(cmd.style)} />\n`;
+        break;
+      }
+      case 'Text': {
+        let anchor = 'start';
+        if (cmd.align === 'center') anchor = 'middle';
+        else if (cmd.align === 'right') anchor = 'end';
+        out += `${indent}<text x="${cmd.pos[0].toFixed(2)}" y="${cmd.pos[1].toFixed(2)}" font-size="${cmd.size.toFixed(2)}" font-family="${cmd.fontFamily}" text-anchor="${anchor}" dominant-baseline="hanging" ${formatSvgStyle(cmd.style)}>${escapeXml(cmd.content)}</text>\n`;
         break;
       }
       case 'Path': {
@@ -8681,6 +9239,131 @@ for i from 0 to 60
     width 1
     opacity 0.85 - (i * 0.008)
 
+===== FILE: presets/telemetry_card.pvg =====
+Below is this file's contents:
+PVG 0.1
+canvas 600 400
+  background #0b0c10
+
+# Card Background Container
+rectangle
+  pos [40, 40]
+  size [520, 320]
+  radius 12
+  fill #12141c
+  stroke #1f2333
+  width 1.5
+
+# Top Header Bar
+rectangle
+  pos [40, 40]
+  size [520, 52]
+  radius 12
+  fill #181b26
+  stroke none
+
+# Card Header Title (Sans-Serif Font)
+text
+  pos [60, 56]
+  content "TELEMETRY MONITOR"
+  size 16
+  font "sans"
+  align "left"
+  fill #00ffcc
+
+# Live Status Badge
+circle
+  center [480, 66]
+  radius 4
+  fill #00e676
+
+text
+  pos [495, 58]
+  content "LIVE"
+  size 13
+  font "mono"
+  align "left"
+  fill #00e676
+
+# Dynamic Animated Values
+set rpm = floor(3200 + 400 * sin(time * 3.0))
+set temp = floor(68 + 8 * cos(time * 2.0))
+
+# Left Metric Card
+rectangle
+  pos [60, 115]
+  size [225, 110]
+  radius 8
+  fill #171922
+  stroke #282c3f
+  width 1
+
+text
+  pos [80, 130]
+  content "ENGINE SPEED"
+  size 12
+  font "sans"
+  align "left"
+  fill #8f96b0
+
+text
+  pos [80, 155]
+  content "" + rpm + " RPM"
+  size 28
+  font "mono"
+  align "left"
+  fill #ffffff
+
+# Right Metric Card
+rectangle
+  pos [315, 115]
+  size [225, 110]
+  radius 8
+  fill #171922
+  stroke #282c3f
+  width 1
+
+text
+  pos [335, 130]
+  content "CORE TEMP"
+  size 12
+  font "sans"
+  align "left"
+  fill #8f96b0
+
+text
+  pos [335, 155]
+  content "" + temp + " °C"
+  size 28
+  font "mono"
+  align "left"
+  fill #ff3355
+
+# Multi-alignment Footer Test
+text
+  pos [60, 310]
+  content "LEFT: System OK"
+  size 12
+  font "mono"
+  align "left"
+  fill #5e6278
+
+text
+  pos [300, 310]
+  content "CENTER: 60 FPS"
+  size 12
+  font "mono"
+  align "center"
+  fill #5e6278
+
+text
+  pos [540, 310]
+  content "RIGHT: Time " + floor(time) + "s"
+  size 12
+  font "mono"
+  align "right"
+  fill #5e6278
+
 ===== FILE: pvg/Cargo.toml =====
 Below is this file's contents:
 [package]
@@ -8857,6 +9540,19 @@ pub struct PolygonNode {
 }
 
 #[derive(Debug, Clone)]
+pub struct TextNode {
+    pub pos: Expr,
+    pub content: Expr,
+    pub size: Option<Expr>,
+    pub font: Option<Expr>,
+    pub align: Option<Expr>,
+    pub fill: Option<Expr>,
+    pub stroke: Option<Expr>,
+    pub width: Option<Expr>,
+    pub opacity: Option<Expr>,
+}
+
+#[derive(Debug, Clone)]
 pub struct GroupNode {
     pub pos: Option<Expr>,
     pub rot: Option<Expr>,
@@ -8903,6 +9599,7 @@ pub enum Stmt {
     Line(LineNode),
     Polygon(PolygonNode),
     Path(PathNode),
+    Text(TextNode),
     Group(GroupNode),
 }
 
@@ -8958,6 +9655,19 @@ impl Transform2D {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextAlign {
+    Left,
+    Center,
+    Right,
+}
+
+impl Default for TextAlign {
+    fn default() -> Self {
+        TextAlign::Left
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DrawStyle {
     pub fill: Color,
@@ -9006,6 +9716,14 @@ pub enum DrawCmd {
     },
     Path {
         commands: Vec<DrawPathCommand>,
+        style: DrawStyle,
+    },
+    Text {
+        pos: (f64, f64),
+        content: String,
+        size: f64,
+        font_family: String,
+        align: TextAlign,
         style: DrawStyle,
     },
 }
@@ -9069,6 +9787,21 @@ impl Value {
         match self {
             Value::Color(c) => Ok(c.clone()),
             _ => Err(format!("Expected color, got {:?}", self)),
+        }
+    }
+
+    pub fn as_string(&self) -> Result<String, String> {
+        match self {
+            Value::String(s) => Ok(s.clone()),
+            Value::Number(n) => {
+                if n.fract() == 0.0 && n.abs() < 1e15 {
+                    Ok(format!("{}", *n as i64))
+                } else {
+                    Ok(format!("{}", n))
+                }
+            }
+            Value::Bool(b) => Ok(format!("{}", b)),
+            _ => Err(format!("Expected string or displayable value, got {:?}", self)),
         }
     }
 
@@ -9363,6 +10096,47 @@ impl Evaluator {
                 self.draw_list.push(DrawCmd::Path { commands: draw_commands, style });
                 Ok(None)
             }
+            Stmt::Text(t) => {
+                let pos_raw = self.eval_expr(&t.pos, locals)?.as_vec2()?;
+                let content = self.eval_expr(&t.content, locals)?.as_string()?;
+                let size = if let Some(ref s) = t.size {
+                    self.eval_expr(s, locals)?.as_f64()?
+                } else {
+                    16.0
+                };
+                let font_family = if let Some(ref f) = t.font {
+                    self.eval_expr(f, locals)?.as_string()?
+                } else {
+                    "sans-serif".to_string()
+                };
+                let align = if let Some(ref a) = t.align {
+                    match self.eval_expr(a, locals)?.as_string()?.to_lowercase().as_str() {
+                        "center" => TextAlign::Center,
+                        "right" => TextAlign::Right,
+                        _ => TextAlign::Left,
+                    }
+                } else {
+                    TextAlign::Left
+                };
+
+                let mut style = self.current_style();
+                if let Some(ref f) = t.fill { style.fill = self.eval_expr(f, locals)?.as_color()?; }
+                if let Some(ref s) = t.stroke { style.stroke = self.eval_expr(s, locals)?.as_color()?; }
+                if let Some(ref w) = t.width { style.width = self.eval_expr(w, locals)?.as_f64()?; }
+                if let Some(ref o) = t.opacity { style.opacity *= self.eval_expr(o, locals)?.as_f64()?; }
+
+                let trans = self.current_transform();
+                let pos = trans.transform_point(pos_raw);
+                self.draw_list.push(DrawCmd::Text {
+                    pos,
+                    content,
+                    size,
+                    font_family,
+                    align,
+                    style,
+                });
+                Ok(None)
+            }
             Stmt::Group(g) => {
                 let mut local_trans = Transform2D::identity();
                 if let Some(ref p) = g.pos {
@@ -9454,7 +10228,27 @@ impl Evaluator {
                 let l_val = self.eval_expr(left, locals)?;
                 let r_val = self.eval_expr(right, locals)?;
                 match op {
-                    BinaryOp::Add => Ok(Value::Number(l_val.as_f64()? + r_val.as_f64()?)),
+                    BinaryOp::Add => {
+                        match (l_val, r_val) {
+                            (Value::String(s1), Value::String(s2)) => Ok(Value::String(format!("{}{}", s1, s2))),
+                            (Value::String(s1), Value::Number(n2)) => {
+                                if n2.fract() == 0.0 && n2.abs() < 1e15 {
+                                    Ok(Value::String(format!("{}{}", s1, n2 as i64)))
+                                } else {
+                                    Ok(Value::String(format!("{}{}", s1, n2)))
+                                }
+                            }
+                            (Value::Number(n1), Value::String(s2)) => {
+                                if n1.fract() == 0.0 && n1.abs() < 1e15 {
+                                    Ok(Value::String(format!("{}{}", n1 as i64, s2)))
+                                } else {
+                                    Ok(Value::String(format!("{}{}", n1, s2)))
+                                }
+                            }
+                            (Value::String(s1), Value::Bool(b2)) => Ok(Value::String(format!("{}{}", s1, b2))),
+                            (l, r) => Ok(Value::Number(l.as_f64()? + r.as_f64()?)),
+                        }
+                    }
                     BinaryOp::Sub => Ok(Value::Number(l_val.as_f64()? - r_val.as_f64()?)),
                     BinaryOp::Mul => Ok(Value::Number(l_val.as_f64()? * r_val.as_f64()?)),
                     BinaryOp::Div => {
@@ -9554,13 +10348,14 @@ pub enum TokenKind {
     Else,
     Seed,
 
-    // Shapes
+    // Shapes & Elements
     Circle,
     Ellipse,
     Rectangle,
     Line,
     Polygon,
     Path,
+    Text,
     Group,
 
     // Properties
@@ -9569,6 +10364,9 @@ pub enum TokenKind {
     Pos,
     Size,
     Points,
+    Content,
+    Font,
+    Align,
     Fill,
     Stroke,
     Width,
@@ -9824,30 +10622,37 @@ impl<'a> Lexer<'a> {
             if b == b'/' { tokens.push(Token { kind: TokenKind::Slash, line: line_num, col }); i += 1; continue; }
             if b == b'%' { tokens.push(Token { kind: TokenKind::Percent, line: line_num, col }); i += 1; continue; }
 
+            // UTF-8 Clean String Tokenizer
             if b == b'"' {
                 i += 1;
                 let mut s = String::new();
                 let mut closed = false;
-                while i < len {
-                    if bytes[i] == b'\\' && i + 1 < len {
-                        match bytes[i + 1] {
-                            b'n' => s.push('\n'),
-                            b't' => s.push('\t'),
-                            b'r' => s.push('\r'),
-                            b'\"' => s.push('\"'),
-                            b'\\' => s.push('\\'),
-                            other => s.push(other as char),
+                let remaining = &text[i..];
+                let mut chars = remaining.char_indices();
+
+                while let Some((c_idx, ch)) = chars.next() {
+                    if ch == '\\' {
+                        if let Some((_, next_ch)) = chars.next() {
+                            match next_ch {
+                                'n' => s.push('\n'),
+                                't' => s.push('\t'),
+                                'r' => s.push('\r'),
+                                '"' => s.push('"'),
+                                '\\' => s.push('\\'),
+                                other => s.push(other),
+                            }
+                        } else {
+                            break;
                         }
-                        i += 2;
-                    } else if bytes[i] == b'"' {
+                    } else if ch == '"' {
                         closed = true;
-                        i += 1;
+                        i += c_idx + 1;
                         break;
                     } else {
-                        s.push(bytes[i] as char);
-                        i += 1;
+                        s.push(ch);
                     }
                 }
+
                 if !closed {
                     return Err(format!("Line {}: Unclosed string literal.", line_num));
                 }
@@ -9907,12 +10712,16 @@ impl<'a> Lexer<'a> {
                     "line" => TokenKind::Line,
                     "polygon" => TokenKind::Polygon,
                     "path" => TokenKind::Path,
+                    "text" => TokenKind::Text,
                     "group" => TokenKind::Group,
                     "center" => TokenKind::Center,
                     "radius" => TokenKind::Radius,
                     "pos" => TokenKind::Pos,
                     "size" => TokenKind::Size,
                     "points" => TokenKind::Points,
+                    "content" => TokenKind::Content,
+                    "font" => TokenKind::Font,
+                    "align" => TokenKind::Align,
                     "fill" => TokenKind::Fill,
                     "stroke" => TokenKind::Stroke,
                     "width" => TokenKind::Width,
@@ -10232,6 +11041,11 @@ impl Parser {
                 self.skip_newlines();
                 self.parse_path()
             }
+            TokenKind::Text => {
+                self.advance();
+                self.skip_newlines();
+                self.parse_text()
+            }
             TokenKind::Group => {
                 self.advance();
                 self.skip_newlines();
@@ -10479,6 +11293,41 @@ impl Parser {
         self.expect(TokenKind::Dedent)?;
 
         Ok(Stmt::Path(PathNode { fill, stroke, width, opacity, commands }))
+    }
+
+    fn parse_text(&mut self) -> Result<Stmt, String> {
+        self.expect(TokenKind::Indent)?;
+        let mut pos = None;
+        let mut content = None;
+        let mut size = None;
+        let mut font = None;
+        let mut align = None;
+        let mut fill = None;
+        let mut stroke = None;
+        let mut width = None;
+        let mut opacity = None;
+
+        while self.peek_kind() != &TokenKind::Dedent && self.peek_kind() != &TokenKind::Eof {
+            match self.peek_kind() {
+                TokenKind::Pos => { self.advance(); pos = Some(self.parse_expression()?); }
+                TokenKind::Content | TokenKind::Text => { self.advance(); content = Some(self.parse_expression()?); }
+                TokenKind::Size => { self.advance(); size = Some(self.parse_expression()?); }
+                TokenKind::Font => { self.advance(); font = Some(self.parse_expression()?); }
+                TokenKind::Align => { self.advance(); align = Some(self.parse_expression()?); }
+                TokenKind::Fill => { self.advance(); fill = Some(self.parse_expression()?); }
+                TokenKind::Stroke => { self.advance(); stroke = Some(self.parse_expression()?); }
+                TokenKind::Width => { self.advance(); width = Some(self.parse_expression()?); }
+                TokenKind::Opacity => { self.advance(); opacity = Some(self.parse_expression()?); }
+                TokenKind::Newline => { self.advance(); }
+                other => return Err(format!("Line {}: Invalid text property {:?}", self.peek().line, other)),
+            }
+            self.skip_newlines();
+        }
+        self.expect(TokenKind::Dedent)?;
+
+        let pos = pos.ok_or_else(|| "Text requires 'pos [x, y]'".to_string())?;
+        let content = content.ok_or_else(|| "Text requires 'content <expr>' or 'text <expr>'".to_string())?;
+        Ok(Stmt::Text(TextNode { pos, content, size, font, align, fill, stroke, width, opacity }))
     }
 
     fn parse_group(&mut self) -> Result<Stmt, String> {
@@ -10872,6 +11721,11 @@ const PRESETS: &[PresetItem] = &[
         fallback: include_str!("../../presets/radar.pvg"),
     },
     PresetItem {
+        name: "Telemetry Card (Text)",
+        path: "presets/telemetry_card.pvg",
+        fallback: include_str!("../../presets/telemetry_card.pvg"),
+    },
+    PresetItem {
         name: "Dashboard Dial",
         path: "presets/dial.pvg",
         fallback: include_str!("../../presets/dial.pvg"),
@@ -11210,7 +12064,7 @@ impl eframe::App for PvgApp {
             ui.add_space(3.0);
         });
 
-        // Bottom Diagnostics & Telemetry Bar (Rock-steady formatting without jitter)
+        // Bottom Diagnostics & Telemetry Bar
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
             ui.add_space(2.0);
             ui.horizontal(|ui| {
@@ -11339,7 +12193,7 @@ Below is this file's contents:
 use eframe::egui::{Color32, Painter, Pos2, Rect, Stroke};
 use eframe::epaint::PathShape;
 use pvg::ast::Color as PvgColor;
-use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand, DrawStyle};
+use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand, DrawStyle, TextAlign};
 use std::f32::consts::PI as PI_F32;
 use std::f64::consts::PI as PI_F64;
 use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect as SkiaRect, Stroke as SkiaStroke, Transform};
@@ -11353,6 +12207,21 @@ pub fn to_egui_color(col: &PvgColor, opacity: f64) -> Color32 {
         }
         PvgColor::None => Color32::TRANSPARENT,
     }
+}
+
+pub fn escape_xml(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 pub fn render_draw_list(painter: &Painter, draw_list: &DrawList, origin: Pos2, zoom: f32) {
@@ -11449,6 +12318,22 @@ pub fn render_draw_list(painter: &Painter, draw_list: &DrawList, origin: Pos2, z
                 if stroke.width > 0.0 && stroke.color != Color32::TRANSPARENT {
                     painter.add(PathShape::closed_line(screen_pts, stroke));
                 }
+            }
+
+            DrawCmd::Text { pos, content, size, font_family, align, style } => {
+                let screen_pos = to_screen(*pos);
+                let fill_c = to_egui_color(&style.fill, style.opacity);
+                let egui_align = match align {
+                    TextAlign::Left => eframe::egui::Align2::LEFT_TOP,
+                    TextAlign::Center => eframe::egui::Align2::CENTER_TOP,
+                    TextAlign::Right => eframe::egui::Align2::RIGHT_TOP,
+                };
+                let font_fam = match font_family.to_lowercase().as_str() {
+                    "mono" | "monospace" | "code" => eframe::egui::FontFamily::Monospace,
+                    _ => eframe::egui::FontFamily::Proportional,
+                };
+                let font_id = eframe::egui::FontId::new((*size as f32) * zoom, font_fam);
+                painter.text(screen_pos, egui_align, content, font_id, fill_c);
             }
 
             DrawCmd::Path { commands, style } => {
@@ -11674,6 +12559,17 @@ pub fn export_svg(draw_list: &DrawList) -> String {
                     ));
                 }
             }
+            DrawCmd::Text { pos, content, size, font_family, align, style } => {
+                let anchor = match align {
+                    TextAlign::Left => "start",
+                    TextAlign::Center => "middle",
+                    TextAlign::Right => "end",
+                };
+                out.push_str(&format!(
+                    "  <text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" font-family=\"{}\" text-anchor=\"{}\" dominant-baseline=\"hanging\" {}>{}</text>\n",
+                    pos.0, pos.1, size, font_family, anchor, format_style(style), escape_xml(content)
+                ));
+            }
             DrawCmd::Path { commands, style } => {
                 let mut d = Vec::new();
                 for c in commands {
@@ -11858,6 +12754,7 @@ pub fn rasterize_png(draw_list: &DrawList, scale: f32) -> Result<Vec<u8>, String
                     }
                 }
             }
+            DrawCmd::Text { .. } => {}
             DrawCmd::Path { commands, style } => {
                 let mut pb = PathBuilder::new();
                 let mut has_commands = false;
@@ -11887,7 +12784,7 @@ pub fn rasterize_png(draw_list: &DrawList, scale: f32) -> Result<Vec<u8>, String
                                 pb.move_to(c1.0 as f32, c1.1 as f32);
                                 has_commands = true;
                             }
-                            pb.cubic_to(c1.0 as f32, c1.1 as f32, c2.0 as f32, c2.1 as f32, ep.0 as f32, ep.1 as f32);
+                            pb.cubic_to(c1.0 as f32, c1.1 as f32, c2.0 as f32, c2.1 as f32, ep.0 as f32, ep.0 as f32);
                         }
                         DrawPathCommand::Arc { center, radius, start_angle, end_angle } => {
                             let delta = end_angle - start_angle;
@@ -12127,6 +13024,8 @@ pub fn rasterize_draw_list(draw_list: &DrawList, scale: f32) -> Result<Pixmap, S
                     }
                 }
             }
+
+            DrawCmd::Text { .. } => {}
 
             DrawCmd::Path { commands, style } => {
                 let mut pb = PathBuilder::new();
@@ -12455,12 +13354,27 @@ fn main() {
 Below is this file's contents:
 use pvg::ast::Color;
 use pvg::compile_pvg_at_time;
-use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand, DrawStyle};
+use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand, DrawStyle, TextAlign};
 use std::env;
 use std::f64::consts::PI;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+
+pub fn escape_xml(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
 
 pub fn color_to_svg(col: &Color) -> String {
     match col {
@@ -12539,6 +13453,17 @@ pub fn emit_draw_commands(items: &[DrawCmd], indent: &str) -> String {
                     indent,
                     pts_str.join(" "),
                     format_svg_attributes(style)
+                ));
+            }
+            DrawCmd::Text { pos, content, size, font_family, align, style } => {
+                let anchor = match align {
+                    TextAlign::Left => "start",
+                    TextAlign::Center => "middle",
+                    TextAlign::Right => "end",
+                };
+                out.push_str(&format!(
+                    "{}<text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" font-family=\"{}\" text-anchor=\"{}\" dominant-baseline=\"hanging\" {}>{}</text>\n",
+                    indent, pos.0, pos.1, size, font_family, anchor, format_svg_attributes(style), escape_xml(content)
                 ));
             }
             DrawCmd::Path { commands, style } => {

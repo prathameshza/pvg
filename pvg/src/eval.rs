@@ -1,8 +1,10 @@
 use crate::ast::*;
 use crate::draw_list::*;
+use crate::error::PvgError;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone)]
+/// Runtime dynamically typed value representation.
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Number(f64),
     String(String),
@@ -13,29 +15,29 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn as_f64(&self) -> Result<f64, String> {
+    pub fn as_f64(&self) -> Result<f64, PvgError> {
         match self {
             Value::Number(n) => Ok(*n),
             Value::Bool(b) => Ok(if *b { 1.0 } else { 0.0 }),
-            _ => Err(format!("Expected number, got {:?}", self)),
+            _ => Err(PvgError::runtime(format!("Expected number, got {:?}", self))),
         }
     }
 
-    pub fn as_vec2(&self) -> Result<(f64, f64), String> {
+    pub fn as_vec2(&self) -> Result<(f64, f64), PvgError> {
         match self {
             Value::Vec2(x, y) => Ok((*x, *y)),
-            _ => Err(format!("Expected [x, y] vector, got {:?}", self)),
+            _ => Err(PvgError::runtime(format!("Expected [x, y] vector, got {:?}", self))),
         }
     }
 
-    pub fn as_color(&self) -> Result<Color, String> {
+    pub fn as_color(&self) -> Result<Color, PvgError> {
         match self {
             Value::Color(c) => Ok(c.clone()),
-            _ => Err(format!("Expected color, got {:?}", self)),
+            _ => Err(PvgError::runtime(format!("Expected color, got {:?}", self))),
         }
     }
 
-    pub fn as_string(&self) -> Result<String, String> {
+    pub fn as_string(&self) -> Result<String, PvgError> {
         match self {
             Value::String(s) => Ok(s.clone()),
             Value::Number(n) => {
@@ -46,7 +48,7 @@ impl Value {
                 }
             }
             Value::Bool(b) => Ok(format!("{}", b)),
-            _ => Err(format!("Expected string or displayable value, got {:?}", self)),
+            _ => Err(PvgError::runtime(format!("Expected string or displayable value, got {:?}", self))),
         }
     }
 
@@ -61,6 +63,7 @@ impl Value {
     }
 }
 
+/// The procedural evaluator and runtime environment for PVG documents.
 pub struct Evaluator {
     globals: HashMap<String, Value>,
     functions: HashMap<String, FunctionDef>,
@@ -73,10 +76,12 @@ pub struct Evaluator {
 }
 
 impl Evaluator {
+    /// Creates a new evaluator initialized at timeline clock `time = 0.0`.
     pub fn new() -> Self {
         Self::new_with_time(0.0)
     }
 
+    /// Creates a new evaluator initialized with a specific timeline clock value in seconds.
     pub fn new_with_time(time: f64) -> Self {
         let mut globals = HashMap::new();
         globals.insert("PI".into(), Value::Number(std::f64::consts::PI));
@@ -96,6 +101,24 @@ impl Evaluator {
         }
     }
 
+    /// Sets the maximum allowable loop iterations across the entire evaluation to prevent DoS hangs.
+    pub fn with_loop_limit(mut self, limit: usize) -> Self {
+        self.loop_limit = limit;
+        self
+    }
+
+    /// Sets the initial 64-bit seed for deterministic Xorshift pseudorandom generation.
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.rng_state = if seed == 0 { 88172645463325252 } else { seed };
+        self
+    }
+
+    /// Injects or overrides a global variable in the execution scope.
+    pub fn with_global(mut self, name: impl Into<String>, value: Value) -> Self {
+        self.globals.insert(name.into(), value);
+        self
+    }
+
     fn current_transform(&self) -> Transform2D {
         *self.transform_stack.last().unwrap()
     }
@@ -111,7 +134,8 @@ impl Evaluator {
         (self.rng_state as f64) / (u64::MAX as f64)
     }
 
-    pub fn evaluate_document(mut self, doc: &Document) -> Result<DrawList, String> {
+    /// Evaluates a parsed `Document` AST into a flat 2D `DrawList`.
+    pub fn evaluate_document(mut self, doc: &Document) -> Result<DrawList, PvgError> {
         let mut locals = HashMap::new();
         for stmt in &doc.statements {
             self.eval_stmt(stmt, &mut locals)?;
@@ -125,7 +149,7 @@ impl Evaluator {
         })
     }
 
-    fn eval_stmt(&mut self, stmt: &Stmt, locals: &mut HashMap<String, Value>) -> Result<Option<Value>, String> {
+    fn eval_stmt(&mut self, stmt: &Stmt, locals: &mut HashMap<String, Value>) -> Result<Option<Value>, PvgError> {
         match stmt {
             Stmt::Set(name, expr) => {
                 let val = self.eval_expr(expr, locals)?;
@@ -160,14 +184,17 @@ impl Evaluator {
                 };
 
                 if step_val == 0.0 {
-                    return Err("For loop step cannot be 0".into());
+                    return Err(PvgError::runtime("For loop step cannot be 0"));
                 }
 
                 let mut current = start_val;
                 while (step_val > 0.0 && current <= end_val) || (step_val < 0.0 && current >= end_val) {
                     self.loop_count += 1;
                     if self.loop_count > self.loop_limit {
-                        return Err(format!("Exceeded loop safety limit of {} iterations", self.loop_limit));
+                        return Err(PvgError::safety_limit(format!(
+                            "Exceeded loop safety limit of {} iterations",
+                            self.loop_limit
+                        )));
                     }
                     locals.insert(var.clone(), Value::Number(current));
                     for b_stmt in body {
@@ -183,7 +210,10 @@ impl Evaluator {
                 while self.eval_expr(cond, locals)?.is_truthy() {
                     self.loop_count += 1;
                     if self.loop_count > self.loop_limit {
-                        return Err(format!("Exceeded loop safety limit of {} iterations", self.loop_limit));
+                        return Err(PvgError::safety_limit(format!(
+                            "Exceeded loop safety limit of {} iterations",
+                            self.loop_limit
+                        )));
                     }
                     for b_stmt in body {
                         if let Some(ret) = self.eval_stmt(b_stmt, locals)? {
@@ -391,8 +421,7 @@ impl Evaluator {
                 }
                 if let Some(ref r) = g.rot {
                     let angle = self.eval_expr(r, locals)?.as_f64()?;
-                    let cos_a = angle.cos();
-                    let sin_a = angle.sin();
+                    let (sin_a, cos_a) = angle.sin_cos();
                     let rot_t = Transform2D { a: cos_a, b: sin_a, c: -sin_a, d: cos_a, tx: 0.0, ty: 0.0 };
                     local_trans = local_trans.mul(&rot_t);
                 }
@@ -422,10 +451,17 @@ impl Evaluator {
         }
     }
 
-    fn invoke_function(&mut self, name: &str, args: Vec<Value>) -> Result<Option<Value>, String> {
-        let func = self.functions.get(name).cloned().ok_or_else(|| format!("Undefined function '{}'", name))?;
+    fn invoke_function(&mut self, name: &str, args: Vec<Value>) -> Result<Option<Value>, PvgError> {
+        let func = self.functions.get(name).cloned().ok_or_else(|| {
+            PvgError::runtime(format!("Undefined function '{}'", name))
+        })?;
         if func.params.len() != args.len() {
-            return Err(format!("Function '{}' expects {} arguments, got {}", name, func.params.len(), args.len()));
+            return Err(PvgError::runtime(format!(
+                "Function '{}' expects {} arguments, got {}",
+                name,
+                func.params.len(),
+                args.len()
+            )));
         }
 
         let mut locals = HashMap::new();
@@ -442,7 +478,7 @@ impl Evaluator {
         Ok(None)
     }
 
-    fn eval_expr(&mut self, expr: &Expr, locals: &HashMap<String, Value>) -> Result<Value, String> {
+    fn eval_expr(&mut self, expr: &Expr, locals: &HashMap<String, Value>) -> Result<Value, PvgError> {
         match expr {
             Expr::Number(n) => Ok(Value::Number(*n)),
             Expr::String(s) => Ok(Value::String(s.clone())),
@@ -459,7 +495,7 @@ impl Evaluator {
                 } else if let Some(v) = self.globals.get(name) {
                     Ok(v.clone())
                 } else {
-                    Err(format!("Undefined variable '{}'", name))
+                    Err(PvgError::runtime(format!("Undefined variable '{}'", name)))
                 }
             }
             Expr::Unary(op, inner) => {
