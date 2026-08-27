@@ -1,0 +1,13 @@
+[package]
+name = "pvg_android"
+version = "0.1.0"
+edition = "2021"
+description = "Pure CPU Native Android Render Engine for Procedural Vector Graphics (PVG) using ANativeWindow"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pvg = { path = "../pvg" }
+jni = { version = "0.21", default-features = false }
+tiny-skia = "0.11"

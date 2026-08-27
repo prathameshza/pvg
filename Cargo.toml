@@ -4,5 +4,6 @@ members = [
     "transpilers",
     "pvg_win_gui",
     "benchmark",
+    "pvg_android",
 ]
 resolver = "2"

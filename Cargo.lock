@@ -2618,6 +2618,15 @@ name = "pvg"
 version = "0.1.0"
 
 [[package]]
+name = "pvg_android"
+version = "0.1.0"
+dependencies = [
+ "jni 0.21.1",
+ "pvg",
+ "tiny-skia",
+]
+
+[[package]]
 name = "pvg_benchmark"
 version = "0.1.0"
 dependencies = [
