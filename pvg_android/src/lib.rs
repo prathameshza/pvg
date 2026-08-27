@@ -19,6 +19,18 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+static LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
+
+#[inline]
+pub fn is_logging_enabled() -> bool {
+    LOGGING_ENABLED.load(Ordering::Relaxed)
+}
+
+#[inline]
+pub fn set_logging_enabled(enabled: bool) {
+    LOGGING_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
 struct PvgEngineState {
     code: String,
     cached_doc: Option<Document>,
@@ -151,16 +163,18 @@ impl PvgEngine {
                     let avg_lock = acc_lock_us / n;
                     let avg_post = acc_post_us / n;
 
-                    if let Ok(mut s) = thread_state.lock() {
+                    if is_logging_enabled() {
+                        if let Ok(mut s) = thread_state.lock() {
+                            s.last_fps = fps;
+                            log_info!(
+                                "📊 [NATIVE 1s LOG] FPS: {:>4.1} | Eval: {:>5.1}µs | Raster: {:>4.2}ms | Lock: {:>5.1}µs | Post: {:>5.1}µs | Buf: {}x{}",
+                                fps, avg_eval, avg_raster, avg_lock, avg_post, s.surface_width, s.surface_height
+                            );
+                        }
+                        sys_monitor.log_1s_thread_profiler();
+                    } else if let Ok(mut s) = thread_state.lock() {
                         s.last_fps = fps;
-                        log_info!(
-                            "📊 [NATIVE 1s LOG] FPS: {:>4.1} | Eval: {:>5.1}µs | Raster: {:>4.2}ms | Lock: {:>5.1}µs | Post: {:>5.1}µs | Buf: {}x{}",
-                            fps, avg_eval, avg_raster, avg_lock, avg_post, s.surface_width, s.surface_height
-                        );
                     }
-
-                    // Execute Kernel /proc thread monitor
-                    sys_monitor.log_1s_thread_profiler();
 
                     frame_count = 0;
                     acc_eval_us = 0.0;
@@ -175,7 +189,6 @@ impl PvgEngine {
                     continue;
                 }
 
-                // Sleep remainder of 16.66ms frame budget
                 let frame_elapsed = start_frame.elapsed();
                 if frame_elapsed < target_frame_budget {
                     thread::sleep(target_frame_budget - frame_elapsed);
@@ -209,7 +222,7 @@ impl PvgEngine {
             None => return (0.0, 0.0, 0.0, 0.0),
         };
 
-        // Phase 1: Procedural AST Evaluation (Microsecond CPU)
+        // Phase 1: Procedural AST Evaluation
         let eval_t0 = Instant::now();
         let evaluator = Evaluator::new_with_time(time);
         let draw_list: DrawList = match evaluator.evaluate_document(&doc) {
@@ -219,12 +232,8 @@ impl PvgEngine {
         let eval_us = eval_t0.elapsed().as_secs_f64() * 1_000_000.0;
         let primitive_count = draw_list.items.len();
 
-        let mut lock_us = 0.0;
-        let mut raster_us = 0.0;
-        let mut post_us = 0.0;
-
-        // Phase 2: Lock Surface Buffer (Direct hardware access on real device)
-        unsafe {
+        // Phase 2: Lock Surface Buffer & In-Place Rasterization
+        let (lock_us, raster_us, post_us) = unsafe {
             let mut buffer = ANativeWindow_Buffer {
                 width: 0,
                 height: 0,
@@ -236,7 +245,8 @@ impl PvgEngine {
 
             let lock_t0 = Instant::now();
             let lock_res = ANativeWindow_lock(window, &mut buffer, std::ptr::null_mut());
-            lock_us = lock_t0.elapsed().as_secs_f64() * 1_000_000.0;
+            let lock_elapsed = lock_t0.elapsed().as_secs_f64() * 1_000_000.0;
+            let mut raster_elapsed = 0.0;
 
             if lock_res == 0 {
                 if !buffer.bits.is_null() && buffer.width > 0 && buffer.height > 0 && buffer.stride > 0 {
@@ -255,16 +265,19 @@ impl PvgEngine {
                             buffer.width as u32,
                             buffer.height as u32,
                         );
-                        raster_us = raster_t0.elapsed().as_secs_f64() * 1_000_000.0;
+                        raster_elapsed = raster_t0.elapsed().as_secs_f64() * 1_000_000.0;
                     }
                 }
 
                 // Phase 4: Post Framebuffer to Hardware Display
                 let post_t0 = Instant::now();
                 ANativeWindow_unlockAndPost(window);
-                post_us = post_t0.elapsed().as_secs_f64() * 1_000_000.0;
+                let post_elapsed = post_t0.elapsed().as_secs_f64() * 1_000_000.0;
+                (lock_elapsed, raster_elapsed, post_elapsed)
+            } else {
+                (lock_elapsed, 0.0, 0.0)
             }
-        }
+        };
 
         if let Ok(mut s) = state_arc.lock() {
             s.last_eval_us = eval_us;
@@ -371,11 +384,20 @@ impl Drop for PvgEngine {
 }
 
 // =========================================================================
-// JNI EXPORTS (com.pvg.pvg.PvgEngine)
+// JNI EXPORTS (com.pvg.android.PvgEngine)
 // =========================================================================
 
 #[no_mangle]
-pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeInit(
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetLoggingEnabled(
+    _env: JNIEnv,
+    _class: JClass,
+    enabled: jboolean,
+) {
+    set_logging_enabled(enabled == JNI_TRUE);
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeInit(
     mut env: JNIEnv,
     _class: JClass,
     source: JString,
@@ -392,7 +414,7 @@ pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeInit(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeDestroy(
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeDestroy(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -405,7 +427,7 @@ pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeDestroy(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeSetSource(
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetSource(
     mut env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -420,7 +442,7 @@ pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeSetSource(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeSetPlaying(
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetPlaying(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -433,7 +455,7 @@ pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeSetPlaying(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeSetTime(
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetTime(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -446,7 +468,7 @@ pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeSetTime(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeSetSpeed(
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetSpeed(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -459,7 +481,7 @@ pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeSetSpeed(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeOnSurfaceCreated(
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeOnSurfaceCreated(
     env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -477,7 +499,7 @@ pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeOnSurfaceCreated(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeOnSurfaceChanged(
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeOnSurfaceChanged(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -491,7 +513,7 @@ pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeOnSurfaceChanged(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeOnSurfaceDestroyed(
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeOnSurfaceDestroyed(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -503,7 +525,7 @@ pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeOnSurfaceDestroyed(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_pvg_pvg_PvgEngine_nativeGetTelemetry(
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeGetTelemetry(
     env: JNIEnv,
     _class: JClass,
     handle: jlong,

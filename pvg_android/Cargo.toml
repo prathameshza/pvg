@@ -5,7 +5,7 @@ edition = "2021"
 description = "Pure CPU Native Android Render Engine for Procedural Vector Graphics (PVG) using ANativeWindow"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 pvg = { path = "../pvg" }

@@ -7,6 +7,9 @@
 *.pdb
 *.dll
 
+# Android build artifacts
+android/pvg-android/build/
+
 # IDE / Editor
 .vscode/
 .idea/

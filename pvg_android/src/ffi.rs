@@ -1,4 +1,11 @@
+#![allow(dead_code)]
+#![allow(non_snake_case)]
+#![allow(non_camel_case_types)]
+#![allow(non_upper_case_globals)]
+
 use std::ffi::c_void;
+
+#[cfg(target_os = "android")]
 use std::os::raw::c_char;
 
 #[repr(C)]
@@ -23,6 +30,7 @@ pub const ANDROID_LOG_INFO: i32 = 4;
 pub const ANDROID_LOG_WARN: i32 = 5;
 pub const ANDROID_LOG_ERROR: i32 = 6;
 
+#[cfg(target_os = "android")]
 #[link(name = "android")]
 #[link(name = "log")]
 extern "C" {
@@ -56,17 +64,61 @@ extern "C" {
     ) -> i32;
 }
 
+#[cfg(not(target_os = "android"))]
+pub unsafe fn ANativeWindow_fromSurface(
+    _env: *mut jni::sys::JNIEnv,
+    _surface: jni::sys::jobject,
+) -> *mut ANativeWindow {
+    std::ptr::null_mut()
+}
+
+#[cfg(not(target_os = "android"))]
+pub unsafe fn ANativeWindow_release(_window: *mut ANativeWindow) {}
+
+#[cfg(not(target_os = "android"))]
+pub unsafe fn ANativeWindow_setBuffersGeometry(
+    _window: *mut ANativeWindow,
+    _width: i32,
+    _height: i32,
+    _format: i32,
+) -> i32 {
+    0
+}
+
+#[cfg(not(target_os = "android"))]
+pub unsafe fn ANativeWindow_lock(
+    _window: *mut ANativeWindow,
+    _outBuffer: *mut ANativeWindow_Buffer,
+    _inOutDirtyBounds: *mut c_void,
+) -> i32 {
+    -1
+}
+
+#[cfg(not(target_os = "android"))]
+pub unsafe fn ANativeWindow_unlockAndPost(_window: *mut ANativeWindow) -> i32 {
+    0
+}
+
 #[macro_export]
 macro_rules! log_info {
     ($($arg:tt)*) => {
-        let msg = format!($($arg)*);
-        if let (Ok(tag), Ok(c_msg)) = (std::ffi::CString::new("PVG_NATIVE"), std::ffi::CString::new(msg)) {
-            unsafe {
-                $crate::ffi::__android_log_print(
-                    $crate::ffi::ANDROID_LOG_INFO,
-                    tag.as_ptr(),
-                    c_msg.as_ptr(),
-                );
+        if $crate::is_logging_enabled() {
+            let msg = format!($($arg)*);
+            #[cfg(target_os = "android")]
+            {
+                if let (Ok(tag), Ok(c_msg)) = (std::ffi::CString::new("PVG_NATIVE"), std::ffi::CString::new(msg)) {
+                    unsafe {
+                        $crate::ffi::__android_log_print(
+                            $crate::ffi::ANDROID_LOG_INFO,
+                            tag.as_ptr(),
+                            c_msg.as_ptr(),
+                        );
+                    }
+                }
+            }
+            #[cfg(not(target_os = "android"))]
+            {
+                println!("[PVG_NATIVE INFO] {}", msg);
             }
         }
     };
@@ -75,15 +127,47 @@ macro_rules! log_info {
 #[macro_export]
 macro_rules! log_warn {
     ($($arg:tt)*) => {
-        let msg = format!($($arg)*);
-        if let (Ok(tag), Ok(c_msg)) = (std::ffi::CString::new("PVG_NATIVE"), std::ffi::CString::new(msg)) {
-            unsafe {
-                $crate::ffi::__android_log_print(
-                    $crate::ffi::ANDROID_LOG_WARN,
-                    tag.as_ptr(),
-                    c_msg.as_ptr(),
-                );
+        if $crate::is_logging_enabled() {
+            let msg = format!($($arg)*);
+            #[cfg(target_os = "android")]
+            {
+                if let (Ok(tag), Ok(c_msg)) = (std::ffi::CString::new("PVG_NATIVE"), std::ffi::CString::new(msg)) {
+                    unsafe {
+                        $crate::ffi::__android_log_print(
+                            $crate::ffi::ANDROID_LOG_WARN,
+                            tag.as_ptr(),
+                            c_msg.as_ptr(),
+                        );
+                    }
+                }
             }
+            #[cfg(not(target_os = "android"))]
+            {
+                eprintln!("[PVG_NATIVE WARN] {}", msg);
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! log_error {
+    ($($arg:tt)*) => {
+        let msg = format!($($arg)*);
+        #[cfg(target_os = "android")]
+        {
+            if let (Ok(tag), Ok(c_msg)) = (std::ffi::CString::new("PVG_NATIVE"), std::ffi::CString::new(msg)) {
+                unsafe {
+                    $crate::ffi::__android_log_print(
+                        $crate::ffi::ANDROID_LOG_ERROR,
+                        tag.as_ptr(),
+                        c_msg.as_ptr(),
+                    );
+                }
+            }
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            eprintln!("[PVG_NATIVE ERROR] {}", msg);
         }
     };
 }

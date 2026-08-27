@@ -21,6 +21,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.pvg.android.PvgController
+import com.pvg.android.PvgTelemetry
+import com.pvg.android.PvgView
+import com.pvg.android.rememberPvgController
 import com.pvg.pvg.ui.theme.PvgTheme
 import kotlinx.coroutines.delay
 
@@ -40,16 +44,13 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun PvgAndroidStudio() {
     var selectedPresetIndex by remember { mutableIntStateOf(0) }
-    var isPlaying by remember { mutableStateOf(true) }
-    var playbackSpeed by remember { mutableDoubleStateOf(1.0) }
-    var scrubTime by remember { mutableDoubleStateOf(0.0) }
-
     val currentPreset = Presets.list[selectedPresetIndex]
-    val engine = remember { PvgEngine(currentPreset.code, isPlaying, playbackSpeed) }
 
-    DisposableEffect(Unit) {
-        onDispose { engine.close() }
-    }
+    val controller = rememberPvgController(
+        source = currentPreset.code,
+        isPlaying = currentPreset.isAnimated,
+        speed = 1.0
+    )
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -103,8 +104,9 @@ fun PvgAndroidStudio() {
                         selected = isSelected,
                         onClick = {
                             selectedPresetIndex = index
-                            isPlaying = preset.isAnimated
-                            scrubTime = 0.0
+                            controller.load(preset.code)
+                            if (preset.isAnimated) controller.play() else controller.pause()
+                            controller.reset()
                         },
                         label = { Text(preset.name, fontSize = 12.sp) },
                         colors = FilterChipDefaults.filterChipColors(
@@ -128,11 +130,8 @@ fun PvgAndroidStudio() {
                     .border(1.dp, Color(0xFF1F2333), RoundedCornerShape(12.dp))
             ) {
                 PvgView(
-                    source = currentPreset.code,
-                    isPlaying = isPlaying,
-                    speed = playbackSpeed,
-                    time = scrubTime,
-                    engine = engine
+                    source = controller.source,
+                    controller = controller
                 )
 
                 // Top Diagnostic Overlay Badge
@@ -155,7 +154,7 @@ fun PvgAndroidStudio() {
             }
 
             // 3. Isolated Telemetry HUD
-            TelemetryHud(engine = engine)
+            TelemetryHud(controller = controller)
 
             // 4. Timeline Controls & Playback Speed
             Surface(
@@ -174,19 +173,17 @@ fun PvgAndroidStudio() {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Button(
-                            onClick = { isPlaying = !isPlaying },
+                            onClick = { controller.toggle() },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isPlaying) Color(0xFF282C3F) else Color(0xFF00A854)
+                                containerColor = if (controller.isPlaying) Color(0xFF282C3F) else Color(0xFF00A854)
                             ),
                             shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text(if (isPlaying) "⏸ Pause" else "▶ Play", fontSize = 12.sp)
+                            Text(if (controller.isPlaying) "⏸ Pause" else "▶ Play", fontSize = 12.sp)
                         }
 
                         Button(
-                            onClick = {
-                                scrubTime = 0.0
-                            },
+                            onClick = { controller.reset() },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF282C3F)),
                             shape = RoundedCornerShape(8.dp)
                         ) {
@@ -196,20 +193,21 @@ fun PvgAndroidStudio() {
                         Spacer(modifier = Modifier.weight(1f))
 
                         // Speed selection buttons
-                        listOf(0.5, 1.0, 2.0).forEach { speed ->
+                        listOf(0.5, 1.0, 2.0).forEach { speedOption ->
+                            val isCurrent = controller.speed == speedOption
                             OutlinedButton(
-                                onClick = { playbackSpeed = speed },
+                                onClick = { controller.setPlaybackSpeed(speedOption) },
                                 colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = if (playbackSpeed == speed) Color(0xFF00FFCC) else Color(0xFF8F96B0)
+                                    contentColor = if (isCurrent) Color(0xFF00FFCC) else Color(0xFF8F96B0)
                                 ),
                                 border = androidx.compose.foundation.BorderStroke(
                                     1.dp,
-                                    if (playbackSpeed == speed) Color(0xFF00FFCC) else Color(0xFF282C3F)
+                                    if (isCurrent) Color(0xFF00FFCC) else Color(0xFF282C3F)
                                 ),
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                                 shape = RoundedCornerShape(6.dp)
                             ) {
-                                Text("${speed}x", fontSize = 11.sp)
+                                Text("${speedOption}x", fontSize = 11.sp)
                             }
                         }
                     }
@@ -220,12 +218,12 @@ fun PvgAndroidStudio() {
 }
 
 @Composable
-fun TelemetryHud(engine: PvgEngine) {
+fun TelemetryHud(controller: PvgController) {
     var telemetry by remember { mutableStateOf(PvgTelemetry()) }
 
     LaunchedEffect(Unit) {
         while (true) {
-            val t = engine.getTelemetry()
+            val t = controller.getTelemetry()
             telemetry = t
             val runtime = Runtime.getRuntime()
             val usedMemMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)

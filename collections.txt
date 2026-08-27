@@ -1,30 +1,3 @@
-===== FILE: .gitignore =====
-Below is this file's contents:
-# Rust / Cargo
-/target/
-**/*.rs.bk
-
-# Build artifacts
-*.exe
-*.pdb
-*.dll
-
-# IDE / Editor
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS files
-Thumbs.db
-Desktop.ini
-.DS_Store
-
-# Logs and temp files
-*.log
-*.tmp
-
 ===== FILE: Cargo.toml =====
 Below is this file's contents:
 [workspace]
@@ -33,6 +6,7 @@ members = [
     "transpilers",
     "pvg_win_gui",
     "benchmark",
+    "pvg_android",
 ]
 resolver = "2"
 
@@ -726,6 +700,7 @@ Below is this file's contents:
 # ⚡ PVG — Procedural Vector Graphics
 
 [![Language: Rust](https://img.shields.io/badge/Language-Rust_2021-orange.svg?style=flat-square&logo=rust)](https://www.rust-lang.org/)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.prathameshza/pvg.svg?style=flat-square&color=00d2ff&logo=android)](https://central.sonatype.com/artifact/io.github.prathameshza/pvg)
 [![Frame Latency](https://img.shields.io/badge/Frame_Eval-<0.04_ms-brightgreen.svg?style=flat-square)](#-benchmark-telemetry)
 [![Memory Footprint](https://img.shields.io/badge/Peak_Heap-<50_KB-blueviolet.svg?style=flat-square)](#-benchmark-telemetry)
 [![Zero GPU Dependency](https://img.shields.io/badge/GPU_Dependency-0%25_(Pure_CPU)-cyan.svg?style=flat-square)](#-why-pvg-was-created)
@@ -734,7 +709,7 @@ Below is this file's contents:
 **A deterministic, human-readable 2D vector graphics and procedural scene description language.**  
 *Combines the declarative clarity of vector graphics with native loops, typography, trigonometry, and microsecond CPU evaluation.*
 
-[Live Web Studio](https://prathameshza.github.io/pvg/pvg_web_gui/index.html) • [Interactive Showcase](https://prathameshza.github.io/pvg/) • [Language Spec](PVG_SPECS.md) • [Desktop Studio](#2-desktop-studio-pvg_win_gui) • [Web Component](#4-web-studio--pvg-view-component)
+[Live Web Studio](https://prathameshza.github.io/pvg/pvg_web_gui/index.html) • [Interactive Showcase](https://prathameshza.github.io/pvg/) • [Language Spec](PVG_SPECS.md) • [Android Engine](#5-android-runtime-pvg-android) • [Desktop Studio](#2-desktop-studio-pvg_win_gui) • [Web Component](#4-web-studio--pvg-view-component)
 
 ---
 
@@ -753,6 +728,7 @@ Below is this file's contents:
   - [2. `pvg_win_gui` (Desktop Studio)](#2-desktop-studio-pvg_win_gui)
   - [3. `transpilers` (SVG / PNG CLI)](#3-cli-transpilers-transpilers)
   - [4. `<pvg-view>` (Web Component & Studio)](#4-web-studio--pvg-view-component)
+  - [5. `pvg-android` (Android Native Runtime)](#5-android-runtime-pvg-android)
 - [Benchmark Telemetry](#-benchmark-telemetry)
 - [Quickstart Guide](#-quickstart-guide)
 - [Safety & Sandbox Guarantees](#-safety--sandbox-guarantees)
@@ -787,7 +763,7 @@ Scalable Vector Graphics (SVG) has been the web's default 2D vector format for d
 
 **No.** PVG is deliberately **not** a drop-in replacement for the entire W3C SVG standard.
 
-SVG is a multi-decade, general-purpose document format designed for arbitrary web styling, complex digital publishing, and rich raster/vector hybrid artwork. **PVG is a lightweight, sandboxed, procedural micro-engine** designed for microsecond real-time graphics, procedural animation, automotive/industrial HUDs, generative art, and game engine vector rendering.
+SVG is a multi-decade, general-purpose document format designed for arbitrary web styling, complex digital publishing, and rich raster/vector hybrid artwork. **PVG is a lightweight, sandboxed, procedural micro-engine** designed for microsecond real-time graphics, procedural animation, automotive/industrial HUDs, generative art, mobile apps, and game engine vector overlays.
 
 ### Feature & Scope Matrix
 
@@ -801,7 +777,7 @@ PVG 0.1 Architectural Scope:
 ├── 2D Affine Transform Hierarchy (Translate, Rotate, Scale)     ✓
 ├── Flat Contiguous 2D Draw List (< 50 KB Heap Arena)            ✓
 ├── Lean Text Primitive (pos, content, size, align, opacity)     ✓
-├── Font Reference (Minimal aliases: sans, mono, serif)          ✓
+├── Multi-Platform Runtime (Rust, Web, Android AAR, Windows)     ✓
 ├── Embedded Fonts (Base64 WOFF2, TTF font tables, glyph curves) ✗ (Intentional omission)
 ├── Embedded Images (Base64 PNG/JPEG inlines)                    ✗ (Intentional omission)
 ├── External Images (<image href="..."> references)              ✗ (Intentional omission)
@@ -833,6 +809,7 @@ Before choosing PVG for a project, consider the architectural trade-offs:
 | Project Requirement | Recommended Format | Why? |
 | :--- | :---: | :--- |
 | **Real-time 60 FPS HUDs & Dials** | **PVG** | Evaluates in `< 40 µs` without triggering browser DOM reflows. |
+| **Android Embedded Graphics & HUDs** | **PVG** | 0% GPU power draw, 0 HWUI render upload via native `ANativeWindow`. |
 | **Generative & Algorithmic Vector Art** | **PVG** | Native `for` loops, trigonometry, and deterministic seeds without external JS. |
 | **Game Engine 2D Assets / UI Overlays** | **PVG** | Contiguous draw list fits in $< 50\text{ KB}$ heap memory with zero GPU lock-in. |
 | **Sandboxed / Untrusted Document Viewers** | **PVG** | Strict execution limits ($100k$ iterations, $64$ stack depth) prevent DoS attacks. |
@@ -847,6 +824,10 @@ Before choosing PVG for a project, consider the architectural trade-offs:
 ```
 pvg/
 ├── pvg/                         # 🦀 Official Rust Core Engine (Lexer, Parser, AST, Evaluator, DrawList)
+├── pvg_android/                 # 🤖 Pure CPU Rust JNI Bridge with ANativeWindow integration
+├── android/                     # 📱 Android Gradle Multi-Module Workspace
+│   ├── pvg-android/             #    • Official Android AAR Library (io.github.prathameshza:pvg)
+│   └── app/                     #    • Reference Showcase Android Application
 ├── pvg_win_gui/                 # 🪟 Native Windows Live IDE Studio (built with eframe/egui & tiny-skia)
 ├── transpilers/                 # 🔄 Rust-based CLI Transpilers for PVG -> SVG and PVG -> PNG
 │   ├── src/pvg_to_svg.rs        #    • PVG to static/animated SMIL SVG transpiler
@@ -868,13 +849,9 @@ pvg/
 
 ## 🎨 Featured Presets Showcase
 
-All reference presets compile directly to native GUI meshes, W3C SVG, or multi-scale PNG:
+All reference presets compile directly to native GUI meshes, W3C SVG, multi-scale PNG, or Android Views:
 
 ### 1. 📊 Telemetry Monitor Card (`presets/telemetry_card.pvg` — 1.6 KB)
-
-<p align="center">
-  <img src="presets\telemetry_card.svg" alt="Telemetry Card Preview" width="340"/>
-</p>
 
 *Demonstrates the lean `text` primitive, font family aliases (`sans`, `mono`), multi-alignment, and live procedural strings:*
 
@@ -926,10 +903,6 @@ text
 
 ### 2. 🌀 Radar Scanner (`presets/radar.pvg` — 1.5 KB vs 148.6 KB SVG)
 
-<p align="center">
-  <img src="presets/radar.png" alt="Radar Scanner Preview" width="340"/>
-</p>
-
 *Features dynamic range rings, crosshairs, orbiting beacon satellites, and a rotating phosphor sweep trail driven by the timeline clock `time`:*
 
 ```pvg
@@ -970,140 +943,6 @@ line
 
 ---
 
-### 3. 🎛️ Technical Dashboard Dial (`presets/dial.pvg` — 1.3 KB vs 3.6 KB SVG)
-
-<p align="center">
-  <img src="presets/dial.png" alt="Dashboard Dial Preview" width="340"/>
-</p>
-
-*Demonstrates circular forward arcs, ternary conditionals, and dynamic needle gauges:*
-
-```pvg
-PVG 0.1
-canvas 600 600
-  background #141419
-
-set cx = 300
-set cy = 300
-set outer_r = 200
-set inner_r = 170
-
-# Outer Background Track
-path
-  stroke #2c2d35
-  width 14
-  fill none
-  start [cx + outer_r * cos(135deg), cy + outer_r * sin(135deg)]
-  arc [cx, cy] outer_r 135deg 405deg
-
-# Procedurally Generated Major & Minor Ticks
-for i from 0 to 24
-  set angle = 135deg + i * (270deg / 24)
-  set is_major = (i % 4 == 0)
-  set tick_len = is_major ? 18 : 8
-  
-  line
-    from [cx + inner_r * cos(angle), cy + inner_r * sin(angle)]
-    to   [cx + (inner_r - tick_len) * cos(angle), cy + (inner_r - tick_len) * sin(angle)]
-    stroke is_major ? #ffffff : #666677
-    width is_major ? 3 : 1
-    opacity is_major ? 1.0 : 0.5
-
-# Central Hub
-circle
-  center [cx, cy]
-  radius 18
-  fill #ffffff
-  stroke #00d2ff
-  width 4
-```
-
----
-
-### 4. ⚙️ Gears & Functions (`presets/gears.pvg` — 0.6 KB vs 63.6 KB SVG)
-
-<p align="center">
-  <img src="presets/gears.png" alt="Gears & Functions Preview" width="340"/>
-</p>
-
-*Demonstrates user-defined modular functions (`def`) and procedural trigonometric cogs:*
-
-```pvg
-PVG 0.1
-canvas 600 600
-  background #111116
-
-def draw_gear(gx, gy, teeth, outer_r, inner_r, col)
-  circle
-    center [gx, gy]
-    radius outer_r - 10
-    fill col
-    stroke #ffffff
-    width 2
-
-  for t from 0 to (teeth - 1)
-    set angle = t * (TAU / teeth)
-    set tx = gx + outer_r * cos(angle)
-    set ty = gy + outer_r * sin(angle)
-    circle
-      center [tx, ty]
-      radius 8
-      fill col
-
-  circle
-    center [gx, gy]
-    radius inner_r
-    fill #111116
-    stroke #ffffff
-    width 2
-
-draw_gear(220, 300, 12, 110, 30, #ff5722)
-draw_gear(410, 300, 8, 75, 20, #03a9f4)
-```
-
----
-
-### 5. 🔲 Procedural Grid (`presets/grid.pvg` — 0.5 KB vs 16.9 KB SVG)
-
-<p align="center">
-  <img src="presets/grid.png" alt="Procedural Grid Preview" width="340"/>
-</p>
-
-*Demonstrates nested 2D loops with 64-bit Xorshift pseudorandom numbers and rounded rectangles:*
-
-```pvg
-PVG 0.1
-canvas 600 600
-  background #0b0c10
-
-seed 42
-
-for row from 0 to 7
-  for col from 0 to 7
-    set x = 60 + col * 68
-    set y = 60 + row * 68
-    set r = 10 + random(0, 18)
-    
-    circle
-      center [x, y]
-      radius r
-      fill #66fcf1
-      opacity 0.25 + (col + row) * 0.05
-      stroke #45a29e
-      width 1.5
-
-    rectangle
-      pos [x - 20, y - 20]
-      size [40, 40]
-      radius 4
-      fill none
-      stroke #c5c6c7
-      width 1
-      opacity 0.2
-```
-
----
-
 ## 🏗️ Architecture & Execution Pipeline
 
 ```
@@ -1115,10 +954,10 @@ for row from 0 to 7
            ▼ (Procedural Evaluator: Loops, Typography, Trigonometry, Transforms)
 [ Flat 2D Draw List (`DrawList`) ] (~15–35 KB)
            │
-   ┌───────┼─────────────────────────┬─────────────────────────┐
-   ▼       ▼                         ▼                         ▼
-[ egui GUI Painter ]      [ Standalone SVG ]         [ tiny-skia Engine ]      [ <pvg-view> Element ]
-(Screen-Space Adaptive)   (W3C SMIL Animation)       (1x / 2x / 4x PNG)        (Canvas / SVG Web)
+   ┌───────┼─────────────────────────┬─────────────────────────┬─────────────────────────┐
+   ▼       ▼                         ▼                         ▼                         ▼
+[ egui GUI Painter ]      [ Standalone SVG ]         [ tiny-skia Engine ]      [ <pvg-view> Element ]    [ ANativeWindow Android ]
+(Screen-Space Adaptive)   (W3C SMIL Animation)       (1x / 2x / 4x PNG)        (Canvas / SVG Web)        (Pure CPU 60 FPS Direct)
 ```
 
 1. **AST Caching Optimization:** During animated playback (60 FPS), the document is parsed once into an AST (`Document`). Every frame tick re-evaluates the AST with updated `time` values directly into the draw list in **`5–40 µs`**, avoiding string parsing churn.
@@ -1150,10 +989,6 @@ cargo run --release --bin pvg_to_svg -- presets/telemetry_card.pvg presets/telem
 
 # 2. Rasterize a single PVG file to 2x PNG
 cargo run --release --bin pvg_to_png -- presets/telemetry_card.pvg presets/telemetry_card.png --scale 2.0
-
-# 3. Batch transpile all presets to SVG & PNG
-cargo run --release --bin pvg_to_svg -- --all
-cargo run --release --bin pvg_to_png -- --all --scale 2.0
 ```
 
 ### 4. Web Studio & `<pvg-view>` Component
@@ -1171,16 +1006,43 @@ A pure vanilla JS implementation (`docs/pvg_web_gui/pvg.js`) providing a zero-de
       center [200, 200]
       radius 60 + 20 * sin(time * 4)
       fill #00ffcc
-
-    text
-      pos [200, 280]
-      content "PULSING CORE"
-      size 14
-      font "mono"
-      align "center"
-      fill #ffffff
   </script>
 </pvg-view>
+```
+
+### 5. Android Runtime (`pvg-android`)
+
+Add the dependency to your Android app's `build.gradle.kts`:
+
+```kotlin
+dependencies {
+    implementation("io.github.prathameshza:pvg:0.1.0")
+}
+```
+
+#### Jetpack Compose (`PvgView`):
+```kotlin
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.pvg.android.PvgView
+
+@Composable
+fun Beacon() {
+    PvgView(
+        source = """
+            PVG 0.1
+            canvas 400 400
+              background #000000
+            circle
+              center [200, 200]
+              radius 50 + 20 * sin(time * 3)
+              fill #00ffcc
+        """.trimIndent(),
+        modifier = Modifier.size(300.dp)
+    )
+}
 ```
 
 ---
@@ -1198,15 +1060,6 @@ A pure vanilla JS implementation (`docs/pvg_web_gui/pvg.js`) providing a zero-de
 | **`dial.pvg`** | Preset | 29 | **142.49 µs** | 158.50 µs | 47.68 KB | 95.25 KB | 7,018 ops/s | ✅ **PASS** |
 | **`spiral.pvg`** | Preset | 61 | **164.63 µs** | 183.80 µs | 20.08 KB | 50.98 KB | 6,074 ops/s | ✅ **PASS** |
 | **`grid.pvg`** | Preset | 128 | **173.14 µs** | 242.60 µs | 30.27 KB | 69.40 KB | 5,776 ops/s | ✅ **PASS** |
-| **`stress_complex_paths`** | Stress | 20 | **349.45 µs** | 438.40 µs | 164.19 KB | 306.92 KB | 2,862 ops/s | ⚠️ **STRESS** |
-| **`stress_nested_transforms`**| Stress | 2,000 | **1486.08 µs** | 1805.80 µs | 343.50 KB | 468.18 KB | 673 ops/s | ⚠️ **STRESS** |
-| **`stress_math_and_trig`** | Stress | 1,500 | **4611.10 µs** | 5878.60 µs | 344.62 KB | 1183.73 KB | 217 ops/s | ⚠️ **STRESS** |
-| **`stress_10k_primitives`** | Stress | 10,000 | **9941.07 µs** | 11530.20 µs | 2695.21 KB | 5045.38 KB | 101 ops/s | ⚠️ **STRESS** |
-
-```bash
-# Run the full benchmark suite
-cargo run --release --bin pvg_benchmark -- --detailed
-```
 
 ---
 
@@ -1214,20 +1067,22 @@ cargo run --release --bin pvg_benchmark -- --detailed
 
 ### Prerequisites
 - [Rust toolchain](https://rustup.rs/) (edition 2021 or newer)
+- [Android Studio](https://developer.android.com/studio) (for Android AAR compilation)
 
 ```bash
 # 1. Clone the repository
 git clone https://github.com/prathameshza/pvg.git
 cd pvg
 
-# 2. Launch the Desktop IDE
+# 2. Run all Rust core tests
+cargo test --workspace
+
+# 3. Launch Desktop Studio IDE
 cargo run --release -p pvg_win_gui
 
-# 3. Transpile all presets to SVG
-cargo run --release --bin pvg_to_svg -- --all
-
-# 4. Transpile all presets to 2x PNG
-cargo run --release --bin pvg_to_png -- --all --scale 2.0
+# 4. Build Android Library AAR
+cd android
+./gradlew :pvg-android:assembleRelease
 ```
 
 ---
@@ -1241,6 +1096,2207 @@ cargo run --release --bin pvg_to_png -- --all --scale 2.0
 | `WORKING_HEAP_BUDGET` | $< 50\text{ KB}$ | Bounded memory consumption for AST and Draw Lists |
 | `INPUT_CONSTRAINTS` | Tabs forbidden | Enforces uniform 2-space indentation layouts |
 | `NETWORK_SANDBOX` | 0 External Requests | Zero remote asset fetching, eliminating XSS and SSRF risks |
+
+===== FILE: android/app/build.gradle.kts =====
+Below is this file's contents:
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+}
+
+android {
+    namespace = "com.pvg.pvg"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.pvg.pvg"
+        minSdk = 28
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+    
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+    
+    buildFeatures {
+        compose = true
+    }
+}
+
+kotlin {
+    jvmToolchain(11)
+}
+
+dependencies {
+    implementation(project(":pvg-android"))
+
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+
+    testImplementation(libs.junit)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.junit)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+}
+
+===== FILE: android/app/src/androidTest/java/com/pvg/pvg/ExampleInstrumentedTest.kt =====
+Below is this file's contents:
+package com.pvg.pvg
+
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.ext.junit.runners.AndroidJUnit4
+
+import org.junit.Test
+import org.junit.runner.RunWith
+
+import org.junit.Assert.*
+
+/**
+ * Instrumented test, which will execute on an Android device.
+ *
+ * See [testing documentation](http://d.android.com/tools/testing).
+ */
+@RunWith(AndroidJUnit4::class)
+class ExampleInstrumentedTest {
+    @Test
+    fun useAppContext() {
+        // Context of the app under test.
+        val appContext = InstrumentationRegistry.getInstrumentation().targetContext
+        assertEquals("com.pvg.pvg", appContext.packageName)
+    }
+}
+
+===== FILE: android/app/src/main/AndroidManifest.xml =====
+Below is this file's contents:
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Pvg">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Pvg"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
+
+===== FILE: android/app/src/main/java/com/pvg/pvg/MainActivity.kt =====
+Below is this file's contents:
+package com.pvg.pvg
+
+import android.os.Bundle
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.pvg.android.PvgController
+import com.pvg.android.PvgTelemetry
+import com.pvg.android.PvgView
+import com.pvg.android.rememberPvgController
+import com.pvg.pvg.ui.theme.PvgTheme
+import kotlinx.coroutines.delay
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent {
+            PvgTheme {
+                PvgAndroidStudio()
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PvgAndroidStudio() {
+    var selectedPresetIndex by remember { mutableIntStateOf(0) }
+    val currentPreset = Presets.list[selectedPresetIndex]
+
+    val controller = rememberPvgController(
+        source = currentPreset.code,
+        isPlaying = currentPreset.isAnimated,
+        speed = 1.0
+    )
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = Color(0xFF08090D),
+        topBar = {
+            TopAppBar(
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("⚡ PVG", fontWeight = FontWeight.Black, color = Color(0xFF00FFCC), fontSize = 18.sp)
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFF00D2FF).copy(alpha = 0.2f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00D2FF).copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                "PURE CPU 60 FPS",
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF00D2FF)
+                            )
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF11141D)
+                )
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            // 1. Preset Selector Tabs
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF11141D))
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Presets.list.forEachIndexed { index, preset ->
+                    val isSelected = index == selectedPresetIndex
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            selectedPresetIndex = index
+                            controller.load(preset.code)
+                            if (preset.isAnimated) controller.play() else controller.pause()
+                            controller.reset()
+                        },
+                        label = { Text(preset.name, fontSize = 12.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF00D2FF).copy(alpha = 0.25f),
+                            selectedLabelColor = Color(0xFF00FFCC),
+                            containerColor = Color(0xFF1B1F2C),
+                            labelColor = Color(0xFF8F96B0)
+                        )
+                    )
+                }
+            }
+
+            // 2. Interactive Native Viewport (Framed container)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(12.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF08090D))
+                    .border(1.dp, Color(0xFF1F2333), RoundedCornerShape(12.dp))
+            ) {
+                PvgView(
+                    source = controller.source,
+                    controller = controller
+                )
+
+                // Top Diagnostic Overlay Badge
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = Color(0xFF11141D).copy(alpha = 0.85f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF282C3F)),
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .align(Alignment.TopEnd)
+                ) {
+                    Text(
+                        text = "Native Direct ANativeWindow • 0 HWUI Upload • 0 GPU",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        color = Color(0xFF00E676)
+                    )
+                }
+            }
+
+            // 3. Isolated Telemetry HUD
+            TelemetryHud(controller = controller)
+
+            // 4. Timeline Controls & Playback Speed
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF11141D)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = { controller.toggle() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (controller.isPlaying) Color(0xFF282C3F) else Color(0xFF00A854)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(if (controller.isPlaying) "⏸ Pause" else "▶ Play", fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = { controller.reset() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF282C3F)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("⏮ Reset", fontSize = 12.sp)
+                        }
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        // Speed selection buttons
+                        listOf(0.5, 1.0, 2.0).forEach { speedOption ->
+                            val isCurrent = controller.speed == speedOption
+                            OutlinedButton(
+                                onClick = { controller.setPlaybackSpeed(speedOption) },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = if (isCurrent) Color(0xFF00FFCC) else Color(0xFF8F96B0)
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isCurrent) Color(0xFF00FFCC) else Color(0xFF282C3F)
+                                ),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text("${speedOption}x", fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TelemetryHud(controller: PvgController) {
+    var telemetry by remember { mutableStateOf(PvgTelemetry()) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            val t = controller.getTelemetry()
+            telemetry = t
+            val runtime = Runtime.getRuntime()
+            val usedMemMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
+            Log.i(
+                "PVG_KOTLIN",
+                "📱 [KOTLIN UI 1s LOG] Engine: ${t.fps.toInt()} FPS | Shapes: ${t.primitiveCount} | Eval: ${String.format("%.1f", t.evalUs)}µs | Raster: ${String.format("%.2f", t.rasterUs / 1000.0)}ms | JVM Heap: ${usedMemMb}MB"
+            )
+            delay(1000L)
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(0xFF0D0E15),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF181B26))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    "AST Parse: ${String.format("%.1f", telemetry.parseUs)} µs",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = Color(0xFF00FFCC)
+                )
+                Text(
+                    "Eval Latency: ${String.format("%.1f", telemetry.evalUs)} µs",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = Color(0xFF00E676)
+                )
+            }
+
+            Column {
+                Text(
+                    "In-Place Raster: ${String.format("%.2f", telemetry.rasterUs / 1000.0)} ms",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = Color(0xFF00D2FF)
+                )
+                Text(
+                    "Shapes: ${telemetry.primitiveCount}",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = Color(0xFFC5C6C7)
+                )
+            }
+
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = Color(0xFF00E676).copy(alpha = 0.15f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.4f))
+            ) {
+                Text(
+                    text = "${telemetry.fps.toInt()} FPS",
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = Color(0xFF00E676)
+                )
+            }
+        }
+    }
+}
+
+===== FILE: android/app/src/main/java/com/pvg/pvg/Presets.kt =====
+Below is this file's contents:
+package com.pvg.pvg
+
+data class Preset(
+    val name: String,
+    val description: String,
+    val isAnimated: Boolean,
+    val code: String
+)
+
+object Presets {
+    val list = listOf(
+        Preset(
+            name = "🦖 Chrome Dino Runner",
+            description = "Sine gravity jump curve and procedural moving ground dashes",
+            isAnimated = true,
+            code = """
+PVG 0.1
+canvas 80 72
+  background #000000
+
+set fg = #f97316
+set t2 = time % 2.0
+set in_jump = (t2 >= 0.6) and (t2 <= 1.2)
+set jump_y = in_jump ? (-30 * sin(((t2 - 0.6) / 0.6) * PI)) : 0
+set leg = (time % 0.2) < 0.1
+
+# UI Borders & Indicators
+rect
+  pos [0.5, 0.5]
+  size [79, 71]
+  stroke fg
+  opacity 0.2
+  fill none
+rect
+  pos [0.5, 0.5]
+  size [79, 4]
+  stroke fg
+  opacity 0.5
+  fill none
+rect
+  pos [2, 2]
+  size [8, 1]
+  fill fg
+rect
+  pos [66, 2]
+  size [12, 1]
+  fill fg
+
+# Procedural Moving Ground Track
+for i from 0 to 21
+  set gx = i * 4 - ((time * 50) % 4)
+  line
+    from [gx, 54]
+    to   [gx + 1, 54]
+    stroke fg
+    opacity 0.3
+
+# Moving Cactus
+group
+  pos [80 - (t2 / 2.0) * 140, 18]
+  rect
+    pos [0, 26]
+    size [3, 10]
+    fill fg
+  rect
+    pos [-2, 28]
+    size [2, 4]
+    fill fg
+  rect
+    pos [3, 29]
+    size [2, 3]
+    fill fg
+
+# Animated Dino
+group
+  pos [0, 30.2222 + jump_y]
+  polygon
+    fill fg
+    points [12.56,12.22] [13.44,12.22] [13.44,14] [14.33,14] [14.33,14.89] [15.22,14.89] [15.22,15.78] [17,15.78] [17,14.89] [17.89,14.89] [17.89,14] [19.22,14] [19.22,13.11] [20.56,13.11] [20.56,12.22] [21.44,12.22] [21.44,6.44] [22.33,6.44] [22.33,5.56] [29.44,5.56] [29.44,6.44] [30.33,6.44] [30.33,10.44] [25.89,10.44] [25.89,11.33] [28.56,11.33] [28.56,12.22] [25,12.22] [25,14] [26.78,14] [26.78,15.78] [25.89,15.78] [25.89,14.89] [25,14.89] [25,18] [24.11,18] [24.11,19.33] [23.22,19.33] [23.22,20.22] [22.33,20.22] [22.33,21.11] [15.22,21.11] [15.22,20.22] [14.33,20.22] [14.33,19.33] [13.44,19.33] [13.44,18.44] [12.56,18.44] [12.56,17.56]
+  rect
+    pos [23.22, 6.89]
+    size [0.89, 0.89]
+    fill #000
+  rect
+    pos [17, 21.11]
+    size [1.78, leg ? 2.67 : 0.89]
+    fill fg
+  rect
+    pos [21.44, 21.11]
+    size [1.78, leg ? 0.89 : 2.67]
+    fill fg
+""".trimIndent()
+        ),
+        Preset(
+            name = "🌀 Radar Scanner",
+            description = "Concentric range rings, sweep phosphor trail, and orbiting beacons",
+            isAnimated = true,
+            code = """
+PVG 0.1
+canvas 600 600
+  background #080a0f
+
+set cx = 300
+set cy = 300
+set sweep = time * 2.0
+
+# Radar Concentric Range Rings
+for r_idx from 1 to 4
+  circle
+    center [cx, cy]
+    radius r_idx * 55
+    fill none
+    stroke #103b42
+    width 1.5
+    opacity 0.7
+
+# Crosshair Lines
+line
+  from [cx - 240, cy]
+  to   [cx + 240, cy]
+  stroke #155560
+  width 1
+  opacity 0.5
+
+line
+  from [cx, cy - 240]
+  to   [cx, cy + 240]
+  stroke #155560
+  width 1
+  opacity 0.5
+
+# Rotating Phosphor Sweep Trail
+for trail from 0 to 20
+  set a = sweep - trail * 0.035
+  line
+    from [cx, cy]
+    to   [cx + 230 * cos(a), cy + 230 * sin(a)]
+    stroke #00ffcc
+    width 2
+    opacity (1.0 - trail / 20) * 0.45
+
+# Main Sweep Line
+line
+  from [cx, cy]
+  to   [cx + 230 * cos(sweep), cy + 230 * sin(sweep)]
+  stroke #ffffff
+  width 2.5
+
+# Orbiting Satellites with Pulsing Beacons
+for b from 0 to 4
+  set orbit_r = 65 + b * 40
+  set speed = 0.6 + b * 0.25
+  set b_angle = (time * speed) + b * 1.5
+  set bx = cx + orbit_r * cos(b_angle)
+  set by = cy + orbit_r * sin(b_angle)
+  
+  set pulse = 4 + 3 * sin(time * 8 + b * 2)
+  circle
+    center [bx, by]
+    radius pulse
+    fill #ff0055
+    opacity 0.85
+    stroke #ffffff
+    width 1.5
+
+  circle
+    center [bx, by]
+    radius pulse + 6
+    fill none
+    stroke #ff0055
+    width 1
+    opacity 0.35
+
+# Central Hub Beacon
+circle
+  center [cx, cy]
+  radius 8
+  fill #00ffcc
+  stroke #ffffff
+  width 2
+""".trimIndent()
+        ),
+        Preset(
+            name = "🎛️ Technical Dial",
+            description = "Forward circular arcs, tick loop, and pointer needle",
+            isAnimated = false,
+            code = """
+PVG 0.1
+canvas 600 600
+  background #141419
+
+set cx = 300
+set cy = 300
+set outer_r = 200
+set inner_r = 170
+
+# Outer Background Track
+path
+  stroke #2c2d35
+  width 14
+  fill none
+  start [cx + outer_r * cos(135deg), cy + outer_r * sin(135deg)]
+  arc [cx, cy] outer_r 135deg 405deg
+
+# Colored Value Arc
+path
+  stroke #00d2ff
+  width 14
+  fill none
+  start [cx + outer_r * cos(135deg), cy + outer_r * sin(135deg)]
+  arc [cx, cy] outer_r 135deg 325deg
+
+# Procedurally Generated Ticks
+for i from 0 to 24
+  set angle = 135deg + i * (270deg / 24)
+  set is_major = (i % 4 == 0)
+  set tick_len = is_major ? 18 : 8
+  
+  line
+    from [cx + inner_r * cos(angle), cy + inner_r * sin(angle)]
+    to   [cx + (inner_r - tick_len) * cos(angle), cy + (inner_r - tick_len) * sin(angle)]
+    stroke is_major ? #ffffff : #666677
+    width is_major ? 3 : 1
+    opacity is_major ? 1.0 : 0.5
+
+# Central Hub
+circle
+  center [cx, cy]
+  radius 18
+  fill #ffffff
+  stroke #00d2ff
+  width 4
+
+# Gauge Pointer Needle
+path
+  fill #ff3355
+  stroke none
+  
+  set needle_angle = 325deg
+  set nx = cos(needle_angle)
+  set ny = sin(needle_angle)
+  set px = -ny * 7
+  set py =  nx * 7
+  
+  start [cx + px, cy + py]
+  line  [cx + nx * (inner_r - 25), cy + ny * (inner_r - 25)]
+  line  [cx - px, cy - py]
+  close
+""".trimIndent()
+        ),
+        Preset(
+            name = "⚙️ Gears & Functions",
+            description = "User-defined procedural def functions with trigonometric cogs",
+            isAnimated = false,
+            code = """
+PVG 0.1
+canvas 600 600
+  background #111116
+
+def draw_gear(gx, gy, teeth, outer_r, inner_r, col)
+  circle
+    center [gx, gy]
+    radius outer_r - 10
+    fill col
+    stroke #ffffff
+    width 2
+
+  for t from 0 to (teeth - 1)
+    set angle = t * (TAU / teeth)
+    set tx = gx + outer_r * cos(angle)
+    set ty = gy + outer_r * sin(angle)
+    circle
+      center [tx, ty]
+      radius 8
+      fill col
+
+  circle
+    center [gx, gy]
+    radius inner_r
+    fill #111116
+    stroke #ffffff
+    width 2
+
+draw_gear(220, 300, 12, 110, 30, #ff5722)
+draw_gear(410, 300, 8, 75, 20, #03a9f4)
+""".trimIndent()
+        ),
+        Preset(
+            name = "🔲 Procedural Grid",
+            description = "Nested 2D loops with 64-bit Xorshift pseudorandom radii",
+            isAnimated = false,
+            code = """
+PVG 0.1
+canvas 600 600
+  background #0b0c10
+
+seed 42
+
+for row from 0 to 7
+  for col from 0 to 7
+    set x = 60 + col * 68
+    set y = 60 + row * 68
+    set r = 10 + random(0, 18)
+    
+    circle
+      center [x, y]
+      radius r
+      fill #66fcf1
+      opacity 0.25 + (col + row) * 0.05
+      stroke #45a29e
+      width 1.5
+
+    rectangle
+      pos [x - 20, y - 20]
+      size [40, 40]
+      radius 4
+      fill none
+      stroke #c5c6c7
+      width 1
+      opacity 0.2
+""".trimIndent()
+        ),
+        Preset(
+            name = "🌀 Golden Spiral",
+            description = "Logarithmic spiral evaluation with fading opacity",
+            isAnimated = false,
+            code = """
+PVG 0.1
+canvas 600 600
+  background #000000
+
+set cx = 300
+set cy = 300
+set a = 3.0
+set b = 0.12
+
+for i from 0 to 60
+  set theta = i * 0.2
+  set r = a * (2.71828 ^ (b * theta)) * 8.0
+  set x = cx + r * cos(theta)
+  set y = cy + r * sin(theta)
+  
+  circle
+    center [x, y]
+    radius 4 + (i * 0.2)
+    fill #ff007f
+    stroke #00ffff
+    width 1
+    opacity 0.85 - (i * 0.008)
+""".trimIndent()
+        )
+    )
+}
+
+===== FILE: android/app/src/main/java/com/pvg/pvg/PvgEngine.kt =====
+Below is this file's contents:
+package com.pvg.pvg
+
+import android.util.Log
+import android.view.Surface
+import java.io.Closeable
+
+data class PvgTelemetry(
+    val parseUs: Double = 0.0,
+    val evalUs: Double = 0.0,
+    val rasterUs: Double = 0.0,
+    val fps: Double = 60.0,
+    val primitiveCount: Int = 0
+)
+
+class PvgEngine(
+    initialSource: String,
+    isPlaying: Boolean = true,
+    speed: Double = 1.0
+) : Closeable {
+
+    private var nativeHandle: Long = 0
+
+    init {
+        nativeHandle = nativeInit(initialSource, isPlaying, speed)
+        Log.i(TAG, "Initialized PvgEngine instance (nativeHandle = $nativeHandle)")
+    }
+
+    fun setSource(source: String) {
+        if (nativeHandle != 0L) {
+            nativeSetSource(nativeHandle, source)
+        }
+    }
+
+    fun setPlaying(playing: Boolean) {
+        if (nativeHandle != 0L) {
+            nativeSetPlaying(nativeHandle, playing)
+        }
+    }
+
+    fun setTime(time: Double) {
+        if (nativeHandle != 0L) {
+            nativeSetTime(nativeHandle, time)
+        }
+    }
+
+    fun setSpeed(speed: Double) {
+        if (nativeHandle != 0L) {
+            nativeSetSpeed(nativeHandle, speed)
+        }
+    }
+
+    fun onSurfaceCreated(surface: Surface) {
+        if (nativeHandle != 0L) {
+            Log.i(TAG, "Dispatching onSurfaceCreated to Native JNI")
+            nativeOnSurfaceCreated(nativeHandle, surface)
+        }
+    }
+
+    fun onSurfaceChanged(width: Int, height: Int) {
+        if (nativeHandle != 0L) {
+            Log.i(TAG, "Dispatching onSurfaceChanged (${width}x${height}) to Native JNI")
+            nativeOnSurfaceChanged(nativeHandle, width, height)
+        }
+    }
+
+    fun onSurfaceDestroyed() {
+        if (nativeHandle != 0L) {
+            Log.i(TAG, "Dispatching onSurfaceDestroyed to Native JNI")
+            nativeOnSurfaceDestroyed(nativeHandle)
+        }
+    }
+
+    fun getTelemetry(): PvgTelemetry {
+        if (nativeHandle == 0L) return PvgTelemetry()
+        val data = nativeGetTelemetry(nativeHandle)
+        return if (data.size >= 5) {
+            PvgTelemetry(
+                parseUs = data[0],
+                evalUs = data[1],
+                rasterUs = data[2],
+                fps = data[3],
+                primitiveCount = data[4].toInt()
+            )
+        } else {
+            PvgTelemetry()
+        }
+    }
+
+    override fun close() {
+        if (nativeHandle != 0L) {
+            Log.i(TAG, "Destroying PvgEngine native instance ($nativeHandle)")
+            nativeDestroy(nativeHandle)
+            nativeHandle = 0L
+        }
+    }
+
+    protected fun finalize() {
+        close()
+    }
+
+    companion object {
+        private const val TAG = "PVG_KOTLIN"
+
+        init {
+            System.loadLibrary("pvg_android")
+            Log.i(TAG, "Loaded native library libpvg_android.so successfully")
+        }
+
+        @JvmStatic
+        private external fun nativeInit(source: String, isPlaying: Boolean, speed: Double): Long
+
+        @JvmStatic
+        private external fun nativeDestroy(handle: Long)
+
+        @JvmStatic
+        private external fun nativeSetSource(handle: Long, source: String)
+
+        @JvmStatic
+        private external fun nativeSetPlaying(handle: Long, playing: Boolean)
+
+        @JvmStatic
+        private external fun nativeSetTime(handle: Long, time: Double)
+
+        @JvmStatic
+        private external fun nativeSetSpeed(handle: Long, speed: Double)
+
+        @JvmStatic
+        private external fun nativeOnSurfaceCreated(handle: Long, surface: Surface)
+
+        @JvmStatic
+        private external fun nativeOnSurfaceChanged(handle: Long, width: Int, height: Int)
+
+        @JvmStatic
+        private external fun nativeOnSurfaceDestroyed(handle: Long)
+
+        @JvmStatic
+        private external fun nativeGetTelemetry(handle: Long): DoubleArray
+    }
+}
+
+===== FILE: android/app/src/main/java/com/pvg/pvg/PvgView.kt =====
+Below is this file's contents:
+package com.pvg.pvg
+
+import android.content.Context
+import android.graphics.PixelFormat
+import android.util.Log
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.viewinterop.AndroidView
+
+@Composable
+fun PvgView(
+    source: String,
+    isPlaying: Boolean = true,
+    speed: Double = 1.0,
+    time: Double = 0.0,
+    engine: PvgEngine,
+    modifier: Modifier = Modifier
+) {
+    LaunchedEffect(source) {
+        engine.setSource(source)
+    }
+
+    LaunchedEffect(isPlaying) {
+        engine.setPlaying(isPlaying)
+    }
+
+    LaunchedEffect(speed) {
+        engine.setSpeed(speed)
+    }
+
+    LaunchedEffect(time) {
+        engine.setTime(time)
+    }
+
+    // Direct hardware SurfaceView - 0% Main Thread and 0% HWUI RenderThread overhead
+    AndroidView(
+        modifier = modifier.fillMaxSize(),
+        factory = { ctx: Context ->
+            SurfaceView(ctx).apply {
+                holder.setFormat(PixelFormat.RGBA_8888)
+                holder.setFixedSize(480, 480)
+                setZOrderMediaOverlay(true)
+
+                holder.addCallback(object : SurfaceHolder.Callback {
+                    override fun surfaceCreated(holder: SurfaceHolder) {
+                        Log.i("PVG_KOTLIN", "SurfaceHolder.Callback: surfaceCreated (valid = ${holder.surface.isValid})")
+                        if (holder.surface.isValid) {
+                            engine.onSurfaceCreated(holder.surface)
+                        }
+                    }
+
+                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                        Log.i("PVG_KOTLIN", "SurfaceHolder.Callback: surfaceChanged (${width}x${height})")
+                        engine.onSurfaceChanged(width, height)
+                    }
+
+                    override fun surfaceDestroyed(holder: SurfaceHolder) {
+                        Log.i("PVG_KOTLIN", "SurfaceHolder.Callback: surfaceDestroyed")
+                        engine.onSurfaceDestroyed()
+                    }
+                })
+            }
+        }
+    )
+}
+
+===== FILE: android/app/src/main/java/com/pvg/pvg/ui/theme/Color.kt =====
+Below is this file's contents:
+package com.pvg.pvg.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+val Purple80 = Color(0xFFD0BCFF)
+val PurpleGrey80 = Color(0xFFCCC2DC)
+val Pink80 = Color(0xFFEFB8C8)
+
+val Purple40 = Color(0xFF6650a4)
+val PurpleGrey40 = Color(0xFF625b71)
+val Pink40 = Color(0xFF7D5260)
+
+===== FILE: android/app/src/main/java/com/pvg/pvg/ui/theme/Theme.kt =====
+Below is this file's contents:
+package com.pvg.pvg.ui.theme
+
+import android.app.Activity
+import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+
+private val DarkColorScheme = darkColorScheme(
+    primary = Purple80,
+    secondary = PurpleGrey80,
+    tertiary = Pink80
+)
+
+private val LightColorScheme = lightColorScheme(
+    primary = Purple40,
+    secondary = PurpleGrey40,
+    tertiary = Pink40
+
+    /* Other default colors to override
+    background = Color(0xFFFFFBFE),
+    surface = Color(0xFFFFFBFE),
+    onPrimary = Color.White,
+    onSecondary = Color.White,
+    onTertiary = Color.White,
+    onBackground = Color(0xFF1C1B1F),
+    onSurface = Color(0xFF1C1B1F),
+    */
+)
+
+@Composable
+fun PvgTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    // Dynamic color is available on Android 12+
+    dynamicColor: Boolean = true,
+    content: @Composable () -> Unit
+) {
+    val colorScheme = when {
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val context = LocalContext.current
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        }
+
+        darkTheme -> DarkColorScheme
+        else -> LightColorScheme
+    }
+
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = Typography,
+        content = content
+    )
+}
+
+===== FILE: android/app/src/main/java/com/pvg/pvg/ui/theme/Type.kt =====
+Below is this file's contents:
+package com.pvg.pvg.ui.theme
+
+import androidx.compose.material3.Typography
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+
+// Set of Material typography styles to start with
+val Typography = Typography(
+    bodyLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.5.sp
+    )
+    /* Other default text styles to override
+    titleLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 22.sp,
+        lineHeight = 28.sp,
+        letterSpacing = 0.sp
+    ),
+    labelSmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 0.5.sp
+    )
+    */
+)
+
+===== FILE: android/app/src/test/java/com/pvg/pvg/ExampleUnitTest.kt =====
+Below is this file's contents:
+package com.pvg.pvg
+
+import org.junit.Test
+
+import org.junit.Assert.*
+
+/**
+ * Example local unit test, which will execute on the development machine (host).
+ *
+ * See [testing documentation](http://d.android.com/tools/testing).
+ */
+class ExampleUnitTest {
+    @Test
+    fun addition_isCorrect() {
+        assertEquals(4, 2 + 2)
+    }
+}
+
+===== FILE: android/build.gradle.kts =====
+Below is this file's contents:
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+plugins {
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.kotlin.compose) apply false
+}
+
+===== FILE: android/pvg-android/README.md =====
+Below is this file's contents:
+# PVG for Android (io.github.prathameshza:pvg)
+
+High-performance Android runtime for Procedural Vector Graphics (PVG).  
+Renders deterministic procedural graphics and animations directly on the CPU at 60+ FPS via ANativeWindow with zero HWUI upload overhead and zero GPU power draw.
+
+---
+
+## Table of Contents
+
+- Why PVG on Android?
+- Installation
+- Quickstart Guide
+  - 1. Jetpack Compose (PvgView)
+  - 2. Controller & Animation State (PvgController)
+  - 3. Traditional XML Layouts (PvgSurfaceView)
+- Complete API Reference
+  - PvgView (Composable)
+  - PvgController
+  - rememberPvgController()
+  - PvgSurfaceView (Android View)
+  - PvgTelemetry
+  - PvgEngine (Low-Level JNI)
+- Real-Time Telemetry & Diagnostics
+- Architecture & Memory Model
+- Supported Architectures & ProGuard
+- License
+
+---
+
+## Why PVG on Android?
+
+Modern mobile vector rendering (SVGs and Lottie) relies heavily on DOM trees, JSON parsing churn, and GPU hardware layers that drain battery and trigger frame drops.
+
+PVG eliminates this overhead entirely:
+1. 0% GPU Dependency: Evaluates geometry pure CPU and streams directly into hardware ANativeWindow surface buffers.
+2. Microsecond Latency: Evaluates animated scenes in under 40 microseconds per frame on a single thread.
+3. Bounded Memory: Runs inside a contiguous sub-50 KB heap budget with zero DOM garbage collection.
+4. Native Procedural Math: Express dynamic dials, HUDs, charts, and radars with native for loops, sin, cos, and time clocks without JavaScript runtimes.
+
+---
+
+## Installation
+
+Add the dependency to your application's build.gradle.kts:
+
+```kotlin
+dependencies {
+    implementation("io.github.prathameshza:pvg:0.1.0")
+}
+```
+
+Or in Groovy (build.gradle):
+
+```groovy
+dependencies {
+    implementation 'io.github.prathameshza:pvg:0.1.0'
+}
+```
+
+---
+
+## Quickstart Guide
+
+### 1. Jetpack Compose (PvgView)
+
+Drop PvgView directly into any Compose layout:
+
+```kotlin
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.pvg.android.PvgView
+
+@Composable
+fun PulsingCircleSample() {
+    val pvgCode = """
+        PVG 0.1
+        canvas 400 400
+          background #080a0f
+
+        set pulse = 60 + 20 * sin(time * 4.0)
+
+        circle
+          center [200, 200]
+          radius pulse
+          fill #00ffcc
+          stroke #ffffff
+          width 2.0
+    """.trimIndent()
+
+    PvgView(
+        source = pvgCode,
+        modifier = Modifier.size(300.dp)
+    )
+}
+```
+
+---
+
+### 2. Controller & Animation State (PvgController)
+
+Use rememberPvgController for dynamic document swapping, scrubbing, speed changes, and interactive controls:
+
+```kotlin
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.pvg.android.PvgView
+import com.pvg.android.rememberPvgController
+
+@Composable
+fun InteractiveRadarScreen() {
+    val radarSource = """
+        PVG 0.1
+        canvas 600 600
+          background #080a0f
+
+        set cx = 300
+        set cy = 300
+        set sweep = time * 2.0
+
+        for r_idx from 1 to 4
+          circle
+            center [cx, cy]
+            radius r_idx * 55
+            fill none
+            stroke #103b42
+            width 1.5
+
+        for trail from 0 to 20
+          set a = sweep - trail * 0.035
+          line
+            from [cx, cy]
+            to   [cx + 230 * cos(a), cy + 230 * sin(a)]
+            stroke #00ffcc
+            width 2
+            opacity (1.0 - trail / 20) * 0.45
+
+        line
+          from [cx, cy]
+          to   [cx + 230 * cos(sweep), cy + 230 * sin(sweep)]
+          stroke #ffffff
+          width 2.5
+    """.trimIndent()
+
+    val controller = rememberPvgController(
+        source = radarSource,
+        isPlaying = true,
+        speed = 1.0
+    )
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        PvgView(
+            source = controller.source,
+            controller = controller,
+            modifier = Modifier.weight(1f).fillMaxWidth()
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { controller.toggle() }) {
+                Text(if (controller.isPlaying) "Pause" else "Play")
+            }
+            Button(onClick = { controller.reset() }) {
+                Text("Reset")
+            }
+            Button(onClick = { controller.setPlaybackSpeed(2.0) }) {
+                Text("2x Speed")
+            }
+        }
+    }
+}
+```
+
+---
+
+### 3. Traditional XML Layouts (PvgSurfaceView)
+
+For View-based layouts and non-Compose applications:
+
+In XML (res/layout/activity_main.xml):
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#08090D">
+
+    <com.pvg.android.PvgSurfaceView
+        android:id="@+id/pvgSurfaceView"
+        android:layout_width="320dp"
+        android:layout_height="320dp"
+        android:layout_gravity="center" />
+
+</FrameLayout>
+```
+
+In Activity or Fragment:
+
+```kotlin
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+import com.pvg.android.PvgSurfaceView
+
+class MainActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        val pvgView = findViewById<PvgSurfaceView>(R.id.pvgSurfaceView)
+
+        val pvgCode = """
+            PVG 0.1
+            canvas 400 400
+              background #111116
+
+            circle
+              center [200, 200]
+              radius 80
+              fill #ff3355
+              stroke #ffffff
+              width 3
+        """.trimIndent()
+
+        pvgView.setSource(pvgCode, isPlaying = true)
+    }
+}
+```
+
+---
+
+## Complete API Reference
+
+### PvgView (Composable)
+
+```kotlin
+@Composable
+fun PvgView(
+    source: String,
+    modifier: Modifier = Modifier,
+    controller: PvgController? = null,
+    isPlaying: Boolean = true,
+    speed: Double = 1.0,
+    time: Double = 0.0
+)
+```
+
+Parameters:
+- `source`: PVG document source text string (Mandatory).
+- `modifier`: Modifier applied to the underlying layout.
+- `controller`: Optional external PvgController instance.
+- `isPlaying`: Controls real-time animation playback (default: true).
+- `speed`: Playback speed multiplier (default: 1.0).
+- `time`: Manual timeline scrub position in seconds (default: 0.0).
+
+---
+
+### PvgController
+
+A stateful, lifecycle-aware controller for programmatic scene manipulation:
+
+```kotlin
+class PvgController(
+    initialSource: String = "",
+    initialPlaying: Boolean = true,
+    initialSpeed: Double = 1.0
+) : Closeable
+```
+
+Methods and Properties:
+- `source`: Active PVG source code (observable Compose State).
+- `isPlaying`: Whether the animation timeline is running.
+- `speed`: Current playback speed multiplier.
+- `currentTime`: Current timeline position in seconds.
+- `load(pvgCode)`: Dynamically updates and re-evaluates a new PVG document.
+- `play()`: Starts real-time timeline playback.
+- `pause()`: Pauses timeline playback.
+- `toggle()`: Toggles between play and pause.
+- `reset()`: Resets timeline clock back to 0.0s.
+- `seekTo(timeSeconds)`: Seeks directly to an arbitrary timestamp in seconds.
+- `setPlaybackSpeed(speed)`: Updates timeline speed multiplier (e.g. 0.5, 1.0, 2.0).
+- `getTelemetry()`: Reads latest per-frame performance metrics.
+- `close()`: Releases native render thread and C/Rust memory arena.
+
+---
+
+### rememberPvgController()
+
+```kotlin
+@Composable
+fun rememberPvgController(
+    source: String = "",
+    isPlaying: Boolean = true,
+    speed: Double = 1.0
+): PvgController
+```
+
+Creates and manages the lifecycle of a PvgController, automatically calling close() when the Composable leaves composition.
+
+---
+
+### PvgSurfaceView (Android View)
+
+```kotlin
+class PvgSurfaceView(context: Context, attrs: AttributeSet? = null) : SurfaceView
+```
+
+Methods:
+- `setSource(code, isPlaying, speed)`: Loads a PVG document with playback settings.
+- `play()` / `pause()`: Controls timeline playback.
+- `seekTo(timeSeconds)`: Seeks timeline to a timestamp in seconds.
+- `setPlaybackSpeed(speed)`: Adjusts playback speed.
+- `getTelemetry()`: Retrieves latest telemetry metrics.
+
+---
+
+### PvgTelemetry
+
+Real-time diagnostic metrics captured per frame:
+
+```kotlin
+data class PvgTelemetry(
+    val parseUs: Double = 0.0,
+    val evalUs: Double = 0.0,
+    val rasterUs: Double = 0.0,
+    val fps: Double = 60.0,
+    val primitiveCount: Int = 0
+)
+```
+
+Fields:
+- `parseUs`: AST parse latency in microseconds (cached after initial load).
+- `evalUs`: Procedural evaluation latency per frame tick in microseconds.
+- `rasterUs`: Direct in-place ANativeWindow rasterization latency in microseconds.
+- `fps`: Real-time measured render frame rate.
+- `primitiveCount`: Total number of 2D vector shapes drawn in the scene.
+
+---
+
+### PvgEngine (Low-Level JNI)
+
+```kotlin
+class PvgEngine(source: String, isPlaying: Boolean, speed: Double) : Closeable
+```
+
+Low-level direct wrapper around `libpvg_android.so` for custom surface pipelines and non-standard view setups.
+
+---
+
+## Real-Time Telemetry & Diagnostics
+
+Inspect live microsecond execution stats:
+
+```kotlin
+@Composable
+fun TelemetryDisplay(controller: PvgController) {
+    var telemetry by remember { mutableStateOf(PvgTelemetry()) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            telemetry = controller.getTelemetry()
+            kotlinx.coroutines.delay(500)
+        }
+    }
+
+    Text(
+        text = "${telemetry.fps.toInt()} FPS | Eval: ${telemetry.evalUs.toInt()}µs | Shapes: ${telemetry.primitiveCount}",
+        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+    )
+}
+```
+
+---
+
+## Architecture & Memory Model
+
+1. AST Caching: When animations run at 60 FPS, the document is parsed once. Subsequent frames only re-evaluate the AST against the timeline clock `time` in under 40 microseconds, avoiding string allocations.
+2. Zero GPU Lock-In: Hardware rasterization occurs on a dedicated background native thread directly into Android's `ANativeWindow`, bypassing the Main UI thread and Android's HWUI RenderThread.
+
+---
+
+## Supported Architectures & ProGuard
+
+Native ABIs:
+- `arm64-v8a` (Physical 64-bit Android devices)
+- `x86_64` (Android Studio PC Emulator)
+
+Built-in ProGuard Rules:
+The library automatically includes consumer rules for JNI preservation:
+
+```pro
+-keep class com.pvg.android.** { *; }
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+```
+
+---
+
+## License
+
+Licensed under the Apache License, Version 2.0.
+
+===== FILE: android/pvg-android/build.gradle.kts =====
+Below is this file's contents:
+plugins {
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    `maven-publish`
+}
+
+val isWindows = org.gradle.internal.os.OperatingSystem.current().isWindows
+
+// Task: Automatically compile native Rust shared libraries (.so) before building AAR
+val buildCargoNdk = tasks.register<Exec>("buildCargoNdk") {
+    group = "build"
+    description = "Compiles the Rust pvg_android crate for arm64-v8a and x86_64 using cargo-ndk"
+
+    val projectRoot = rootDir.parentFile
+    workingDir = projectRoot
+
+    val outputJniDir = file("src/main/jniLibs").absolutePath
+
+    inputs.dir(file("${projectRoot}/pvg_android/src"))
+    inputs.dir(file("${projectRoot}/pvg/src"))
+    outputs.dir(file("src/main/jniLibs"))
+
+    val executableName = if (isWindows) "cmd" else "cargo"
+    val cmdArgs = if (isWindows) {
+        listOf(
+            "/c",
+            "cargo", "ndk",
+            "-t", "arm64-v8a",
+            "-t", "x86_64",
+            "-o", outputJniDir,
+            "build", "--release",
+            "-p", "pvg_android"
+        )
+    } else {
+        listOf(
+            "ndk",
+            "-t", "arm64-v8a",
+            "-t", "x86_64",
+            "-o", outputJniDir,
+            "build", "--release",
+            "-p", "pvg_android"
+        )
+    }
+
+    commandLine(executableName, *cmdArgs.toTypedArray())
+}
+
+tasks.named("preBuild") {
+    dependsOn(buildCargoNdk)
+}
+
+// Generate Javadoc JAR required by Maven Central
+val javadocJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("javadoc")
+}
+
+android {
+    namespace = "com.pvg.android"
+    compileSdk = 35
+
+    defaultConfig {
+        minSdk = 28
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters.clear()
+            abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+        }
+    }
+
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs("src/main/jniLibs")
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    buildFeatures {
+        compose = true
+    }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
+}
+
+kotlin {
+    jvmToolchain(11)
+}
+
+dependencies {
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.runtime)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            register<MavenPublication>("release") {
+                from(components["release"])
+                artifact(javadocJar)
+
+                groupId = "io.github.prathameshza"
+                artifactId = "pvg"
+                version = "0.1.0"
+
+                pom {
+                    name.set("PVG Android")
+                    description.set("Deterministic Procedural Vector Graphics (PVG) Native Android Engine with 60 FPS Microsecond CPU Execution")
+                    url.set("https://github.com/prathameshza/pvg")
+                    inceptionYear.set("2025")
+
+                    licenses {
+                        license {
+                            name.set("Apache-2.0")
+                            url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                        }
+                    }
+
+                    developers {
+                        developer {
+                            id.set("prathameshza")
+                            name.set("Prathamesh")
+                            url.set("https://github.com/prathameshza")
+                        }
+                    }
+
+                    scm {
+                        connection.set("scm:git:git://github.com/prathameshza/pvg.git")
+                        developerConnection.set("scm:git:ssh://github.com:prathameshza/pvg.git")
+                        url.set("https://github.com/prathameshza/pvg")
+                    }
+                }
+            }
+        }
+    }
+}
+
+===== FILE: android/pvg-android/src/main/AndroidManifest.xml =====
+Below is this file's contents:
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+</manifest>
+
+===== FILE: android/pvg-android/src/main/java/com/pvg/android/Pvg.kt =====
+Below is this file's contents:
+package com.pvg.android
+
+/**
+ * Global configuration options for the PVG Android runtime.
+ */
+object Pvg {
+    /**
+     * Controls whether native ANativeWindow performance logs and kernel `/proc`
+     * profiler reports (`tag: PVG_NATIVE`) are printed to Logcat.
+     *
+     * Defaults to `false` for clean production logging.
+     *
+     * Example:
+     * ```kotlin
+     * Pvg.isLoggingEnabled = BuildConfig.DEBUG
+     * ```
+     */
+    var isLoggingEnabled: Boolean = false
+        set(value) {
+            field = value
+            PvgEngine.setLoggingEnabled(value)
+        }
+}
+
+===== FILE: android/pvg-android/src/main/java/com/pvg/android/PvgController.kt =====
+Below is this file's contents:
+package com.pvg.android
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import java.io.Closeable
+
+/**
+ * State and playback controller for managing PVG animations and document sources.
+ */
+class PvgController(
+    initialSource: String = "",
+    initialPlaying: Boolean = true,
+    initialSpeed: Double = 1.0
+) : Closeable {
+
+    var source by mutableStateOf(initialSource)
+        private set
+
+    var isPlaying by mutableStateOf(initialPlaying)
+        private set
+
+    var speed by mutableDoubleStateOf(initialSpeed)
+        private set
+
+    var currentTime by mutableDoubleStateOf(0.0)
+        private set
+
+    internal val engine = PvgEngine(initialSource, initialPlaying, initialSpeed)
+
+    fun load(pvgCode: String) {
+        source = pvgCode
+        engine.setSource(pvgCode)
+    }
+
+    fun play() {
+        isPlaying = true
+        engine.setPlaying(true)
+    }
+
+    fun pause() {
+        isPlaying = false
+        engine.setPlaying(false)
+    }
+
+    fun toggle() {
+        if (isPlaying) pause() else play()
+    }
+
+    fun setPlaybackSpeed(playbackSpeed: Double) {
+        speed = playbackSpeed
+        engine.setSpeed(playbackSpeed)
+    }
+
+    fun seekTo(timeSeconds: Double) {
+        currentTime = timeSeconds
+        engine.setTime(timeSeconds)
+    }
+
+    fun reset() {
+        seekTo(0.0)
+    }
+
+    fun getTelemetry(): PvgTelemetry = engine.getTelemetry()
+
+    override fun close() {
+        engine.close()
+    }
+}
+
+/**
+ * Creates and remembers a [PvgController] instance tied to the Composable lifecycle.
+ */
+@Composable
+fun rememberPvgController(
+    source: String = "",
+    isPlaying: Boolean = true,
+    speed: Double = 1.0
+): PvgController {
+    val controller = remember { PvgController(source, isPlaying, speed) }
+
+    DisposableEffect(controller) {
+        onDispose {
+            controller.close()
+        }
+    }
+
+    return controller
+}
+
+===== FILE: android/pvg-android/src/main/java/com/pvg/android/PvgEngine.kt =====
+Below is this file's contents:
+package com.pvg.android
+
+import android.util.Log
+import android.view.Surface
+import java.io.Closeable
+
+/**
+ * Low-level JNI interface bridging to the native Rust engine (`libpvg_android.so`).
+ */
+class PvgEngine(
+    initialSource: String,
+    isPlaying: Boolean = true,
+    speed: Double = 1.0
+) : Closeable {
+
+    private var nativeHandle: Long = 0
+
+    init {
+        nativeHandle = nativeInit(initialSource, isPlaying, speed)
+        Log.i(TAG, "Initialized native PvgEngine (handle = $nativeHandle)")
+    }
+
+    fun setSource(source: String) {
+        if (nativeHandle != 0L) {
+            nativeSetSource(nativeHandle, source)
+        }
+    }
+
+    fun setPlaying(playing: Boolean) {
+        if (nativeHandle != 0L) {
+            nativeSetPlaying(nativeHandle, playing)
+        }
+    }
+
+    fun setTime(time: Double) {
+        if (nativeHandle != 0L) {
+            nativeSetTime(nativeHandle, time)
+        }
+    }
+
+    fun setSpeed(speed: Double) {
+        if (nativeHandle != 0L) {
+            nativeSetSpeed(nativeHandle, speed)
+        }
+    }
+
+    fun onSurfaceCreated(surface: Surface) {
+        if (nativeHandle != 0L) {
+            nativeOnSurfaceCreated(nativeHandle, surface)
+        }
+    }
+
+    fun onSurfaceChanged(width: Int, height: Int) {
+        if (nativeHandle != 0L) {
+            nativeOnSurfaceChanged(nativeHandle, width, height)
+        }
+    }
+
+    fun onSurfaceDestroyed() {
+        if (nativeHandle != 0L) {
+            nativeOnSurfaceDestroyed(nativeHandle)
+        }
+    }
+
+    fun getTelemetry(): PvgTelemetry {
+        if (nativeHandle == 0L) return PvgTelemetry()
+        val data = nativeGetTelemetry(nativeHandle)
+        return if (data.size >= 5) {
+            PvgTelemetry(
+                parseUs = data[0],
+                evalUs = data[1],
+                rasterUs = data[2],
+                fps = data[3],
+                primitiveCount = data[4].toInt()
+            )
+        } else {
+            PvgTelemetry()
+        }
+    }
+
+    override fun close() {
+        if (nativeHandle != 0L) {
+            Log.i(TAG, "Releasing native PvgEngine ($nativeHandle)")
+            nativeDestroy(nativeHandle)
+            nativeHandle = 0L
+        }
+    }
+
+    protected fun finalize() {
+        close()
+    }
+
+    companion object {
+        private const val TAG = "PVG_NATIVE"
+
+        init {
+            System.loadLibrary("pvg_android")
+        }
+
+        fun setLoggingEnabled(enabled: Boolean) {
+            nativeSetLoggingEnabled(enabled)
+        }
+
+        @JvmStatic
+        private external fun nativeSetLoggingEnabled(enabled: Boolean)
+
+        @JvmStatic
+        private external fun nativeInit(source: String, isPlaying: Boolean, speed: Double): Long
+
+        @JvmStatic
+        private external fun nativeDestroy(handle: Long)
+
+        @JvmStatic
+        private external fun nativeSetSource(handle: Long, source: String)
+
+        @JvmStatic
+        private external fun nativeSetPlaying(handle: Long, playing: Boolean)
+
+        @JvmStatic
+        private external fun nativeSetTime(handle: Long, time: Double)
+
+        @JvmStatic
+        private external fun nativeSetSpeed(handle: Long, speed: Double)
+
+        @JvmStatic
+        private external fun nativeOnSurfaceCreated(handle: Long, surface: Surface)
+
+        @JvmStatic
+        private external fun nativeOnSurfaceChanged(handle: Long, width: Int, height: Int)
+
+        @JvmStatic
+        private external fun nativeOnSurfaceDestroyed(handle: Long)
+
+        @JvmStatic
+        private external fun nativeGetTelemetry(handle: Long): DoubleArray
+    }
+}
+
+===== FILE: android/pvg-android/src/main/java/com/pvg/android/PvgSurfaceView.kt =====
+Below is this file's contents:
+package com.pvg.android
+
+import android.content.Context
+import android.graphics.PixelFormat
+import android.util.AttributeSet
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+
+/**
+ * Traditional Android View component for non-Compose XML layouts and Java/Kotlin activities.
+ *
+ * Example XML usage:
+ * ```xml
+ * <com.pvg.android.PvgSurfaceView
+ *     android:id="@+id/pvgSurfaceView"
+ *     android:layout_width="match_parent"
+ *     android:layout_height="match_parent" />
+ * ```
+ */
+class PvgSurfaceView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyleAttr: Int = 0
+) : SurfaceView(context, attrs, defStyleAttr), SurfaceHolder.Callback {
+
+    private var engine: PvgEngine? = null
+
+    init {
+        holder.setFormat(PixelFormat.RGBA_8888)
+        holder.addCallback(this)
+        setZOrderMediaOverlay(true)
+    }
+
+    fun setSource(pvgCode: String, isPlaying: Boolean = true, speed: Double = 1.0) {
+        if (engine == null) {
+            engine = PvgEngine(pvgCode, isPlaying, speed)
+            if (holder.surface.isValid) {
+                engine?.onSurfaceCreated(holder.surface)
+            }
+        } else {
+            engine?.setSource(pvgCode)
+            engine?.setPlaying(isPlaying)
+            engine?.setSpeed(speed)
+        }
+    }
+
+    fun play() {
+        engine?.setPlaying(true)
+    }
+
+    fun pause() {
+        engine?.setPlaying(false)
+    }
+
+    fun seekTo(time: Double) {
+        engine?.setTime(time)
+    }
+
+    fun setPlaybackSpeed(speed: Double) {
+        engine?.setSpeed(speed)
+    }
+
+    fun getTelemetry(): PvgTelemetry {
+        return engine?.getTelemetry() ?: PvgTelemetry()
+    }
+
+    override fun surfaceCreated(holder: SurfaceHolder) {
+        if (holder.surface.isValid) {
+            engine?.onSurfaceCreated(holder.surface)
+        }
+    }
+
+    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+        engine?.onSurfaceChanged(width, height)
+    }
+
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
+        engine?.onSurfaceDestroyed()
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        engine?.close()
+        engine = null
+    }
+}
+
+===== FILE: android/pvg-android/src/main/java/com/pvg/android/PvgTelemetry.kt =====
+Below is this file's contents:
+package com.pvg.android
+
+/**
+ * Diagnostics and real-time execution telemetry measured per frame.
+ */
+data class PvgTelemetry(
+    /** Time taken to parse the PVG document into an AST (in microseconds). */
+    val parseUs: Double = 0.0,
+    /** Time taken to evaluate the AST at the current timeline clock (in microseconds). */
+    val evalUs: Double = 0.0,
+    /** Time taken by tiny-skia to rasterize the 2D draw commands into the ANativeWindow framebuffer (in microseconds). */
+    val rasterUs: Double = 0.0,
+    /** Current real-time frame rate. */
+    val fps: Double = 60.0,
+    /** Number of rendered 2D vector primitives in the active scene. */
+    val primitiveCount: Int = 0
+)
+
+===== FILE: android/pvg-android/src/main/java/com/pvg/android/PvgView.kt =====
+Below is this file's contents:
+package com.pvg.android
+
+import android.content.Context
+import android.graphics.PixelFormat
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.viewinterop.AndroidView
+
+/**
+ * High-performance Jetpack Compose viewport for rendering Procedural Vector Graphics (PVG).
+ * Renders directly onto a dedicated hardware [SurfaceView] backed by `ANativeWindow`
+ * with 0% Main UI thread and 0% GPU overhead.
+ */
+@Composable
+fun PvgView(
+    source: String,
+    modifier: Modifier = Modifier,
+    controller: PvgController? = null,
+    isPlaying: Boolean = true,
+    speed: Double = 1.0,
+    time: Double = 0.0
+) {
+    val activeController = controller ?: rememberPvgController(
+        source = source,
+        isPlaying = isPlaying,
+        speed = speed
+    )
+
+    LaunchedEffect(source) {
+        activeController.load(source)
+    }
+
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) activeController.play() else activeController.pause()
+    }
+
+    LaunchedEffect(speed) {
+        activeController.setPlaybackSpeed(speed)
+    }
+
+    LaunchedEffect(time) {
+        activeController.seekTo(time)
+    }
+
+    AndroidView(
+        modifier = modifier.fillMaxSize(),
+        factory = { context: Context ->
+            SurfaceView(context).apply {
+                holder.setFormat(PixelFormat.RGBA_8888)
+                setZOrderMediaOverlay(true)
+
+                holder.addCallback(object : SurfaceHolder.Callback {
+                    override fun surfaceCreated(holder: SurfaceHolder) {
+                        if (holder.surface.isValid) {
+                            activeController.engine.onSurfaceCreated(holder.surface)
+                        }
+                    }
+
+                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                        activeController.engine.onSurfaceChanged(width, height)
+                    }
+
+                    override fun surfaceDestroyed(holder: SurfaceHolder) {
+                        activeController.engine.onSurfaceDestroyed()
+                    }
+                })
+            }
+        }
+    )
+}
+
+===== FILE: android/pvg-android/src/test/java/com/pvg/android/PvgControllerTest.kt =====
+Below is this file's contents:
+package com.pvg.android
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class PvgControllerTest {
+
+    @Test
+    fun testPvgTelemetryDefaults() {
+        val telemetry = PvgTelemetry()
+        assertEquals(0.0, telemetry.parseUs, 0.001)
+        assertEquals(0.0, telemetry.evalUs, 0.001)
+        assertEquals(0.0, telemetry.rasterUs, 0.001)
+        assertEquals(60.0, telemetry.fps, 0.001)
+        assertEquals(0, telemetry.primitiveCount)
+    }
+
+    @Test
+    fun testPvgTelemetryCustomValues() {
+        val telemetry = PvgTelemetry(
+            parseUs = 12.5,
+            evalUs = 8.2,
+            rasterUs = 450.0,
+            fps = 59.8,
+            primitiveCount = 35
+        )
+        assertEquals(12.5, telemetry.parseUs, 0.001)
+        assertEquals(8.2, telemetry.evalUs, 0.001)
+        assertEquals(450.0, telemetry.rasterUs, 0.001)
+        assertEquals(59.8, telemetry.fps, 0.001)
+        assertEquals(35, telemetry.primitiveCount)
+    }
+}
 
 ===== FILE: benchmark/Cargo.toml =====
 Below is this file's contents:
@@ -2527,6 +4583,222 @@ for i from 0 to 1499
         },
     ]
 }
+
+===== FILE: build_pvg_android.py =====
+Below is this file's contents:
+#!/usr/bin/env python3
+"""
+PVG 0.1 - Native Android Cross-Compilation Script
+Compiles native Rust binaries for both arm64-v8a (Physical Hardware) and x86_64 (Android Studio Emulator)
+"""
+
+import argparse
+import glob
+import os
+import shutil
+import subprocess
+import sys
+import time
+
+GREEN = "\033[92m"
+CYAN = "\033[96m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
+TARGET_MAP = {
+    "arm64-v8a": "aarch64-linux-android",
+    "x86_64": "x86_64-linux-android",
+}
+
+
+def log_info(msg: str):
+    print(f"{CYAN}{BOLD}[INFO]{RESET} {msg}")
+
+
+def log_success(msg: str):
+    print(f"{GREEN}{BOLD}[SUCCESS]{RESET} {msg}")
+
+
+def log_warn(msg: str):
+    print(f"{YELLOW}{BOLD}[WARN]{RESET} {msg}")
+
+
+def log_error(msg: str):
+    print(f"{RED}{BOLD}[ERROR]{RESET} {msg}")
+
+
+def find_android_ndk() -> str | None:
+    env_vars = ["ANDROID_NDK_HOME", "ANDROID_NDK_ROOT", "NDK_HOME", "ANDROID_NDK"]
+    for var in env_vars:
+        path = os.environ.get(var)
+        if path and os.path.isdir(path):
+            return path
+
+    sdk_roots = []
+    if os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if local_app_data:
+            sdk_roots.append(os.path.join(local_app_data, "Android", "Sdk"))
+        sdk_roots.extend([
+            r"C:\Android\Sdk",
+            r"C:\Android\sdk",
+            r"C:\Program Files (x86)\Android\android-sdk",
+        ])
+    else:
+        home = os.path.expanduser("~")
+        sdk_roots.extend([
+            os.path.join(home, "Android", "Sdk"),
+            os.path.join(home, "Library", "Android", "sdk"),
+            "/opt/android-sdk",
+        ])
+
+    for sdk in sdk_roots:
+        ndk_base = os.path.join(sdk, "ndk")
+        if os.path.isdir(ndk_base):
+            versions = sorted(glob.glob(os.path.join(ndk_base, "*")), reverse=True)
+            for ver_dir in versions:
+                if os.path.isdir(ver_dir):
+                    return ver_dir
+
+    return None
+
+
+def ensure_cargo_ndk():
+    if shutil.which("cargo-ndk") is None:
+        log_warn("'cargo-ndk' was not found in PATH. Installing via 'cargo install cargo-ndk'...")
+        res = subprocess.run(["cargo", "install", "cargo-ndk"], shell=(os.name == "nt"))
+        if res.returncode != 0:
+            log_error("Failed to install 'cargo-ndk'.")
+            sys.exit(1)
+        log_success("'cargo-ndk' installed successfully.")
+
+
+def ensure_rust_target(rust_target: str):
+    res = subprocess.run(
+        ["rustup", "target", "add", rust_target],
+        capture_output=True,
+        text=True,
+        shell=(os.name == "nt"),
+    )
+    if res.returncode != 0:
+        log_warn(f"rustup target add {rust_target} output: {res.stderr.strip()}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Cross-compile PVG Native Android Engine (.so)")
+    parser.add_argument(
+        "--abi",
+        choices=["all", "arm64-v8a", "x86_64"],
+        default="all",
+        help="Target ABI to compile (default: all)",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Build in debug mode instead of --release",
+    )
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Clean the output jniLibs folder before building",
+    )
+    args = parser.parse_args()
+
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    output_jni_dir = os.path.join(project_root, "android", "app", "src", "main", "jniLibs")
+
+    print(f"\n{BOLD}==============================================================={RESET}")
+    print(f"{CYAN}{BOLD}   ⚡ PVG 0.1 Native Android Engine Cross-Compiler for Windows   {RESET}")
+    print(f"{BOLD}==============================================================={RESET}\n")
+
+    ndk_path = find_android_ndk()
+    if not ndk_path:
+        log_error(
+            "Android NDK not found! Set the ANDROID_NDK_HOME environment variable or "
+            "install the NDK via Android Studio SDK Manager."
+        )
+        sys.exit(1)
+
+    os.environ["ANDROID_NDK_HOME"] = ndk_path
+    log_info(f"Using Android NDK: {ndk_path}")
+
+    if shutil.which("cargo") is None or shutil.which("rustup") is None:
+        log_error("Rust toolchain (cargo / rustup) not found in system PATH.")
+        sys.exit(1)
+
+    ensure_cargo_ndk()
+
+    if args.clean and os.path.exists(output_jni_dir):
+        log_info(f"Cleaning existing jniLibs directory: {output_jni_dir}")
+        shutil.rmtree(output_jni_dir)
+
+    os.makedirs(output_jni_dir, exist_ok=True)
+
+    if args.abi == "all":
+        abis_to_build = list(TARGET_MAP.keys())
+    else:
+        abis_to_build = [args.abi]
+
+    build_mode_flag = [] if args.debug else ["--release"]
+    mode_str = "debug" if args.debug else "release"
+
+    log_info(f"Building targets: {', '.join(abis_to_build)} in [{mode_str}] mode...")
+    start_time = time.time()
+    built_files = []
+
+    for abi in abis_to_build:
+        rust_target = TARGET_MAP[abi]
+        log_info(f"──> Building ABI [{abi}] (Rust Target: {rust_target})...")
+
+        ensure_rust_target(rust_target)
+
+        cmd = [
+            "cargo",
+            "ndk",
+            "-t",
+            abi,
+            "-o",
+            output_jni_dir,
+            "build",
+        ] + build_mode_flag + [
+            "-p",
+            "pvg_android",
+        ]
+
+        t0 = time.time()
+        res = subprocess.run(cmd, cwd=project_root, shell=(os.name == "nt"))
+        elapsed = time.time() - t0
+
+        if res.returncode != 0:
+            log_error(f"Failed to build ABI: {abi}")
+            sys.exit(res.returncode)
+
+        so_path = os.path.join(output_jni_dir, abi, "libpvg_android.so")
+        if os.path.exists(so_path):
+            size_kb = os.path.getsize(so_path) / 1024.0
+            built_files.append((abi, so_path, size_kb, elapsed))
+            log_success(f"Built {abi}/libpvg_android.so ({size_kb:.1f} KB in {elapsed:.2f}s)")
+        else:
+            log_warn(f"Compiled successfully but {so_path} was not found at expected location.")
+
+    total_elapsed = time.time() - start_time
+
+    print(f"\n{BOLD}┌─────────────────────────────────────────────────────────────┐{RESET}")
+    print(f"{BOLD}│                  BUILD SUMMARY RESULTS                      │{RESET}")
+    print(f"{BOLD}├───────────────┬──────────────────────┬───────────┬──────────┤{RESET}")
+    print(f"{BOLD}│ Android ABI   │ Binary Name          │ Size (KB) │ Time (s) │{RESET}")
+    print(f"{BOLD}├───────────────┼──────────────────────┼───────────┼──────────┤{RESET}")
+    for abi, _, size_kb, dur in built_files:
+        print(f"│ {abi:<13} │ libpvg_android.so    │ {size_kb:>8.1f}  │ {dur:>7.2f}s │")
+    print(f"{BOLD}└───────────────┴──────────────────────┴───────────┴──────────┘{RESET}")
+    log_success(f"All {len(built_files)} ABI(s) compiled successfully in {total_elapsed:.2f}s!")
+    log_info(f"Binaries located at: {output_jni_dir}\n")
+
+
+if __name__ == "__main__":
+    main()
 
 ===== FILE: docs/index.html =====
 Below is this file's contents:
@@ -8834,19 +11106,52 @@ import sys
 # Directories/files to skip
 SKIP_DIRS = {"target", ".git", "node_modules", "__pycache__", ".vscode", ".idea", "build"}
 SKIP_EXT = {".exe", ".dll", ".png", ".jpg", ".ico", ".lock", ".svg"}
-SKIP_FILES = {"LICENSE"}
+SKIP_FILES = {"LICENSE", ".gitignore"}
+
 MAX_FILE_SIZE = 500_000  # skip files larger than ~500KB
 
 OUTPUT = "collections.txt"
 
+# Special rules for the android directory
+ANDROID_ALLOWED_EXT = {".kt",".md"}
+ANDROID_ALLOWED_FILES = {"AndroidManifest.xml", "build.gradle.kts"}
+
+
+def is_inside_android(rel_path: str) -> bool:
+    """Return True if the relative path is inside the android directory."""
+    parts = rel_path.replace("\\", "/").split("/")
+    return "android" in parts
+
 
 def should_skip(path: str, name: str) -> bool:
     parts = path.replace("\\", "/").split("/")
+
+    # Skip configured directories
     if any(p in SKIP_DIRS for p in parts):
         return True
+
+    # Skip .gitignore files everywhere
+    if name == ".gitignore":
+        return True
+
+    # Special filtering for android/
+    if is_inside_android(path):
+        # Only allow .kt files and the two specific files
+        if name in ANDROID_ALLOWED_FILES:
+            return False
+
+        _, ext = os.path.splitext(name)
+        if ext.lower() in ANDROID_ALLOWED_EXT:
+            return False
+
+        return True
+
+    # Normal filtering for everything outside android/
     _, ext = os.path.splitext(name)
+
     if ext.lower() in SKIP_EXT or name in SKIP_FILES:
         return True
+
     return False
 
 
@@ -8855,36 +11160,58 @@ def main():
     out_path = os.path.join(root, OUTPUT)
 
     entries = []
+
     for dirpath, dirnames, filenames in os.walk(root):
         # prune skipped dirs in-place
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+
         for name in filenames:
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, root).replace("\\", "/")
+
             if should_skip(rel, name) or rel == OUTPUT:
                 continue
+
             try:
                 size = os.path.getsize(full)
+
                 if size > MAX_FILE_SIZE:
                     print(f"Skipping (too large): {rel}")
                     continue
-                with open(full, "r", encoding="utf-8", errors="replace") as f:
+
+                with open(
+                    full,
+                    "r",
+                    encoding="utf-8",
+                    errors="replace"
+                ) as f:
                     content = f.read()
+
                 entries.append((rel, content))
+
             except OSError as e:
-                print(f"Skipping (error): {rel}: {e}", file=sys.stderr)
+                print(
+                    f"Skipping (error): {rel}: {e}",
+                    file=sys.stderr
+                )
 
     with open(out_path, "w", encoding="utf-8") as f:
         for rel, content in sorted(entries):
             f.write(f"===== FILE: {rel} =====\n")
             f.write("Below is this file's contents:\n")
             f.write(content)
+
             if not content.endswith("\n"):
                 f.write("\n")
+
             f.write("\n")
 
     total_chars = sum(len(c) for _, c in entries)
-    print(f"Wrote {len(entries)} files ({total_chars:,} chars) to {out_path}")
+
+    print(
+        f"Wrote {len(entries)} files "
+        f"({total_chars:,} chars) to {out_path}"
+    )
 
 
 if __name__ == "__main__":
@@ -12890,9 +15217,1113 @@ fn test_deterministic_random_seed() {
     assert_eq!(dl1.items, dl2.items);
 }
 
-===== FILE: pvg_win_gui/.gitignore =====
+===== FILE: pvg_android/Cargo.toml =====
 Below is this file's contents:
-/target
+[package]
+name = "pvg_android"
+version = "0.1.0"
+edition = "2021"
+description = "Pure CPU Native Android Render Engine for Procedural Vector Graphics (PVG) using ANativeWindow"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pvg = { path = "../pvg" }
+jni = { version = "0.21", default-features = false }
+tiny-skia = "0.11"
+
+===== FILE: pvg_android/src/ffi.rs =====
+Below is this file's contents:
+#![allow(dead_code)]
+
+use std::ffi::c_void;
+use std::os::raw::c_char;
+
+#[repr(C)]
+pub struct ANativeWindow {
+    _unused: [u8; 0],
+}
+
+/// Exact C ABI layout of ANativeWindow_Buffer from Android NDK native_window.h
+#[repr(C)]
+pub struct ANativeWindow_Buffer {
+    pub width: i32,
+    pub height: i32,
+    pub stride: i32,
+    pub format: i32,
+    pub bits: *mut c_void,
+    pub reserved: [u32; 6],
+}
+
+pub const WINDOW_FORMAT_RGBA_8888: i32 = 1;
+
+pub const ANDROID_LOG_INFO: i32 = 4;
+pub const ANDROID_LOG_WARN: i32 = 5;
+pub const ANDROID_LOG_ERROR: i32 = 6;
+
+#[link(name = "android")]
+#[link(name = "log")]
+extern "C" {
+    pub fn ANativeWindow_fromSurface(
+        env: *mut jni::sys::JNIEnv,
+        surface: jni::sys::jobject,
+    ) -> *mut ANativeWindow;
+
+    pub fn ANativeWindow_release(window: *mut ANativeWindow);
+
+    pub fn ANativeWindow_setBuffersGeometry(
+        window: *mut ANativeWindow,
+        width: i32,
+        height: i32,
+        format: i32,
+    ) -> i32;
+
+    pub fn ANativeWindow_lock(
+        window: *mut ANativeWindow,
+        outBuffer: *mut ANativeWindow_Buffer,
+        inOutDirtyBounds: *mut c_void,
+    ) -> i32;
+
+    pub fn ANativeWindow_unlockAndPost(window: *mut ANativeWindow) -> i32;
+
+    pub fn __android_log_print(
+        prio: i32,
+        tag: *const c_char,
+        fmt: *const c_char,
+        ...
+    ) -> i32;
+}
+
+#[macro_export]
+macro_rules! log_info {
+    ($($arg:tt)*) => {
+        if $crate::is_logging_enabled() {
+            let msg = format!($($arg)*);
+            if let (Ok(tag), Ok(c_msg)) = (std::ffi::CString::new("PVG_NATIVE"), std::ffi::CString::new(msg)) {
+                unsafe {
+                    $crate::ffi::__android_log_print(
+                        $crate::ffi::ANDROID_LOG_INFO,
+                        tag.as_ptr(),
+                        c_msg.as_ptr(),
+                    );
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! log_warn {
+    ($($arg:tt)*) => {
+        if $crate::is_logging_enabled() {
+            let msg = format!($($arg)*);
+            if let (Ok(tag), Ok(c_msg)) = (std::ffi::CString::new("PVG_NATIVE"), std::ffi::CString::new(msg)) {
+                unsafe {
+                    $crate::ffi::__android_log_print(
+                        $crate::ffi::ANDROID_LOG_WARN,
+                        tag.as_ptr(),
+                        c_msg.as_ptr(),
+                    );
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! log_error {
+    ($($arg:tt)*) => {
+        let msg = format!($($arg)*);
+        if let (Ok(tag), Ok(c_msg)) = (std::ffi::CString::new("PVG_NATIVE"), std::ffi::CString::new(msg)) {
+            unsafe {
+                $crate::ffi::__android_log_print(
+                    $crate::ffi::ANDROID_LOG_ERROR,
+                    tag.as_ptr(),
+                    c_msg.as_ptr(),
+                );
+            }
+        }
+    };
+}
+
+===== FILE: pvg_android/src/lib.rs =====
+Below is this file's contents:
+mod ffi;
+mod rasterizer;
+mod sys_monitor;
+
+use ffi::*;
+use jni::objects::{JClass, JObject, JString};
+use jni::sys::{jboolean, jdouble, jdoubleArray, jint, jlong, JNI_TRUE};
+use jni::JNIEnv;
+use pvg::ast::Document;
+use pvg::draw_list::DrawList;
+use pvg::eval::Evaluator;
+use pvg::parse_pvg;
+use rasterizer::rasterize_draw_list_into_pixmap_mut;
+use sys_monitor::SystemMonitor;
+use tiny_skia::PixmapMut;
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
+
+static LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
+
+#[inline]
+pub fn is_logging_enabled() -> bool {
+    LOGGING_ENABLED.load(Ordering::Relaxed)
+}
+
+#[inline]
+pub fn set_logging_enabled(enabled: bool) {
+    LOGGING_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+struct PvgEngineState {
+    code: String,
+    cached_doc: Option<Document>,
+    time: f64,
+    speed: f64,
+    is_playing: bool,
+    is_animated: bool,
+    window: *mut ANativeWindow,
+    surface_width: i32,
+    surface_height: i32,
+
+    // Real-time telemetry
+    last_parse_us: f64,
+    last_eval_us: f64,
+    last_raster_us: f64,
+    last_fps: f64,
+    primitive_count: usize,
+}
+
+unsafe impl Send for PvgEngineState {}
+unsafe impl Sync for PvgEngineState {}
+
+pub struct PvgEngine {
+    state: Arc<Mutex<PvgEngineState>>,
+    running: Arc<AtomicBool>,
+    needs_render: Arc<AtomicBool>,
+    thread_handle: Option<JoinHandle<()>>,
+}
+
+impl PvgEngine {
+    pub fn new(source: String, is_playing: bool, speed: f64) -> Self {
+        let is_animated = source.contains("time")
+            || source.contains(" t ")
+            || source.contains("(t)")
+            || source.contains("* t");
+
+        let mut parse_us = 0.0;
+        let t0 = Instant::now();
+        let cached_doc = match parse_pvg(&source) {
+            Ok(doc) => {
+                parse_us = t0.elapsed().as_secs_f64() * 1_000_000.0;
+                Some(doc)
+            }
+            Err(e) => {
+                log_warn!("PVG AST Parse Error: {}", e);
+                None
+            }
+        };
+
+        log_info!("🚀 [ENGINE INIT] AST parsed in {:.2} µs (Animated: {})", parse_us, is_animated);
+
+        let state = Arc::new(Mutex::new(PvgEngineState {
+            code: source,
+            cached_doc,
+            time: 0.0,
+            speed,
+            is_playing,
+            is_animated,
+            window: std::ptr::null_mut(),
+            surface_width: 480,
+            surface_height: 480,
+            last_parse_us: parse_us,
+            last_eval_us: 0.0,
+            last_raster_us: 0.0,
+            last_fps: 60.0,
+            primitive_count: 0,
+        }));
+
+        let running = Arc::new(AtomicBool::new(true));
+        let needs_render = Arc::new(AtomicBool::new(true));
+
+        let thread_state = Arc::clone(&state);
+        let thread_running = Arc::clone(&running);
+        let thread_needs_render = Arc::clone(&needs_render);
+
+        // Dedicated native thread: 0% Main UI thread & 0% HWUI RenderThread overhead
+        let thread_handle = thread::spawn(move || {
+            let target_frame_budget = Duration::from_micros(16_666); // 60 FPS target
+            let mut last_tick = Instant::now();
+            let mut frame_count = 0;
+            let mut log_timer = Instant::now();
+
+            let mut acc_eval_us = 0.0;
+            let mut acc_raster_us = 0.0;
+            let mut acc_lock_us = 0.0;
+            let mut acc_post_us = 0.0;
+
+            let mut sys_monitor = SystemMonitor::new();
+
+            while thread_running.load(Ordering::Relaxed) {
+                let start_frame = Instant::now();
+                let dt = start_frame.duration_since(last_tick).as_secs_f64().clamp(0.001, 0.033);
+                last_tick = start_frame;
+
+                frame_count += 1;
+
+                let should_render;
+                let current_time;
+                let is_active;
+
+                {
+                    if let Ok(mut s) = thread_state.lock() {
+                        let has_window = !s.window.is_null();
+                        is_active = s.is_playing && s.is_animated && has_window;
+                        if is_active {
+                            s.time += dt * s.speed;
+                        }
+                        current_time = s.time;
+                        should_render = (is_active || thread_needs_render.swap(false, Ordering::Relaxed)) && has_window;
+                    } else {
+                        break;
+                    }
+                }
+
+                if should_render {
+                    let (eval_us, raster_us, lock_us, post_us) = Self::render_frame_direct(&thread_state, current_time);
+                    acc_eval_us += eval_us;
+                    acc_raster_us += raster_us;
+                    acc_lock_us += lock_us;
+                    acc_post_us += post_us;
+                }
+
+                // 1-second interval diagnostics summary
+                let elapsed_log = log_timer.elapsed().as_secs_f64();
+                if elapsed_log >= 1.0 {
+                    let fps = (frame_count as f64) / elapsed_log;
+                    let n = (frame_count as f64).max(1.0);
+                    let avg_eval = acc_eval_us / n;
+                    let avg_raster = (acc_raster_us / n) / 1000.0;
+                    let avg_lock = acc_lock_us / n;
+                    let avg_post = acc_post_us / n;
+
+                    if is_logging_enabled() {
+                        if let Ok(mut s) = thread_state.lock() {
+                            s.last_fps = fps;
+                            log_info!(
+                                "📊 [NATIVE 1s LOG] FPS: {:>4.1} | Eval: {:>5.1}µs | Raster: {:>4.2}ms | Lock: {:>5.1}µs | Post: {:>5.1}µs | Buf: {}x{}",
+                                fps, avg_eval, avg_raster, avg_lock, avg_post, s.surface_width, s.surface_height
+                            );
+                        }
+                        sys_monitor.log_1s_thread_profiler();
+                    } else if let Ok(mut s) = thread_state.lock() {
+                        s.last_fps = fps;
+                    }
+
+                    frame_count = 0;
+                    acc_eval_us = 0.0;
+                    acc_raster_us = 0.0;
+                    acc_lock_us = 0.0;
+                    acc_post_us = 0.0;
+                    log_timer = Instant::now();
+                }
+
+                if !is_active {
+                    thread::sleep(Duration::from_millis(30));
+                    continue;
+                }
+
+                let frame_elapsed = start_frame.elapsed();
+                if frame_elapsed < target_frame_budget {
+                    thread::sleep(target_frame_budget - frame_elapsed);
+                } else {
+                    thread::sleep(Duration::from_millis(2));
+                }
+            }
+        });
+
+        Self {
+            state,
+            running,
+            needs_render,
+            thread_handle: Some(thread_handle),
+        }
+    }
+
+    /// Renders directly into ANativeWindow buffer using PixmapMut zero-copy mapping
+    fn render_frame_direct(state_arc: &Arc<Mutex<PvgEngineState>>, time: f64) -> (f64, f64, f64, f64) {
+        let (window, doc_opt) = {
+            let s = state_arc.lock().unwrap();
+            (s.window, s.cached_doc.clone())
+        };
+
+        if window.is_null() {
+            return (0.0, 0.0, 0.0, 0.0);
+        }
+
+        let doc = match doc_opt {
+            Some(d) => d,
+            None => return (0.0, 0.0, 0.0, 0.0),
+        };
+
+        // Phase 1: Procedural AST Evaluation
+        let eval_t0 = Instant::now();
+        let evaluator = Evaluator::new_with_time(time);
+        let draw_list: DrawList = match evaluator.evaluate_document(&doc) {
+            Ok(dl) => dl,
+            Err(_) => return (0.0, 0.0, 0.0, 0.0),
+        };
+        let eval_us = eval_t0.elapsed().as_secs_f64() * 1_000_000.0;
+        let primitive_count = draw_list.items.len();
+
+        // Phase 2: Lock Surface Buffer & In-Place Rasterization
+        let (lock_us, raster_us, post_us) = unsafe {
+            let mut buffer = ANativeWindow_Buffer {
+                width: 0,
+                height: 0,
+                stride: 0,
+                format: 0,
+                bits: std::ptr::null_mut(),
+                reserved: [0; 6],
+            };
+
+            let lock_t0 = Instant::now();
+            let lock_res = ANativeWindow_lock(window, &mut buffer, std::ptr::null_mut());
+            let lock_elapsed = lock_t0.elapsed().as_secs_f64() * 1_000_000.0;
+            let mut raster_elapsed = 0.0;
+
+            if lock_res == 0 {
+                if !buffer.bits.is_null() && buffer.width > 0 && buffer.height > 0 && buffer.stride > 0 {
+                    let total_bytes = (buffer.stride * buffer.height * 4) as usize;
+                    let raw_slice = std::slice::from_raw_parts_mut(buffer.bits as *mut u8, total_bytes);
+
+                    let pixmap_width = buffer.stride as u32;
+                    let pixmap_height = buffer.height as u32;
+
+                    // Phase 3: Direct In-Place Rasterization
+                    if let Some(mut pixmap_mut) = PixmapMut::from_bytes(raw_slice, pixmap_width, pixmap_height) {
+                        let raster_t0 = Instant::now();
+                        rasterize_draw_list_into_pixmap_mut(
+                            &draw_list,
+                            &mut pixmap_mut,
+                            buffer.width as u32,
+                            buffer.height as u32,
+                        );
+                        raster_elapsed = raster_t0.elapsed().as_secs_f64() * 1_000_000.0;
+                    }
+                }
+
+                // Phase 4: Post Framebuffer to Hardware Display
+                let post_t0 = Instant::now();
+                ANativeWindow_unlockAndPost(window);
+                let post_elapsed = post_t0.elapsed().as_secs_f64() * 1_000_000.0;
+                (lock_elapsed, raster_elapsed, post_elapsed)
+            } else {
+                (lock_elapsed, 0.0, 0.0)
+            }
+        };
+
+        if let Ok(mut s) = state_arc.lock() {
+            s.last_eval_us = eval_us;
+            s.last_raster_us = raster_us;
+            s.primitive_count = primitive_count;
+        }
+
+        (eval_us, raster_us, lock_us, post_us)
+    }
+
+    pub fn set_source(&self, source: String) {
+        let is_animated = source.contains("time")
+            || source.contains(" t ")
+            || source.contains("(t)")
+            || source.contains("* t");
+
+        let t0 = Instant::now();
+        let cached_doc = parse_pvg(&source).ok();
+        let parse_us = t0.elapsed().as_secs_f64() * 1_000_000.0;
+
+        log_info!("🔄 [SOURCE UPDATE] Re-parsed AST in {:.2} µs (Animated: {})", parse_us, is_animated);
+
+        if let Ok(mut s) = self.state.lock() {
+            s.code = source;
+            s.cached_doc = cached_doc;
+            s.is_animated = is_animated;
+            s.last_parse_us = parse_us;
+        }
+        self.needs_render.store(true, Ordering::Relaxed);
+    }
+
+    pub fn set_playing(&self, playing: bool) {
+        log_info!("⏯️ [STATE] isPlaying = {}", playing);
+        if let Ok(mut s) = self.state.lock() {
+            s.is_playing = playing;
+        }
+        self.needs_render.store(true, Ordering::Relaxed);
+    }
+
+    pub fn set_time(&self, time: f64) {
+        if let Ok(mut s) = self.state.lock() {
+            s.time = time;
+        }
+        self.needs_render.store(true, Ordering::Relaxed);
+    }
+
+    pub fn set_speed(&self, speed: f64) {
+        log_info!("⚡ [SPEED] Playback speed = {:.2}x", speed);
+        if let Ok(mut s) = self.state.lock() {
+            s.speed = speed;
+        }
+    }
+
+    pub fn on_surface_created(&self, window: *mut ANativeWindow) {
+        log_info!("🖼️ [SURFACE CREATED] ANativeWindow handle = {:?}", window);
+        if let Ok(mut s) = self.state.lock() {
+            if !s.window.is_null() && s.window != window {
+                unsafe { ANativeWindow_release(s.window); }
+            }
+            s.window = window;
+        }
+        self.needs_render.store(true, Ordering::Relaxed);
+    }
+
+    pub fn on_surface_changed(&self, width: i32, height: i32) {
+        log_info!("📐 [SURFACE CHANGED] Dimensions: {}x{}", width, height);
+        if let Ok(mut s) = self.state.lock() {
+            s.surface_width = width;
+            s.surface_height = height;
+        }
+        self.needs_render.store(true, Ordering::Relaxed);
+    }
+
+    pub fn on_surface_destroyed(&self) {
+        log_info!("🗑️ [SURFACE DESTROYED] Releasing ANativeWindow handle");
+        if let Ok(mut s) = self.state.lock() {
+            if !s.window.is_null() {
+                unsafe {
+                    ANativeWindow_release(s.window);
+                }
+                s.window = std::ptr::null_mut();
+            }
+        }
+    }
+
+    pub fn get_telemetry(&self) -> (f64, f64, f64, f64, usize) {
+        if let Ok(s) = self.state.lock() {
+            (s.last_parse_us, s.last_eval_us, s.last_raster_us, s.last_fps, s.primitive_count)
+        } else {
+            (0.0, 0.0, 0.0, 0.0, 0)
+        }
+    }
+}
+
+impl Drop for PvgEngine {
+    fn drop(&mut self) {
+        log_info!("🛑 [ENGINE DROP] Terminating native render worker thread");
+        self.running.store(false, Ordering::Relaxed);
+        if let Some(handle) = self.thread_handle.take() {
+            let _ = handle.join();
+        }
+        self.on_surface_destroyed();
+    }
+}
+
+// =========================================================================
+// JNI EXPORTS (com.pvg.android.PvgEngine)
+// =========================================================================
+
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetLoggingEnabled(
+    _env: JNIEnv,
+    _class: JClass,
+    enabled: jboolean,
+) {
+    set_logging_enabled(enabled == JNI_TRUE);
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeInit(
+    mut env: JNIEnv,
+    _class: JClass,
+    source: JString,
+    is_playing: jboolean,
+    speed: jdouble,
+) -> jlong {
+    let src_str: String = match env.get_string(&source) {
+        Ok(s) => s.into(),
+        Err(_) => String::new(),
+    };
+
+    let engine = Box::new(PvgEngine::new(src_str, is_playing == JNI_TRUE, speed));
+    Box::into_raw(engine) as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeDestroy(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) {
+    if handle != 0 {
+        unsafe {
+            let _ = Box::from_raw(handle as *mut PvgEngine);
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetSource(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    source: JString,
+) {
+    if handle != 0 {
+        let engine = unsafe { &*(handle as *const PvgEngine) };
+        if let Ok(s) = env.get_string(&source) {
+            engine.set_source(s.into());
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetPlaying(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    playing: jboolean,
+) {
+    if handle != 0 {
+        let engine = unsafe { &*(handle as *const PvgEngine) };
+        engine.set_playing(playing == JNI_TRUE);
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetTime(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    time: jdouble,
+) {
+    if handle != 0 {
+        let engine = unsafe { &*(handle as *const PvgEngine) };
+        engine.set_time(time);
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetSpeed(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    speed: jdouble,
+) {
+    if handle != 0 {
+        let engine = unsafe { &*(handle as *const PvgEngine) };
+        engine.set_speed(speed);
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeOnSurfaceCreated(
+    env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    surface: JObject,
+) {
+    if handle != 0 && !surface.is_null() {
+        let engine = unsafe { &*(handle as *const PvgEngine) };
+        let native_window = unsafe {
+            ANativeWindow_fromSurface(env.get_raw() as *mut _, surface.as_raw())
+        };
+        if !native_window.is_null() {
+            engine.on_surface_created(native_window);
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeOnSurfaceChanged(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    width: jint,
+    height: jint,
+) {
+    if handle != 0 {
+        let engine = unsafe { &*(handle as *const PvgEngine) };
+        engine.on_surface_changed(width, height);
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeOnSurfaceDestroyed(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) {
+    if handle != 0 {
+        let engine = unsafe { &*(handle as *const PvgEngine) };
+        engine.on_surface_destroyed();
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeGetTelemetry(
+    env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jdoubleArray {
+    let (parse_us, eval_us, raster_us, fps, shapes) = if handle != 0 {
+        let engine = unsafe { &*(handle as *const PvgEngine) };
+        engine.get_telemetry()
+    } else {
+        (0.0, 0.0, 0.0, 0.0, 0)
+    };
+
+    let arr = env.new_double_array(5).unwrap();
+    let data = [parse_us, eval_us, raster_us, fps, shapes as f64];
+    env.set_double_array_region(&arr, 0, &data).unwrap();
+    arr.into_raw()
+}
+
+===== FILE: pvg_android/src/rasterizer.rs =====
+Below is this file's contents:
+use pvg::ast::Color;
+use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand};
+use std::f64::consts::PI;
+use tiny_skia::{FillRule, Paint, PathBuilder, PixmapMut, Rect, Stroke, Transform};
+
+#[inline]
+pub fn color_to_skia(col: &Color, opacity: f64) -> Option<Paint<'static>> {
+    match col {
+        Color::Rgba(r, g, b, a) => {
+            let final_a = ((*a as f64) * opacity).clamp(0.0, 255.0).round() as u8;
+            if final_a == 0 {
+                return None;
+            }
+            let mut paint = Paint::default();
+            paint.set_color_rgba8(*r, *g, *b, final_a);
+            paint.anti_alias = true;
+            Some(paint)
+        }
+        Color::None => None,
+    }
+}
+
+/// High-performance in-place vector rasterizer with single-pass clearing and aspect-ratio alignment
+pub fn rasterize_draw_list_into_pixmap_mut(
+    draw_list: &DrawList,
+    pixmap: &mut PixmapMut,
+    target_width: u32,
+    target_height: u32,
+) {
+    if draw_list.canvas_width <= 0.0 || draw_list.canvas_height <= 0.0 {
+        pixmap.fill(tiny_skia::Color::from_rgba8(8, 9, 13, 255));
+        return;
+    }
+
+    // 1. Calculate aesthetic letterbox dimensions with 4% padding margin
+    let margin = 0.94_f32;
+    let avail_w = (target_width as f32) * margin;
+    let avail_h = (target_height as f32) * margin;
+
+    let scale_x = avail_w / draw_list.canvas_width as f32;
+    let scale_y = avail_h / draw_list.canvas_height as f32;
+    let scale = scale_x.min(scale_y);
+
+    let scaled_w = (draw_list.canvas_width as f32 * scale).round();
+    let scaled_h = (draw_list.canvas_height as f32 * scale).round();
+
+    let offset_x = ((target_width as f32 - scaled_w) / 2.0).round();
+    let offset_y = ((target_height as f32 - scaled_h) / 2.0).round();
+
+    let transform = Transform::from_row(scale, 0.0, 0.0, scale, offset_x, offset_y);
+
+    // 2. Single-pass background fill
+    let container_bg = tiny_skia::Color::from_rgba8(8, 9, 13, 255);
+    pixmap.fill(container_bg);
+
+    if let Some(canvas_rect) = Rect::from_xywh(offset_x, offset_y, scaled_w, scaled_h) {
+        if let Some(ref bg) = draw_list.background {
+            if let Some(bg_paint) = color_to_skia(bg, 1.0) {
+                pixmap.fill_rect(canvas_rect, &bg_paint, Transform::identity(), None);
+            }
+        } else {
+            let mut black_paint = Paint::default();
+            black_paint.set_color_rgba8(0, 0, 0, 255);
+            pixmap.fill_rect(canvas_rect, &black_paint, Transform::identity(), None);
+        }
+    }
+
+    // 3. Render visual primitives
+    for cmd in &draw_list.items {
+        match cmd {
+            DrawCmd::Circle { center, radius, style } => {
+                let mut pb = PathBuilder::new();
+                pb.push_circle(center.0 as f32, center.1 as f32, *radius as f32);
+                if let Some(path) = pb.finish() {
+                    if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
+                        pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
+                    }
+                    if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
+                        if style.width > 0.0 {
+                            let mut stroke = Stroke::default();
+                            stroke.width = style.width as f32;
+                            pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
+                        }
+                    }
+                }
+            }
+
+            DrawCmd::Ellipse { center, radius, style } => {
+                let x = (center.0 - radius.0) as f32;
+                let y = (center.1 - radius.1) as f32;
+                let w = (radius.0 * 2.0) as f32;
+                let h = (radius.1 * 2.0) as f32;
+
+                if let Some(rect) = Rect::from_xywh(x, y, w, h) {
+                    let mut pb = PathBuilder::new();
+                    pb.push_oval(rect);
+                    if let Some(path) = pb.finish() {
+                        if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
+                            pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
+                        }
+                        if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
+                            if style.width > 0.0 {
+                                let mut stroke = Stroke::default();
+                                stroke.width = style.width as f32;
+                                pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
+                            }
+                        }
+                    }
+                }
+            }
+
+            DrawCmd::Rectangle { pos, size, corner_radius, style } => {
+                let x = pos.0 as f32;
+                let y = pos.1 as f32;
+                let w = size.0 as f32;
+                let h = size.1 as f32;
+                let cr = (*corner_radius as f32).max(0.0);
+
+                if w > 0.0 && h > 0.0 {
+                    let path = if cr > 0.0 {
+                        let r = cr.min(w / 2.0).min(h / 2.0);
+                        let mut pb = PathBuilder::new();
+                        pb.move_to(x + r, y);
+                        pb.line_to(x + w - r, y);
+                        pb.quad_to(x + w, y, x + w, y + r);
+                        pb.line_to(x + w, y + h - r);
+                        pb.quad_to(x + w, y + h, x + w - r, y + h);
+                        pb.line_to(x + r, y + h);
+                        pb.quad_to(x, y + h, x, y + h - r);
+                        pb.line_to(x, y + r);
+                        pb.quad_to(x, y, x + r, y);
+                        pb.close();
+                        pb.finish()
+                    } else if let Some(rect) = Rect::from_xywh(x, y, w, h) {
+                        let mut pb = PathBuilder::new();
+                        pb.push_rect(rect);
+                        pb.finish()
+                    } else {
+                        None
+                    };
+
+                    if let Some(path) = path {
+                        if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
+                            pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
+                        }
+                        if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
+                            if style.width > 0.0 {
+                                let mut stroke = Stroke::default();
+                                stroke.width = style.width as f32;
+                                pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
+                            }
+                        }
+                    }
+                }
+            }
+
+            DrawCmd::Line { from, to, style } => {
+                let mut pb = PathBuilder::new();
+                pb.move_to(from.0 as f32, from.1 as f32);
+                pb.line_to(to.0 as f32, to.1 as f32);
+                if let Some(path) = pb.finish() {
+                    if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
+                        if style.width > 0.0 {
+                            let mut stroke = Stroke::default();
+                            stroke.width = style.width as f32;
+                            pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
+                        }
+                    }
+                }
+            }
+
+            DrawCmd::Polygon { points, style } => {
+                if points.len() >= 2 {
+                    let mut pb = PathBuilder::new();
+                    pb.move_to(points[0].0 as f32, points[0].1 as f32);
+                    for pt in &points[1..] {
+                        pb.line_to(pt.0 as f32, pt.1 as f32);
+                    }
+                    pb.close();
+
+                    if let Some(path) = pb.finish() {
+                        if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
+                            pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
+                        }
+                        if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
+                            if style.width > 0.0 {
+                                let mut stroke = Stroke::default();
+                                stroke.width = style.width as f32;
+                                pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
+                            }
+                        }
+                    }
+                }
+            }
+
+            DrawCmd::Text { .. } => {}
+
+            DrawCmd::Path { commands, style } => {
+                let mut pb = PathBuilder::new();
+                let mut has_commands = false;
+
+                for cmd in commands {
+                    match cmd {
+                        DrawPathCommand::Start(p) => {
+                            pb.move_to(p.0 as f32, p.1 as f32);
+                            has_commands = true;
+                        }
+                        DrawPathCommand::Line(p) => {
+                            if !has_commands {
+                                pb.move_to(p.0 as f32, p.1 as f32);
+                                has_commands = true;
+                            } else {
+                                pb.line_to(p.0 as f32, p.1 as f32);
+                            }
+                        }
+                        DrawPathCommand::Quad { cp, ep } => {
+                            if !has_commands {
+                                pb.move_to(cp.0 as f32, cp.1 as f32);
+                                has_commands = true;
+                            }
+                            pb.quad_to(cp.0 as f32, cp.1 as f32, ep.0 as f32, ep.1 as f32);
+                        }
+                        DrawPathCommand::Curve { c1, c2, ep } => {
+                            if !has_commands {
+                                pb.move_to(c1.0 as f32, c1.1 as f32);
+                                has_commands = true;
+                            }
+                            pb.cubic_to(
+                                c1.0 as f32, c1.1 as f32,
+                                c2.0 as f32, c2.1 as f32,
+                                ep.0 as f32, ep.1 as f32,
+                            );
+                        }
+                        DrawPathCommand::Arc { center, radius, start_angle, end_angle } => {
+                            let delta = end_angle - start_angle;
+                            let steps = (delta.abs() / (PI / 32.0)).ceil().max(16.0) as usize;
+                            for step in 0..=steps {
+                                let t = step as f64 / steps as f64;
+                                let angle = start_angle + t * delta;
+                                let px = center.0 + radius * angle.cos();
+                                let py = center.1 + radius * angle.sin();
+                                if !has_commands && step == 0 {
+                                    pb.move_to(px as f32, py as f32);
+                                    has_commands = true;
+                                } else {
+                                    pb.line_to(px as f32, py as f32);
+                                }
+                            }
+                        }
+                        DrawPathCommand::Close => {
+                            pb.close();
+                        }
+                    }
+                }
+
+                if let Some(path) = pb.finish() {
+                    if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
+                        pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
+                    }
+                    if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
+                        if style.width > 0.0 {
+                            let mut stroke = Stroke::default();
+                            stroke.width = style.width as f32;
+                            pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Draw clean canvas border outline
+    if let Some(canvas_rect) = Rect::from_xywh(offset_x, offset_y, scaled_w, scaled_h) {
+        let mut border_paint = Paint::default();
+        border_paint.set_color_rgba8(31, 35, 51, 255);
+        let mut border_stroke = Stroke::default();
+        border_stroke.width = 1.5;
+        let mut border_pb = PathBuilder::new();
+        border_pb.push_rect(canvas_rect);
+        if let Some(border_path) = border_pb.finish() {
+            pixmap.stroke_path(&border_path, &border_paint, &border_stroke, Transform::identity(), None);
+        }
+    }
+}
+
+===== FILE: pvg_android/src/sys_monitor.rs =====
+Below is this file's contents:
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+use std::time::Instant;
+
+#[derive(Debug, Clone, Default)]
+struct ThreadSnapshot {
+    name: String,
+    utime: u64,
+    stime: u64,
+    voluntary_switches: u64,
+    involuntary_switches: u64,
+}
+
+pub struct SystemMonitor {
+    last_sample_time: Instant,
+    last_snapshots: HashMap<u32, ThreadSnapshot>,
+    ticks_per_sec: f64,
+}
+
+impl SystemMonitor {
+    pub fn new() -> Self {
+        Self {
+            last_sample_time: Instant::now(),
+            last_snapshots: HashMap::new(),
+            ticks_per_sec: 100.0, // POSIX clock ticks on Linux/Android
+        }
+    }
+
+    /// Reads /proc/self/task to log thread-level CPU usage breakdown
+    pub fn log_1s_thread_profiler(&mut self) {
+        let elapsed = self.last_sample_time.elapsed().as_secs_f64();
+        if elapsed < 1.0 {
+            return;
+        }
+
+        let task_dir = Path::new("/proc/self/task");
+        let entries = match fs::read_dir(task_dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+
+        let mut current_snapshots = HashMap::new();
+        let mut report_lines = Vec::new();
+
+        for entry in entries.flatten() {
+            let file_name = entry.file_name();
+            let tid_str = file_name.to_string_lossy();
+            let tid: u32 = match tid_str.parse() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+
+            let path = entry.path();
+            let comm = fs::read_to_string(path.join("comm"))
+                .unwrap_or_else(|_| "unknown".into())
+                .trim()
+                .to_string();
+
+            let stat_content = fs::read_to_string(path.join("stat")).unwrap_or_default();
+            let (utime, stime) = Self::parse_stat_times(&stat_content);
+
+            let (vol_sw, invol_sw) = Self::parse_status_switches(&fs::read_to_string(path.join("status")).unwrap_or_default());
+
+            let current = ThreadSnapshot {
+                name: comm,
+                utime,
+                stime,
+                voluntary_switches: vol_sw,
+                involuntary_switches: invol_sw,
+            };
+
+            if let Some(prev) = self.last_snapshots.get(&tid) {
+                let d_utime = current.utime.saturating_sub(prev.utime) as f64 / self.ticks_per_sec;
+                let d_stime = current.stime.saturating_sub(prev.stime) as f64 / self.ticks_per_sec;
+
+                let u_pct = (d_utime / elapsed) * 100.0;
+                let s_pct = (d_stime / elapsed) * 100.0;
+                let total_pct = u_pct + s_pct;
+
+                let d_vol = current.voluntary_switches.saturating_sub(prev.voluntary_switches);
+                let d_invol = current.involuntary_switches.saturating_sub(prev.involuntary_switches);
+
+                if total_pct >= 0.5 || d_vol > 50 || d_invol > 10 {
+                    report_lines.push((
+                        total_pct,
+                        format!(
+                            "   │ TID {:<5} {:<20} │ User: {:>4.1}% │ Sys: {:>4.1}% │ Total: {:>5.1}% │ VolCtx: {:>4}/s │ InvolCtx: {:>3}/s",
+                            tid, current.name, u_pct, s_pct, total_pct, d_vol, d_invol
+                        ),
+                    ));
+                }
+            }
+
+            current_snapshots.insert(tid, current);
+        }
+
+        self.last_snapshots = current_snapshots;
+        self.last_sample_time = Instant::now();
+
+        report_lines.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+
+        crate::log_info!("┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐");
+        crate::log_info!("│ 🔍 [KERNEL /proc THREAD-LEVEL CPU PROFILER (1s)]                                                       │");
+        crate::log_info!("├────────────────────────────────────────────────────────────────────────────────────────────────────────┤");
+        if report_lines.is_empty() {
+            crate::log_info!("   │ All threads idle (< 0.5% CPU)");
+        } else {
+            for (_, line) in report_lines {
+                crate::log_info!("{}", line);
+            }
+        }
+        crate::log_info!("└────────────────────────────────────────────────────────────────────────────────────────────────────────┘");
+    }
+
+    fn parse_stat_times(stat: &str) -> (u64, u64) {
+        if let Some(idx) = stat.rfind(')') {
+            let rest = &stat[idx + 1..];
+            let parts: Vec<&str> = rest.split_whitespace().collect();
+            if parts.len() >= 13 {
+                let utime: u64 = parts[11].parse().unwrap_or(0);
+                let stime: u64 = parts[12].parse().unwrap_or(0);
+                return (utime, stime);
+            }
+        }
+        (0, 0)
+    }
+
+    fn parse_status_switches(status: &str) -> (u64, u64) {
+        let mut vol = 0;
+        let mut invol = 0;
+        for line in status.lines() {
+            if line.starts_with("voluntary_ctxt_switches:") {
+                vol = line.split_whitespace().nth(1).and_then(|v| v.parse().ok()).unwrap_or(0);
+            } else if line.starts_with("nonvoluntary_ctxt_switches:") {
+                invol = line.split_whitespace().nth(1).and_then(|v| v.parse().ok()).unwrap_or(0);
+            }
+        }
+        (vol, invol)
+    }
+}
 
 ===== FILE: pvg_win_gui/Cargo.toml =====
 Below is this file's contents:

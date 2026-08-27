@@ -1,6 +1,7 @@
 # ⚡ PVG — Procedural Vector Graphics
 
 [![Language: Rust](https://img.shields.io/badge/Language-Rust_2021-orange.svg?style=flat-square&logo=rust)](https://www.rust-lang.org/)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.prathameshza/pvg.svg?style=flat-square&color=00d2ff&logo=android)](https://central.sonatype.com/artifact/io.github.prathameshza/pvg)
 [![Frame Latency](https://img.shields.io/badge/Frame_Eval-<0.04_ms-brightgreen.svg?style=flat-square)](#-benchmark-telemetry)
 [![Memory Footprint](https://img.shields.io/badge/Peak_Heap-<50_KB-blueviolet.svg?style=flat-square)](#-benchmark-telemetry)
 [![Zero GPU Dependency](https://img.shields.io/badge/GPU_Dependency-0%25_(Pure_CPU)-cyan.svg?style=flat-square)](#-why-pvg-was-created)
@@ -9,7 +10,7 @@
 **A deterministic, human-readable 2D vector graphics and procedural scene description language.**  
 *Combines the declarative clarity of vector graphics with native loops, typography, trigonometry, and microsecond CPU evaluation.*
 
-[Live Web Studio](https://prathameshza.github.io/pvg/pvg_web_gui/index.html) • [Interactive Showcase](https://prathameshza.github.io/pvg/) • [Language Spec](PVG_SPECS.md) • [Desktop Studio](#2-desktop-studio-pvg_win_gui) • [Web Component](#4-web-studio--pvg-view-component)
+[Live Web Studio](https://prathameshza.github.io/pvg/pvg_web_gui/index.html) • [Interactive Showcase](https://prathameshza.github.io/pvg/) • [Language Spec](PVG_SPECS.md) • [Android Engine](#5-android-runtime-pvg-android) • [Desktop Studio](#2-desktop-studio-pvg_win_gui) • [Web Component](#4-web-studio--pvg-view-component)
 
 ---
 
@@ -28,6 +29,7 @@
   - [2. `pvg_win_gui` (Desktop Studio)](#2-desktop-studio-pvg_win_gui)
   - [3. `transpilers` (SVG / PNG CLI)](#3-cli-transpilers-transpilers)
   - [4. `<pvg-view>` (Web Component & Studio)](#4-web-studio--pvg-view-component)
+  - [5. `pvg-android` (Android Native Runtime)](#5-android-runtime-pvg-android)
 - [Benchmark Telemetry](#-benchmark-telemetry)
 - [Quickstart Guide](#-quickstart-guide)
 - [Safety & Sandbox Guarantees](#-safety--sandbox-guarantees)
@@ -62,7 +64,7 @@ Scalable Vector Graphics (SVG) has been the web's default 2D vector format for d
 
 **No.** PVG is deliberately **not** a drop-in replacement for the entire W3C SVG standard.
 
-SVG is a multi-decade, general-purpose document format designed for arbitrary web styling, complex digital publishing, and rich raster/vector hybrid artwork. **PVG is a lightweight, sandboxed, procedural micro-engine** designed for microsecond real-time graphics, procedural animation, automotive/industrial HUDs, generative art, and game engine vector rendering.
+SVG is a multi-decade, general-purpose document format designed for arbitrary web styling, complex digital publishing, and rich raster/vector hybrid artwork. **PVG is a lightweight, sandboxed, procedural micro-engine** designed for microsecond real-time graphics, procedural animation, automotive/industrial HUDs, generative art, mobile apps, and game engine vector overlays.
 
 ### Feature & Scope Matrix
 
@@ -76,7 +78,7 @@ PVG 0.1 Architectural Scope:
 ├── 2D Affine Transform Hierarchy (Translate, Rotate, Scale)     ✓
 ├── Flat Contiguous 2D Draw List (< 50 KB Heap Arena)            ✓
 ├── Lean Text Primitive (pos, content, size, align, opacity)     ✓
-├── Font Reference (Minimal aliases: sans, mono, serif)          ✓
+├── Multi-Platform Runtime (Rust, Web, Android AAR, Windows)     ✓
 ├── Embedded Fonts (Base64 WOFF2, TTF font tables, glyph curves) ✗ (Intentional omission)
 ├── Embedded Images (Base64 PNG/JPEG inlines)                    ✗ (Intentional omission)
 ├── External Images (<image href="..."> references)              ✗ (Intentional omission)
@@ -108,6 +110,7 @@ Before choosing PVG for a project, consider the architectural trade-offs:
 | Project Requirement | Recommended Format | Why? |
 | :--- | :---: | :--- |
 | **Real-time 60 FPS HUDs & Dials** | **PVG** | Evaluates in `< 40 µs` without triggering browser DOM reflows. |
+| **Android Embedded Graphics & HUDs** | **PVG** | 0% GPU power draw, 0 HWUI render upload via native `ANativeWindow`. |
 | **Generative & Algorithmic Vector Art** | **PVG** | Native `for` loops, trigonometry, and deterministic seeds without external JS. |
 | **Game Engine 2D Assets / UI Overlays** | **PVG** | Contiguous draw list fits in $< 50\text{ KB}$ heap memory with zero GPU lock-in. |
 | **Sandboxed / Untrusted Document Viewers** | **PVG** | Strict execution limits ($100k$ iterations, $64$ stack depth) prevent DoS attacks. |
@@ -122,6 +125,10 @@ Before choosing PVG for a project, consider the architectural trade-offs:
 ```
 pvg/
 ├── pvg/                         # 🦀 Official Rust Core Engine (Lexer, Parser, AST, Evaluator, DrawList)
+├── pvg_android/                 # 🤖 Pure CPU Rust JNI Bridge with ANativeWindow integration
+├── android/                     # 📱 Android Gradle Multi-Module Workspace
+│   ├── pvg-android/             #    • Official Android AAR Library (io.github.prathameshza:pvg)
+│   └── app/                     #    • Reference Showcase Android Application
 ├── pvg_win_gui/                 # 🪟 Native Windows Live IDE Studio (built with eframe/egui & tiny-skia)
 ├── transpilers/                 # 🔄 Rust-based CLI Transpilers for PVG -> SVG and PVG -> PNG
 │   ├── src/pvg_to_svg.rs        #    • PVG to static/animated SMIL SVG transpiler
@@ -143,13 +150,9 @@ pvg/
 
 ## 🎨 Featured Presets Showcase
 
-All reference presets compile directly to native GUI meshes, W3C SVG, or multi-scale PNG:
+All reference presets compile directly to native GUI meshes, W3C SVG, multi-scale PNG, or Android Views:
 
 ### 1. 📊 Telemetry Monitor Card (`presets/telemetry_card.pvg` — 1.6 KB)
-
-<p align="center">
-  <img src="presets\telemetry_card.svg" alt="Telemetry Card Preview" width="340"/>
-</p>
 
 *Demonstrates the lean `text` primitive, font family aliases (`sans`, `mono`), multi-alignment, and live procedural strings:*
 
@@ -201,10 +204,6 @@ text
 
 ### 2. 🌀 Radar Scanner (`presets/radar.pvg` — 1.5 KB vs 148.6 KB SVG)
 
-<p align="center">
-  <img src="presets/radar.png" alt="Radar Scanner Preview" width="340"/>
-</p>
-
 *Features dynamic range rings, crosshairs, orbiting beacon satellites, and a rotating phosphor sweep trail driven by the timeline clock `time`:*
 
 ```pvg
@@ -245,140 +244,6 @@ line
 
 ---
 
-### 3. 🎛️ Technical Dashboard Dial (`presets/dial.pvg` — 1.3 KB vs 3.6 KB SVG)
-
-<p align="center">
-  <img src="presets/dial.png" alt="Dashboard Dial Preview" width="340"/>
-</p>
-
-*Demonstrates circular forward arcs, ternary conditionals, and dynamic needle gauges:*
-
-```pvg
-PVG 0.1
-canvas 600 600
-  background #141419
-
-set cx = 300
-set cy = 300
-set outer_r = 200
-set inner_r = 170
-
-# Outer Background Track
-path
-  stroke #2c2d35
-  width 14
-  fill none
-  start [cx + outer_r * cos(135deg), cy + outer_r * sin(135deg)]
-  arc [cx, cy] outer_r 135deg 405deg
-
-# Procedurally Generated Major & Minor Ticks
-for i from 0 to 24
-  set angle = 135deg + i * (270deg / 24)
-  set is_major = (i % 4 == 0)
-  set tick_len = is_major ? 18 : 8
-  
-  line
-    from [cx + inner_r * cos(angle), cy + inner_r * sin(angle)]
-    to   [cx + (inner_r - tick_len) * cos(angle), cy + (inner_r - tick_len) * sin(angle)]
-    stroke is_major ? #ffffff : #666677
-    width is_major ? 3 : 1
-    opacity is_major ? 1.0 : 0.5
-
-# Central Hub
-circle
-  center [cx, cy]
-  radius 18
-  fill #ffffff
-  stroke #00d2ff
-  width 4
-```
-
----
-
-### 4. ⚙️ Gears & Functions (`presets/gears.pvg` — 0.6 KB vs 63.6 KB SVG)
-
-<p align="center">
-  <img src="presets/gears.png" alt="Gears & Functions Preview" width="340"/>
-</p>
-
-*Demonstrates user-defined modular functions (`def`) and procedural trigonometric cogs:*
-
-```pvg
-PVG 0.1
-canvas 600 600
-  background #111116
-
-def draw_gear(gx, gy, teeth, outer_r, inner_r, col)
-  circle
-    center [gx, gy]
-    radius outer_r - 10
-    fill col
-    stroke #ffffff
-    width 2
-
-  for t from 0 to (teeth - 1)
-    set angle = t * (TAU / teeth)
-    set tx = gx + outer_r * cos(angle)
-    set ty = gy + outer_r * sin(angle)
-    circle
-      center [tx, ty]
-      radius 8
-      fill col
-
-  circle
-    center [gx, gy]
-    radius inner_r
-    fill #111116
-    stroke #ffffff
-    width 2
-
-draw_gear(220, 300, 12, 110, 30, #ff5722)
-draw_gear(410, 300, 8, 75, 20, #03a9f4)
-```
-
----
-
-### 5. 🔲 Procedural Grid (`presets/grid.pvg` — 0.5 KB vs 16.9 KB SVG)
-
-<p align="center">
-  <img src="presets/grid.png" alt="Procedural Grid Preview" width="340"/>
-</p>
-
-*Demonstrates nested 2D loops with 64-bit Xorshift pseudorandom numbers and rounded rectangles:*
-
-```pvg
-PVG 0.1
-canvas 600 600
-  background #0b0c10
-
-seed 42
-
-for row from 0 to 7
-  for col from 0 to 7
-    set x = 60 + col * 68
-    set y = 60 + row * 68
-    set r = 10 + random(0, 18)
-    
-    circle
-      center [x, y]
-      radius r
-      fill #66fcf1
-      opacity 0.25 + (col + row) * 0.05
-      stroke #45a29e
-      width 1.5
-
-    rectangle
-      pos [x - 20, y - 20]
-      size [40, 40]
-      radius 4
-      fill none
-      stroke #c5c6c7
-      width 1
-      opacity 0.2
-```
-
----
-
 ## 🏗️ Architecture & Execution Pipeline
 
 ```
@@ -390,10 +255,10 @@ for row from 0 to 7
            ▼ (Procedural Evaluator: Loops, Typography, Trigonometry, Transforms)
 [ Flat 2D Draw List (`DrawList`) ] (~15–35 KB)
            │
-   ┌───────┼─────────────────────────┬─────────────────────────┐
-   ▼       ▼                         ▼                         ▼
-[ egui GUI Painter ]      [ Standalone SVG ]         [ tiny-skia Engine ]      [ <pvg-view> Element ]
-(Screen-Space Adaptive)   (W3C SMIL Animation)       (1x / 2x / 4x PNG)        (Canvas / SVG Web)
+   ┌───────┼─────────────────────────┬─────────────────────────┬─────────────────────────┐
+   ▼       ▼                         ▼                         ▼                         ▼
+[ egui GUI Painter ]      [ Standalone SVG ]         [ tiny-skia Engine ]      [ <pvg-view> Element ]    [ ANativeWindow Android ]
+(Screen-Space Adaptive)   (W3C SMIL Animation)       (1x / 2x / 4x PNG)        (Canvas / SVG Web)        (Pure CPU 60 FPS Direct)
 ```
 
 1. **AST Caching Optimization:** During animated playback (60 FPS), the document is parsed once into an AST (`Document`). Every frame tick re-evaluates the AST with updated `time` values directly into the draw list in **`5–40 µs`**, avoiding string parsing churn.
@@ -425,10 +290,6 @@ cargo run --release --bin pvg_to_svg -- presets/telemetry_card.pvg presets/telem
 
 # 2. Rasterize a single PVG file to 2x PNG
 cargo run --release --bin pvg_to_png -- presets/telemetry_card.pvg presets/telemetry_card.png --scale 2.0
-
-# 3. Batch transpile all presets to SVG & PNG
-cargo run --release --bin pvg_to_svg -- --all
-cargo run --release --bin pvg_to_png -- --all --scale 2.0
 ```
 
 ### 4. Web Studio & `<pvg-view>` Component
@@ -446,16 +307,43 @@ A pure vanilla JS implementation (`docs/pvg_web_gui/pvg.js`) providing a zero-de
       center [200, 200]
       radius 60 + 20 * sin(time * 4)
       fill #00ffcc
-
-    text
-      pos [200, 280]
-      content "PULSING CORE"
-      size 14
-      font "mono"
-      align "center"
-      fill #ffffff
   </script>
 </pvg-view>
+```
+
+### 5. Android Runtime (`pvg-android`)
+
+Add the dependency to your Android app's `build.gradle.kts`:
+
+```kotlin
+dependencies {
+    implementation("io.github.prathameshza:pvg:0.1.0")
+}
+```
+
+#### Jetpack Compose (`PvgView`):
+```kotlin
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.pvg.android.PvgView
+
+@Composable
+fun Beacon() {
+    PvgView(
+        source = """
+            PVG 0.1
+            canvas 400 400
+              background #000000
+            circle
+              center [200, 200]
+              radius 50 + 20 * sin(time * 3)
+              fill #00ffcc
+        """.trimIndent(),
+        modifier = Modifier.size(300.dp)
+    )
+}
 ```
 
 ---
@@ -473,15 +361,6 @@ A pure vanilla JS implementation (`docs/pvg_web_gui/pvg.js`) providing a zero-de
 | **`dial.pvg`** | Preset | 29 | **142.49 µs** | 158.50 µs | 47.68 KB | 95.25 KB | 7,018 ops/s | ✅ **PASS** |
 | **`spiral.pvg`** | Preset | 61 | **164.63 µs** | 183.80 µs | 20.08 KB | 50.98 KB | 6,074 ops/s | ✅ **PASS** |
 | **`grid.pvg`** | Preset | 128 | **173.14 µs** | 242.60 µs | 30.27 KB | 69.40 KB | 5,776 ops/s | ✅ **PASS** |
-| **`stress_complex_paths`** | Stress | 20 | **349.45 µs** | 438.40 µs | 164.19 KB | 306.92 KB | 2,862 ops/s | ⚠️ **STRESS** |
-| **`stress_nested_transforms`**| Stress | 2,000 | **1486.08 µs** | 1805.80 µs | 343.50 KB | 468.18 KB | 673 ops/s | ⚠️ **STRESS** |
-| **`stress_math_and_trig`** | Stress | 1,500 | **4611.10 µs** | 5878.60 µs | 344.62 KB | 1183.73 KB | 217 ops/s | ⚠️ **STRESS** |
-| **`stress_10k_primitives`** | Stress | 10,000 | **9941.07 µs** | 11530.20 µs | 2695.21 KB | 5045.38 KB | 101 ops/s | ⚠️ **STRESS** |
-
-```bash
-# Run the full benchmark suite
-cargo run --release --bin pvg_benchmark -- --detailed
-```
 
 ---
 
@@ -489,20 +368,18 @@ cargo run --release --bin pvg_benchmark -- --detailed
 
 ### Prerequisites
 - [Rust toolchain](https://rustup.rs/) (edition 2021 or newer)
+- [Android Studio](https://developer.android.com/studio) (for Android AAR compilation)
 
 ```bash
 # 1. Clone the repository
 git clone https://github.com/prathameshza/pvg.git
 cd pvg
 
-# 2. Launch the Desktop IDE
+# 2. Run all Rust core tests
+cargo test --workspace
+
+# 3. Launch Desktop Studio IDE
 cargo run --release -p pvg_win_gui
-
-# 3. Transpile all presets to SVG
-cargo run --release --bin pvg_to_svg -- --all
-
-# 4. Transpile all presets to 2x PNG
-cargo run --release --bin pvg_to_png -- --all --scale 2.0
 ```
 
 ---

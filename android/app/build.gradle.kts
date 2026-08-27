@@ -1,32 +1,21 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
 android {
     namespace = "com.pvg.pvg"
-    compileSdk = 37
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.pvg.pvg"
         minSdk = 28
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        
-        ndk {
-            abiFilters.clear()
-            // Native x86_64 for Android Studio PC Emulator + arm64-v8a for physical devices
-            abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
-        }
-    }
-
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDirs("src/main/jniLibs")
-        }
     }
 
     buildTypes {
@@ -49,7 +38,13 @@ android {
     }
 }
 
+kotlin {
+    jvmToolchain(11)
+}
+
 dependencies {
+    implementation(project(":pvg-android"))
+
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
@@ -58,6 +53,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
