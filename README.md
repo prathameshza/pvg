@@ -1,6 +1,7 @@
 # ⚡ PVG — Procedural Vector Graphics
 
 [![Language: Rust](https://img.shields.io/badge/Language-Rust_2021-orange.svg?style=flat-square&logo=rust)](https://www.rust-lang.org/)
+[![npm](https://img.shields.io/npm/v/pvgview.svg?style=flat-square&color=00d2ff&logo=npm)](https://www.npmjs.com/package/pvgview)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.prathameshza/pvg.svg?style=flat-square&color=00d2ff&logo=android)](https://central.sonatype.com/artifact/io.github.prathameshza/pvg)
 [![Frame Latency](https://img.shields.io/badge/Frame_Eval-<0.04_ms-brightgreen.svg?style=flat-square)](#-benchmark-telemetry)
 [![Memory Footprint](https://img.shields.io/badge/Peak_Heap-<50_KB-blueviolet.svg?style=flat-square)](#-benchmark-telemetry)
@@ -344,6 +345,12 @@ fun Beacon() {
         modifier = Modifier.size(300.dp)
     )
 }
+```
+
+### 6. Web Package - pvgview
+
+```
+npm install pvgview
 ```
 
 ---

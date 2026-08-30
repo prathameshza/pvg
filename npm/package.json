@@ -1,0 +1,64 @@
+{
+  "name": "pvgview",
+  "version": "0.1.0",
+  "description": "Deterministic Procedural Vector Graphics (PVG) Engine with microsecond evaluation and <pvg-view> Web Component",
+  "author": "Prathamesh",
+  "license": "Apache-2.0",
+  "homepage": "https://prathameshza.github.io/pvg/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/prathameshza/pvg.git"
+  },
+  "keywords": [
+    "pvg",
+    "pvgview",
+    "vector-graphics",
+    "svg",
+    "procedural",
+    "canvas",
+    "web-component",
+    "pvg-view",
+    "graphics",
+    "animation",
+    "rendering",
+    "generative-art",
+    "hud"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "unpkg": "./dist/index.global.js",
+  "jsdelivr": "./dist/index.global.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./component": {
+      "types": "./dist/component.d.ts",
+      "import": "./dist/component.js",
+      "require": "./dist/component.cjs",
+      "default": "./dist/component.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test test/**/*.test.js test/**/*.test.cjs",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.3"
+  }
+}

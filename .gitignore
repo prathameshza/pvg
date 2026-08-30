@@ -9,6 +9,8 @@
 
 # Android build artifacts
 android/pvg-android/build/
+npm/node_modules
+npm/dist
 
 # IDE / Editor
 .vscode/
@@ -25,3 +27,6 @@ Desktop.ini
 # Logs and temp files
 *.log
 *.tmp
+
+# Zips
+*.tgz
