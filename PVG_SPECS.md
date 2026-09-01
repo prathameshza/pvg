@@ -680,12 +680,3 @@ path
   line  [cx - px, cy - py]
   close
 ```
-
-
-
-give me this in a single line
-
-
-
-
-npm publish --access public
