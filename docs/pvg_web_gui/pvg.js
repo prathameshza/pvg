@@ -2103,6 +2103,59 @@ class PvgView extends HTMLElement {
           overflow: auto;
           z-index: 10;
           display: none;
+          user-select: text;
+          cursor: text;
+        }
+        .err-msg {
+          user-select: text;
+          cursor: text;
+        }
+        .err-copy-btn {
+          position: sticky;
+          top: 0;
+          float: right;
+          margin-left: 8px;
+          background: rgba(255, 71, 102, 0.15);
+          border: 1px solid #ff4766;
+          color: #ff8ba0;
+          border-radius: 4px;
+          padding: 3px 8px;
+          font-size: 11px;
+          font-family: system-ui, -apple-system, sans-serif;
+          cursor: pointer;
+          z-index: 11;
+        }
+        .err-copy-btn:hover {
+          background: rgba(255, 71, 102, 0.35);
+          color: #fff;
+        }
+        .err-hint {
+          color: #8a8fa3;
+          font-family: system-ui, -apple-system, sans-serif;
+          font-size: 10px;
+          margin-top: 8px;
+          user-select: none;
+        }
+        .err-toast {
+          position: absolute;
+          left: 50%;
+          bottom: 16px;
+          transform: translateX(-50%) translateY(8px);
+          background: #0e7a4f;
+          color: #fff;
+          font-family: system-ui, -apple-system, sans-serif;
+          font-size: 12px;
+          padding: 6px 12px;
+          border-radius: 6px;
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.2s, transform 0.2s;
+          z-index: 12;
+          white-space: nowrap;
+        }
+        .err-toast.show {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
         }
         .overlay-loading {
           position: absolute;
@@ -2119,13 +2172,32 @@ class PvgView extends HTMLElement {
       </style>
       <div class="pvg-viewport" part="viewport">
         <div class="overlay-loading" part="loading">Loading PVG...</div>
-        <div class="overlay-error" part="error"></div>
+        <div class="overlay-error" part="error" title="Click to copy error">
+          <button class="err-copy-btn" part="error-copy-btn" title="Copy error to clipboard">📋 Copy</button>
+          <div class="err-msg" part="error-msg"></div>
+          <div class="err-hint">Click error text or Copy button to copy to clipboard</div>
+          <div class="err-toast" part="error-toast">✓ Error copied to clipboard</div>
+        </div>
       </div>
     `;
 
     this._viewport = this.shadowRoot.querySelector('.pvg-viewport');
     this._errorOverlay = this.shadowRoot.querySelector('.overlay-error');
+    this._errorMsg = this.shadowRoot.querySelector('.err-msg');
+    this._errorCopyBtn = this.shadowRoot.querySelector('.err-copy-btn');
+    this._errorToast = this.shadowRoot.querySelector('.err-toast');
+    this._lastError = '';
+    this._errToastTimer = null;
     this._loadingOverlay = this.shadowRoot.querySelector('.overlay-loading');
+
+    this._copyErrorToClipboard = this._copyErrorToClipboard.bind(this);
+    this._errorOverlay.addEventListener('click', (e) => {
+      // Copy on button click or on error-text click (but allow normal text selection via dbl-click/drag:
+      // if user has an active text selection, don't hijack the click).
+      const sel = this.shadowRoot.getSelection ? this.shadowRoot.getSelection() : window.getSelection();
+      if (sel && String(sel).length > 0 && e.target !== this._errorCopyBtn) return;
+      this._copyErrorToClipboard();
+    });
     this._canvas = null;
     this._ctx = null;
 
@@ -2503,12 +2575,57 @@ class PvgView extends HTMLElement {
   }
 
   _showError(msg) {
-    this._errorOverlay.textContent = `⚡ PVG Execution Error:\n${msg}`;
+    this._lastError = `⚡ PVG Execution Error:\n${msg}`;
+    // Keep textContent in sync for backwards-compat / query purposes.
+    this._errorOverlay.setAttribute('data-error', this._lastError);
+    if (this._errorMsg) {
+      this._errorMsg.textContent = this._lastError;
+    } else {
+      this._errorOverlay.textContent = this._lastError;
+    }
     this._errorOverlay.style.display = 'block';
   }
 
   _hideError() {
     this._errorOverlay.style.display = 'none';
+  }
+
+  _flashErrorToast(message) {
+    if (!this._errorToast) return;
+    this._errorToast.textContent = message;
+    this._errorToast.classList.add('show');
+    if (this._errToastTimer) clearTimeout(this._errToastTimer);
+    this._errToastTimer = setTimeout(() => {
+      if (this._errorToast) this._errorToast.classList.remove('show');
+    }, 2000);
+  }
+
+  async _copyErrorToClipboard() {
+    const text = this._lastError || (this._errorMsg ? this._errorMsg.textContent : this._errorOverlay.textContent) || '';
+    if (!text) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for file:// or non-secure contexts.
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      this._flashErrorToast('✓ Error copied to clipboard');
+      if (this._errorCopyBtn) {
+        const orig = this._errorCopyBtn.textContent;
+        this._errorCopyBtn.textContent = '✓ Copied!';
+        setTimeout(() => { if (this._errorCopyBtn) this._errorCopyBtn.textContent = orig; }, 2000);
+      }
+    } catch (err) {
+      this._flashErrorToast('✗ Copy failed — select & press Ctrl+C');
+    }
   }
 
   // Interactive Viewport Events

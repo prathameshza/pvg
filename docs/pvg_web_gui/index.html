@@ -120,6 +120,9 @@
     </div>
   </footer>
 
+  <!-- Toast Notifications -->
+  <div id="toast-container" aria-live="polite"></div>
+
   <!-- Embed Modal -->
   <div class="modal-backdrop" id="modal-embed">
     <div class="modal-dialog">
@@ -208,11 +211,10 @@
       function updateLineNumbers() {
         const lines = editor.value.split('\n');
         lblLines.textContent = `Lines: ${lines.length}`;
-        let lineNums = '';
-        for (let i = 1; i <= lines.length; i++) {
-          lineNums += `${i}\n`;
-        }
+        const lineNums = lines.map((_, i) => i + 1).join('\n');
         lineNumbers.textContent = lineNums;
+        // Keep gutter scroll in sync after content change
+        lineNumbers.scrollTop = editor.scrollTop;
       }
 
       function updateCursorInfo() {
@@ -228,19 +230,78 @@
       }
 
       // Sync Viewport Events to Status Bar
+      let lastErrorText = '';
+
       mainView.addEventListener('render', (e) => {
         const { drawList, renderTimeMs } = e.detail;
+        lastErrorText = '';
         lblStatus.className = 'status-pill success';
         lblStatus.textContent = `✓ Rendered ${drawList.items.length} primitives in ${renderTimeMs.toFixed(3)} ms`;
+        lblStatus.title = '';
       });
 
       mainView.addEventListener('timeupdate', (e) => {
         lblTime.textContent = `${e.detail.time.toFixed(2)}s`;
       });
 
+      function showToast(message, type = 'success') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+        // Animate in
+        requestAnimationFrame(() => toast.classList.add('show'));
+        setTimeout(() => {
+          toast.classList.remove('show');
+          setTimeout(() => toast.remove(), 300);
+        }, 2200);
+      }
+
+      async function copyTextToClipboard(text) {
+        if (!text) return false;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            // Fallback for file:// or non-secure contexts
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');
+            ta.remove();
+            if (!ok) throw new Error('execCommand copy failed');
+          }
+          return true;
+        } catch (err) {
+          // Last-resort: prompt user to copy manually
+          try {
+            window.prompt('Copy error (Ctrl+C, Enter):', text);
+          } catch (_) { /* ignore */ }
+          return false;
+        }
+      }
+
+      async function copyLastError() {
+        if (!lastErrorText) return;
+        const ok = await copyTextToClipboard(lastErrorText);
+        if (ok) showToast('✓ Error copied to clipboard', 'success');
+      }
+
+      // Make status-bar error clickable (copy on click)
+      lblStatus.title = 'Click to copy error to clipboard';
+      lblStatus.addEventListener('click', () => {
+        if (lblStatus.classList.contains('error')) copyLastError();
+      });
+
       mainView.addEventListener('error', (e) => {
-        lblStatus.className = 'status-pill error';
-        lblStatus.textContent = `✗ ${e.detail.error}`;
+        lastErrorText = String(e.detail.error || '');
+        lblStatus.className = 'status-pill error copyable';
+        lblStatus.textContent = `✗ ${e.detail.error}  📋`;
+        lblStatus.title = 'Click to copy error to clipboard';
       });
 
       // Event Listeners

@@ -207,6 +207,8 @@ select:focus {
 
 #line-numbers {
   width: 44px;
+  min-width: 44px;
+  flex-shrink: 0;
   height: 100%;
   background-color: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
@@ -218,6 +220,7 @@ select:focus {
   padding: 10px 8px 10px 0;
   user-select: none;
   overflow: hidden;
+  white-space: pre;
 }
 
 #code-editor {
@@ -330,6 +333,60 @@ pvg-view#main-pvg-view {
 
 .status-pill.error {
   color: var(--accent-red);
+}
+
+.status-pill.error.copyable {
+  cursor: pointer;
+  border-bottom: 1px dotted var(--accent-red);
+}
+
+.status-pill.error.copyable:hover {
+  background-color: rgba(255, 51, 85, 0.15);
+  border-radius: 4px;
+}
+
+/* Toast Notifications */
+#toast-container {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 2000;
+  pointer-events: none;
+}
+
+.toast {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.25s, transform 0.25s;
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: 90vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.toast-success {
+  background-color: #0e7a4f;
+  border-color: var(--accent-green);
+  color: #ffffff;
 }
 
 .status-pill.info {
