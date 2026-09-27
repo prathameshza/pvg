@@ -2615,11 +2615,11 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "pvg"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "pvg_android"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "jni 0.21.1",
  "pvg",
@@ -2628,7 +2628,7 @@ dependencies = [
 
 [[package]]
 name = "pvg_benchmark"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "pvg",
  "tiny-skia",
@@ -2636,7 +2636,7 @@ dependencies = [
 
 [[package]]
 name = "pvg_transpilers"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "pvg",
  "tiny-skia",
@@ -2644,7 +2644,7 @@ dependencies = [
 
 [[package]]
 name = "pvg_win_gui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "eframe",
  "pvg",

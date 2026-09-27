@@ -14,6 +14,7 @@ use rasterizer::rasterize_draw_list_into_pixmap_mut;
 use sys_monitor::SystemMonitor;
 use tiny_skia::PixmapMut;
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -48,6 +49,10 @@ struct PvgEngineState {
     last_raster_us: f64,
     last_fps: f64,
     primitive_count: usize,
+
+    /// Host uniform overrides for declared `param` declarations (§18.1).
+    /// Applied on every evaluate; values win over the document defaults.
+    params: HashMap<String, f64>,
 }
 
 unsafe impl Send for PvgEngineState {}
@@ -97,6 +102,7 @@ impl PvgEngine {
             last_raster_us: 0.0,
             last_fps: 60.0,
             primitive_count: 0,
+            params: HashMap::new(),
         }));
 
         let running = Arc::new(AtomicBool::new(true));
@@ -208,9 +214,13 @@ impl PvgEngine {
 
     /// Renders directly into ANativeWindow buffer using PixmapMut zero-copy mapping
     fn render_frame_direct(state_arc: &Arc<Mutex<PvgEngineState>>, time: f64) -> (f64, f64, f64, f64) {
-        let (window, doc_opt) = {
+        let (window, doc_opt, params) = {
             let s = state_arc.lock().unwrap();
-            (s.window, s.cached_doc.clone())
+            (
+                s.window,
+                s.cached_doc.clone(),
+                s.params.clone(),
+            )
         };
 
         if window.is_null() {
@@ -222,9 +232,12 @@ impl PvgEngine {
             None => return (0.0, 0.0, 0.0, 0.0),
         };
 
-        // Phase 1: Procedural AST Evaluation
+        // Phase 1: Procedural AST Evaluation (host uniforms override defaults).
         let eval_t0 = Instant::now();
-        let evaluator = Evaluator::new_with_time(time);
+        let mut evaluator = Evaluator::new_with_time(time);
+        for (k, v) in &params {
+            evaluator.set_param(k.clone(), pvg::eval::Value::Number(*v));
+        }
         let draw_list: DrawList = match evaluator.evaluate_document(&doc) {
             Ok(dl) => dl,
             Err(_) => return (0.0, 0.0, 0.0, 0.0),
@@ -329,6 +342,31 @@ impl PvgEngine {
         if let Ok(mut s) = self.state.lock() {
             s.speed = speed;
         }
+    }
+
+    /// Sets a host uniform (`param`, §18.1) for the next evaluated frame.
+    pub fn set_param(&self, name: String, value: f64) {
+        if let Ok(mut s) = self.state.lock() {
+            s.params.insert(name.clone(), value);
+        }
+        self.needs_render.store(true, Ordering::Relaxed);
+    }
+
+    /// Removes a host uniform override so the document default applies again.
+    pub fn clear_param(&self, name: &str) {
+        if let Ok(mut s) = self.state.lock() {
+            s.params.remove(name);
+        }
+        self.needs_render.store(true, Ordering::Relaxed);
+    }
+
+    /// Declared host uniform names for the current source.
+    pub fn param_names(&self) -> Vec<String> {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|s| s.cached_doc.as_ref().map(|d| d.param_names().iter().map(|n| n.to_string()).collect()))
+            .unwrap_or_default()
     }
 
     pub fn on_surface_created(&self, window: *mut ANativeWindow) {
@@ -477,6 +515,77 @@ pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetSpeed(
     if handle != 0 {
         let engine = unsafe { &*(handle as *const PvgEngine) };
         engine.set_speed(speed);
+    }
+}
+
+/// Sets a declared `param` (host uniform, §18.1) for the running scene.
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetParam(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    name: JString,
+    value: jdouble,
+) {
+    if handle != 0 {
+        let engine = unsafe { &*(handle as *const PvgEngine) };
+        if let Ok(n) = env.get_string(&name) {
+            let name_str: String = n.into();
+            engine.set_param(name_str, value);
+        }
+    }
+}
+
+/// Clears a host uniform override so the document default applies again.
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeClearParam(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    name: JString,
+) {
+    if handle != 0 {
+        let engine = unsafe { &*(handle as *const PvgEngine) };
+        if let Ok(n) = env.get_string(&name) {
+            let name_str: String = n.into();
+            engine.clear_param(&name_str);
+        }
+    }
+}
+
+/// Returns the declared `param` names for the current source (null on error).
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeGetParamNames(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jni::sys::jobjectArray {
+    let names: Vec<String> = if handle != 0 {
+        let engine = unsafe { &*(handle as *const PvgEngine) };
+        engine.param_names()
+    } else {
+        Vec::new()
+    };
+
+    let string_class = match env.find_class("java/lang/String") {
+        Ok(c) => c,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let initial = JObject::null();
+    match env.new_object_array(
+        names.len() as jni::sys::jsize,
+        &string_class,
+        &initial,
+    ) {
+        Ok(arr) => {
+            for (i, n) in names.iter().enumerate() {
+                if let Ok(s) = env.new_string(n) {
+                    let _ = env.set_object_array_element(&arr, i as jni::sys::jsize, &s);
+                }
+            }
+            arr.into_raw()
+        }
+        Err(_) => std::ptr::null_mut(),
     }
 }
 

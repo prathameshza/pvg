@@ -22,7 +22,8 @@ fun PvgView(
     controller: PvgController? = null,
     isPlaying: Boolean = true,
     speed: Double = 1.0,
-    time: Double = 0.0
+    time: Double = 0.0,
+    params: Map<String, Double> = emptyMap()
 ) {
     val activeController = controller ?: rememberPvgController(
         source = source,
@@ -44,6 +45,14 @@ fun PvgView(
 
     LaunchedEffect(time) {
         activeController.seekTo(time)
+    }
+
+    // Host uniforms (PVG 0.2 section 18.1): each entry overrides a `param`
+    // declared by the document for every subsequent frame.
+    LaunchedEffect(params) {
+        for ((k, v) in params) {
+            activeController.setParam(k, v)
+        }
     }
 
     AndroidView(

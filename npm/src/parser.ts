@@ -1,6 +1,38 @@
-import { Token, TokenKind } from "./lexer.js";
-import type { Document, Expr, PathCommandAst, Stmt } from "./types.js";
+import { Token, TokenKind, softIdentKind } from "./lexer.js";
+import type {
+  Document,
+  Expr,
+  GlowExpr,
+  GradientStopExpr,
+  ParamDecl,
+  PathCommandAst,
+  PatternDef,
+  PixelFilter,
+  ShadowExpr,
+  ShapeFx,
+  SplineFx,
+  Stmt,
+} from "./types.js";
 import { PvgColor } from "./color.js";
+
+function emptyFx(): ShapeFx {
+  return {
+    cap: null,
+    join: null,
+    miter: null,
+    dash: null,
+    align: null,
+    blur: null,
+    shadow: null,
+    glow: null,
+    blend: null,
+  };
+}
+
+/** Spline FX surface: the `ShapeFx` subset a `spline` accepts (no `align`). */
+function emptySplineFx(): SplineFx {
+  return { cap: null, join: null, miter: null, dash: null, blur: null, shadow: null, glow: null, blend: null };
+}
 
 export class Parser {
   private tokens: Token[];
@@ -75,25 +107,58 @@ export class Parser {
     const height = hTok.value;
 
     let background: PvgColor | null = null;
+    let snap = 0;
+    let pixelFilter: PixelFilter = "linear";
     if (this.match(TokenKind.Newline) && this.match(TokenKind.Indent)) {
-      if (this.match(TokenKind.Background)) {
-        const bgTok = this.advance();
-        if (bgTok.kind === TokenKind.Color && bgTok.value instanceof PvgColor) {
-          background = bgTok.value;
-        } else {
-          throw new Error(`Line ${bgTok.line}: Expected color for canvas background`);
+      while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
+        if (this.peek().kind === TokenKind.Newline) {
+          this.advance();
+          continue;
         }
+        if (this.match(TokenKind.Background)) {
+          const bgTok = this.advance();
+          if (bgTok.kind === TokenKind.Color && bgTok.value instanceof PvgColor) {
+            background = bgTok.value;
+          } else {
+            throw new Error(`Line ${bgTok.line}: Expected color for canvas background`);
+          }
+        } else if (this.match(TokenKind.Snap)) {
+          const sTok = this.advance();
+          if (sTok.kind !== TokenKind.Number || typeof sTok.value !== "number") {
+            throw new Error(`Line ${sTok.line}: Expected number for canvas snap grid`);
+          }
+          snap = Math.max(0, sTok.value);
+        } else if (this.match(TokenKind.Filter)) {
+          const fTok = this.advance();
+          const name = typeof fTok.value === "string" ? fTok.value.toLowerCase() : "";
+          pixelFilter = name === "nearest" ? "nearest" : "linear";
+        } else {
+          throw new Error(`Line ${this.peek().line}: Invalid canvas property '${this.peek().kind}'`);
+        }
+        this.skipNewlines();
       }
-      this.skipNewlines();
       this.match(TokenKind.Dedent);
     }
     this.skipNewlines();
 
-    // 3. Statements
+    // 3. Top-level declarations: host uniforms (`param`) and tiles (`pattern`),
+    //    then the statement body (order matters for host-param display).
+    const params: ParamDecl[] = [];
+    const patterns: PatternDef[] = [];
     const statements: Stmt[] = [];
     while (this.peek().kind !== TokenKind.Eof) {
       if (this.peek().kind === TokenKind.Newline) {
         this.advance();
+        continue;
+      }
+      if (this.peek().kind === TokenKind.Param) {
+        params.push(this.parseParamDecl());
+        this.skipNewlines();
+        continue;
+      }
+      if (this.peek().kind === TokenKind.Pattern) {
+        patterns.push(this.parsePatternDef());
+        this.skipNewlines();
         continue;
       }
       statements.push(this.parseStatement());
@@ -102,9 +167,49 @@ export class Parser {
 
     return {
       version,
-      canvas: { width, height, background },
+      canvas: { width, height, background, snap, pixelFilter },
+      params,
+      patterns,
       statements,
     };
+  }
+
+  /** `param <name> : <expr>` or `param <name> = <expr>` (§18.1). */
+  private parseParamDecl(): ParamDecl {
+    this.expect(TokenKind.Param);
+    const nameTok = this.advance();
+    const name = softIdentKind(nameTok.kind, nameTok.value);
+    if (name === null) {
+      throw new Error(`Line ${nameTok.line}: Expected param name, found '${nameTok.kind}'`);
+    }
+    if (!(this.match(TokenKind.Colon) || this.match(TokenKind.Equal))) {
+      throw new Error(`Line ${this.peek().line}: Expected ':' or '=' after param name (e.g. \`param health: 0.75\`)`);
+    }
+    const def = this.parseExpression();
+    return { name, default: def };
+  }
+
+  /** `pattern <name> <w> <h>` + indented body block (§18.4). */
+  private parsePatternDef(): PatternDef {
+    this.expect(TokenKind.Pattern);
+    const nameTok = this.advance();
+    const name = softIdentKind(nameTok.kind, nameTok.value);
+    if (name === null) {
+      throw new Error(`Line ${nameTok.line}: Expected pattern name, found '${nameTok.kind}'`);
+    }
+    const wTok = this.advance();
+    const hTok = this.advance();
+    if (
+      wTok.kind !== TokenKind.Number ||
+      hTok.kind !== TokenKind.Number ||
+      typeof wTok.value !== "number" ||
+      typeof hTok.value !== "number"
+    ) {
+      throw new Error(`Line ${wTok.line}: Expected pattern tile width and height numbers`);
+    }
+    this.skipNewlines();
+    const body = this.parseBlock();
+    return { name, width: wTok.value, height: hTok.value, body };
   }
 
   private parseStatement(): Stmt {
@@ -114,12 +219,13 @@ export class Parser {
       case TokenKind.Set: {
         this.advance();
         const nameTok = this.advance();
-        if (nameTok.kind !== TokenKind.Ident || typeof nameTok.value !== "string") {
+        const name = softIdentKind(nameTok.kind, nameTok.value);
+        if (name === null) {
           throw new Error(`Line ${tok.line}: Expected identifier name after 'set'`);
         }
         this.expect(TokenKind.Equal);
         const expr = this.parseExpression();
-        return { type: "Set", name: nameTok.value, expr };
+        return { type: "Set", name, expr };
       }
       case TokenKind.Seed: {
         this.advance();
@@ -134,7 +240,8 @@ export class Parser {
       case TokenKind.Def: {
         this.advance();
         const nameTok = this.advance();
-        if (nameTok.kind !== TokenKind.Ident || typeof nameTok.value !== "string") {
+        const fnName = softIdentKind(nameTok.kind, nameTok.value);
+        if (fnName === null) {
           throw new Error(`Line ${tok.line}: Expected function name`);
         }
         this.expect(TokenKind.LParen);
@@ -142,8 +249,9 @@ export class Parser {
         if (this.peek().kind !== TokenKind.RParen) {
           while (true) {
             const pTok = this.advance();
-            if (pTok.kind === TokenKind.Ident && typeof pTok.value === "string") {
-              params.push(pTok.value);
+            const pName = softIdentKind(pTok.kind, pTok.value);
+            if (pName !== null) {
+              params.push(pName);
             }
             if (this.peek().kind === TokenKind.Comma) {
               this.advance();
@@ -155,12 +263,13 @@ export class Parser {
         this.expect(TokenKind.RParen);
         this.skipNewlines();
         const body = this.parseBlock();
-        return { type: "Def", name: nameTok.value, params, body };
+        return { type: "Def", name: fnName, params, body };
       }
       case TokenKind.For: {
         this.advance();
         const varTok = this.advance();
-        if (varTok.kind !== TokenKind.Ident || typeof varTok.value !== "string") {
+        const varName = softIdentKind(varTok.kind, varTok.value);
+        if (varName === null) {
           throw new Error(`Line ${tok.line}: Expected loop variable`);
         }
         this.expect(TokenKind.From);
@@ -173,7 +282,7 @@ export class Parser {
         }
         this.skipNewlines();
         const body = this.parseBlock();
-        return { type: "For", var: varTok.value, from, to, step, body };
+        return { type: "For", var: varName, from, to, step, body };
       }
       case TokenKind.While: {
         this.advance();
@@ -236,10 +345,23 @@ export class Parser {
         this.advance();
         this.skipNewlines();
         return this.parseGroup();
-      case TokenKind.Ident: {
-        const name = tok.value as string;
+      case TokenKind.Clip:
         this.advance();
-        if (this.match(TokenKind.LParen)) {
+        this.skipNewlines();
+        return this.parseClip();
+      case TokenKind.Sprite:
+        this.advance();
+        this.skipNewlines();
+        return this.parseSprite();
+      case TokenKind.Spline:
+        this.advance();
+        this.skipNewlines();
+        return this.parseSpline();
+      default: {
+        const softName = softIdentKind(tok.kind, tok.value);
+        if (softName !== null && this.tokens[this.pos + 1]?.kind === TokenKind.LParen) {
+          this.advance();
+          this.expect(TokenKind.LParen);
           const args: Expr[] = [];
           if (this.peek().kind !== TokenKind.RParen) {
             while (true) {
@@ -252,12 +374,10 @@ export class Parser {
             }
           }
           this.expect(TokenKind.RParen);
-          return { type: "Call", name, args };
+          return { type: "Call", name: softName, args };
         }
-        throw new Error(`Line ${tok.line}: Unexpected identifier in statement position '${name}'`);
-      }
-      default:
         throw new Error(`Line ${tok.line}: Unexpected statement token '${tok.kind}'`);
+      }
     }
   }
 
@@ -276,6 +396,116 @@ export class Parser {
     return statements;
   }
 
+  // ---- PVG 0.2 paint & FX helpers (mirror Rust parse_paint_expr) ----
+  private parsePaintExpr(): Expr {
+    if (this.peek().kind === TokenKind.Linear) {
+      this.advance();
+      const start = this.parseExpression();
+      const end = this.parseExpression();
+      const stops = this.tryParseGradientStops();
+      return { type: "Linear", start, end, stops };
+    }
+    if (this.peek().kind === TokenKind.Radial) {
+      this.advance();
+      const center = this.parseExpression();
+      const radius = this.parseExpression();
+      let focal: Expr | null = null;
+      if (this.peek().kind === TokenKind.LBracket) {
+        focal = this.parseExpression();
+      }
+      const stops = this.tryParseGradientStops();
+      return { type: "Radial", center, radius, focal, stops };
+    }
+    if (this.peek().kind === TokenKind.Angular) {
+      this.advance();
+      const center = this.parseExpression();
+      const startAngle = this.parseExpression();
+      const stops = this.tryParseGradientStops();
+      return { type: "Angular", center, startAngle, stops };
+    }
+    if (this.peek().kind === TokenKind.Pattern) {
+      const after = this.tokens[this.pos + 1];
+      const refName = after ? softIdentKind(after.kind, after.value) : null;
+      if (refName !== null) {
+        this.advance();
+        this.advance();
+        return { type: "Pattern", name: refName };
+      }
+    }
+    return this.parseExpression();
+  }
+  private tryParseGradientStops(): GradientStopExpr[] {
+    if (this.peek().kind !== TokenKind.Newline) return [];
+    // Lookahead: Newline(s) Indent Newline(s) Stop
+    let j = this.pos + 1;
+    while (j < this.tokens.length && this.tokens[j].kind === TokenKind.Newline) j++;
+    if (j >= this.tokens.length || this.tokens[j].kind !== TokenKind.Indent) return [];
+    j++;
+    while (j < this.tokens.length && this.tokens[j].kind === TokenKind.Newline) j++;
+    if (j >= this.tokens.length || this.tokens[j].kind !== TokenKind.Stop) return [];
+    // Commit
+    while (this.peek().kind === TokenKind.Newline) this.advance();
+    this.expect(TokenKind.Indent);
+    const stops: GradientStopExpr[] = [];
+    for (;;) {
+      this.skipNewlines();
+      if (this.peek().kind === TokenKind.Dedent) { this.advance(); break; }
+      if (this.peek().kind === TokenKind.Eof) break;
+      this.expect(TokenKind.Stop);
+      const offset = this.parseExpression();
+      const color = this.parseExpression();
+      stops.push({ type: "GradientStop", offset, color });
+      this.skipNewlines();
+    }
+    return stops;
+  }
+
+  private parseDashArray(): Expr[] {
+    this.expect(TokenKind.LBracket);
+    const items: Expr[] = [];
+    this.skipNewlines();
+    if (this.peek().kind !== TokenKind.RBracket) {
+      for (;;) {
+        items.push(this.parseExpression());
+        if (this.peek().kind === TokenKind.Comma) {
+          this.advance();
+          this.skipNewlines();
+        } else break;
+      }
+    }
+    this.expect(TokenKind.RBracket);
+    return items;
+  }
+
+  private parseShadowExpr(): ShadowExpr {
+    const offset = this.parseExpression();
+    const radius = this.parseExpression();
+    const color = this.parseExpression();
+    return { type: "ShadowExpr", offset, radius, color };
+  }
+
+  private parseGlowExpr(): GlowExpr {
+    const radius = this.parseExpression();
+    const color = this.parseExpression();
+    return { type: "GlowExpr", radius, color };
+  }
+
+  // Consumes one 0.2 style prop if the cursor is on it; returns true when handled.
+  private parseStylePropInto(out: ShapeFx): boolean {
+    switch (this.peek().kind) {
+      case TokenKind.Cap: this.advance(); out.cap = this.parseExpression(); return true;
+      case TokenKind.Join: this.advance(); out.join = this.parseExpression(); return true;
+      case TokenKind.Miter: this.advance(); out.miter = this.parseExpression(); return true;
+      case TokenKind.Dash: this.advance(); out.dash = this.parseDashArray(); return true;
+      case TokenKind.Align: this.advance(); out.align = this.parseExpression(); return true;
+      case TokenKind.Blur: this.advance(); out.blur = this.parseExpression(); return true;
+      case TokenKind.Shadow: this.advance(); out.shadow = this.parseShadowExpr(); return true;
+      case TokenKind.Glow: this.advance(); out.glow = this.parseGlowExpr(); return true;
+      case TokenKind.Blend: this.advance(); out.blend = this.parseExpression(); return true;
+      default: return false;
+    }
+  }
+
   private parseCircle(): Stmt {
     this.expect(TokenKind.Indent);
     let center: Expr | null = null,
@@ -284,24 +514,26 @@ export class Parser {
       stroke: Expr | null = null,
       width: Expr | null = null,
       opacity: Expr | null = null;
+    const fx = emptyFx();
 
     while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
       switch (this.peek().kind) {
         case TokenKind.Center: this.advance(); center = this.parseExpression(); break;
         case TokenKind.Radius: this.advance(); radius = this.parseExpression(); break;
-        case TokenKind.Fill: this.advance(); fill = this.parseExpression(); break;
-        case TokenKind.Stroke: this.advance(); stroke = this.parseExpression(); break;
+        case TokenKind.Fill: this.advance(); fill = this.parsePaintExpr(); break;
+        case TokenKind.Stroke: this.advance(); stroke = this.parsePaintExpr(); break;
         case TokenKind.Width: this.advance(); width = this.parseExpression(); break;
         case TokenKind.Opacity: this.advance(); opacity = this.parseExpression(); break;
         case TokenKind.Newline: this.advance(); break;
         default:
+          if (this.parseStylePropInto(fx)) break;
           throw new Error(`Line ${this.peek().line}: Invalid circle property '${this.peek().kind}'`);
       }
       this.skipNewlines();
     }
     this.expect(TokenKind.Dedent);
     if (!center || !radius) throw new Error("Circle requires 'center [x, y]' and 'radius r'");
-    return { type: "Circle", center, radius, fill, stroke, width, opacity };
+    return { type: "Circle", center, radius, fill, stroke, width, opacity, ...fx };
   }
 
   private parseEllipse(): Stmt {
@@ -312,24 +544,26 @@ export class Parser {
       stroke: Expr | null = null,
       width: Expr | null = null,
       opacity: Expr | null = null;
+    const fx = emptyFx();
 
     while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
       switch (this.peek().kind) {
         case TokenKind.Center: this.advance(); center = this.parseExpression(); break;
         case TokenKind.Radius: this.advance(); radius = this.parseExpression(); break;
-        case TokenKind.Fill: this.advance(); fill = this.parseExpression(); break;
-        case TokenKind.Stroke: this.advance(); stroke = this.parseExpression(); break;
+        case TokenKind.Fill: this.advance(); fill = this.parsePaintExpr(); break;
+        case TokenKind.Stroke: this.advance(); stroke = this.parsePaintExpr(); break;
         case TokenKind.Width: this.advance(); width = this.parseExpression(); break;
         case TokenKind.Opacity: this.advance(); opacity = this.parseExpression(); break;
         case TokenKind.Newline: this.advance(); break;
         default:
+          if (this.parseStylePropInto(fx)) break;
           throw new Error(`Line ${this.peek().line}: Invalid ellipse property '${this.peek().kind}'`);
       }
       this.skipNewlines();
     }
     this.expect(TokenKind.Dedent);
     if (!center || !radius) throw new Error("Ellipse requires 'center [x, y]' and 'radius [rx, ry]'");
-    return { type: "Ellipse", center, radius, fill, stroke, width, opacity };
+    return { type: "Ellipse", center, radius, fill, stroke, width, opacity, ...fx };
   }
 
   private parseRectangle(): Stmt {
@@ -341,25 +575,27 @@ export class Parser {
       stroke: Expr | null = null,
       width: Expr | null = null,
       opacity: Expr | null = null;
+    const fx = emptyFx();
 
     while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
       switch (this.peek().kind) {
         case TokenKind.Pos: this.advance(); pos = this.parseExpression(); break;
         case TokenKind.Size: this.advance(); size = this.parseExpression(); break;
         case TokenKind.Radius: this.advance(); radius = this.parseExpression(); break;
-        case TokenKind.Fill: this.advance(); fill = this.parseExpression(); break;
-        case TokenKind.Stroke: this.advance(); stroke = this.parseExpression(); break;
+        case TokenKind.Fill: this.advance(); fill = this.parsePaintExpr(); break;
+        case TokenKind.Stroke: this.advance(); stroke = this.parsePaintExpr(); break;
         case TokenKind.Width: this.advance(); width = this.parseExpression(); break;
         case TokenKind.Opacity: this.advance(); opacity = this.parseExpression(); break;
         case TokenKind.Newline: this.advance(); break;
         default:
+          if (this.parseStylePropInto(fx)) break;
           throw new Error(`Line ${this.peek().line}: Invalid rectangle property '${this.peek().kind}'`);
       }
       this.skipNewlines();
     }
     this.expect(TokenKind.Dedent);
     if (!pos || !size) throw new Error("Rectangle requires 'pos [x, y]' and 'size [w, h]'");
-    return { type: "Rectangle", pos, size, radius, fill, stroke, width, opacity };
+    return { type: "Rectangle", pos, size, radius, fill, stroke, width, opacity, ...fx };
   }
 
   private parseLine(): Stmt {
@@ -369,23 +605,25 @@ export class Parser {
       stroke: Expr | null = null,
       width: Expr | null = null,
       opacity: Expr | null = null;
+    const fx = emptyFx();
 
     while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
       switch (this.peek().kind) {
         case TokenKind.From: this.advance(); from = this.parseExpression(); break;
         case TokenKind.To: this.advance(); to = this.parseExpression(); break;
-        case TokenKind.Stroke: this.advance(); stroke = this.parseExpression(); break;
+        case TokenKind.Stroke: this.advance(); stroke = this.parsePaintExpr(); break;
         case TokenKind.Width: this.advance(); width = this.parseExpression(); break;
         case TokenKind.Opacity: this.advance(); opacity = this.parseExpression(); break;
         case TokenKind.Newline: this.advance(); break;
         default:
+          if (this.parseStylePropInto(fx)) break;
           throw new Error(`Line ${this.peek().line}: Invalid line property '${this.peek().kind}'`);
       }
       this.skipNewlines();
     }
     this.expect(TokenKind.Dedent);
     if (!from || !to) throw new Error("Line requires 'from [x, y]' and 'to [x, y]'");
-    return { type: "Line", from, to, stroke, width, opacity };
+    return { type: "Line", from, to, stroke, width, opacity, ...fx };
   }
 
   private parsePolygon(): Stmt {
@@ -395,6 +633,7 @@ export class Parser {
       stroke: Expr | null = null,
       width: Expr | null = null,
       opacity: Expr | null = null;
+    const fx = emptyFx();
 
     while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
       switch (this.peek().kind) {
@@ -404,18 +643,19 @@ export class Parser {
             points.push(this.parseExpression());
           }
           break;
-        case TokenKind.Fill: this.advance(); fill = this.parseExpression(); break;
-        case TokenKind.Stroke: this.advance(); stroke = this.parseExpression(); break;
+        case TokenKind.Fill: this.advance(); fill = this.parsePaintExpr(); break;
+        case TokenKind.Stroke: this.advance(); stroke = this.parsePaintExpr(); break;
         case TokenKind.Width: this.advance(); width = this.parseExpression(); break;
         case TokenKind.Opacity: this.advance(); opacity = this.parseExpression(); break;
         case TokenKind.Newline: this.advance(); break;
         default:
+          if (this.parseStylePropInto(fx)) break;
           throw new Error(`Line ${this.peek().line}: Invalid polygon property '${this.peek().kind}'`);
       }
       this.skipNewlines();
     }
     this.expect(TokenKind.Dedent);
-    return { type: "Polygon", points, fill, stroke, width, opacity };
+    return { type: "Polygon", points, fill, stroke, width, opacity, ...fx };
   }
 
   private parsePath(): Stmt {
@@ -424,6 +664,7 @@ export class Parser {
       stroke: Expr | null = null,
       width: Expr | null = null,
       opacity: Expr | null = null;
+    const fx = emptyFx();
     const commands: PathCommandAst[] = [];
 
     while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
@@ -431,13 +672,51 @@ export class Parser {
         case TokenKind.Set: {
           this.advance();
           const nameTok = this.advance();
+          const name = softIdentKind(nameTok.kind, nameTok.value);
+          if (name === null) {
+            throw new Error(`Line ${nameTok.line}: Expected identifier name after 'set'`);
+          }
           this.expect(TokenKind.Equal);
           const expr = this.parseExpression();
-          commands.push({ cmd: "Set", name: nameTok.value as string, expr });
+          commands.push({ cmd: "Set", name, expr });
           break;
         }
-        case TokenKind.Fill: this.advance(); fill = this.parseExpression(); break;
-        case TokenKind.Stroke: this.advance(); stroke = this.parseExpression(); break;
+        // Post-0.2 §18.6: control flow inside a path body shares the path locals
+        // and emits path commands (style props stay in the outer body).
+        case TokenKind.For: {
+          this.advance();
+          const varTok = this.advance();
+          const varName = softIdentKind(varTok.kind, varTok.value);
+          if (varName === null) {
+            throw new Error(`Line ${varTok.line}: Expected loop variable`);
+          }
+          this.expect(TokenKind.From);
+          const from = this.parseExpression();
+          this.expect(TokenKind.To);
+          const to = this.parseExpression();
+          let step: Expr | null = null;
+          if (this.match(TokenKind.Step)) {
+            step = this.parseExpression();
+          }
+          this.skipNewlines();
+          const body = this.parsePathBlock();
+          commands.push({ cmd: "For", varName, from, to, step, body });
+          break;
+        }
+        case TokenKind.While: {
+          this.advance();
+          const cond = this.parseExpression();
+          this.skipNewlines();
+          const body = this.parsePathBlock();
+          commands.push({ cmd: "While", cond, body });
+          break;
+        }
+        case TokenKind.If: {
+          commands.push(this.parsePathIf());
+          break;
+        }
+        case TokenKind.Fill: this.advance(); fill = this.parsePaintExpr(); break;
+        case TokenKind.Stroke: this.advance(); stroke = this.parsePaintExpr(); break;
         case TokenKind.Width: this.advance(); width = this.parseExpression(); break;
         case TokenKind.Opacity: this.advance(); opacity = this.parseExpression(); break;
         case TokenKind.Start: this.advance(); commands.push({ cmd: "Start", pt: this.parseExpression() }); break;
@@ -469,12 +748,244 @@ export class Parser {
         case TokenKind.Close: this.advance(); commands.push({ cmd: "Close" }); break;
         case TokenKind.Newline: this.advance(); break;
         default:
+          if (this.parseStylePropInto(fx)) break;
           throw new Error(`Line ${this.peek().line}: Invalid path property/command '${this.peek().kind}'`);
       }
       this.skipNewlines();
     }
     this.expect(TokenKind.Dedent);
-    return { type: "Path", fill, stroke, width, opacity, commands };
+    return { type: "Path", fill, stroke, width, opacity, commands, ...fx };
+  }
+
+  /**
+   * Post-0.2 §18.6: a `path` sub-block. Accepts only path commands, `set` and
+   * nested control flow — style properties are rejected inside a control block
+   * (they belong to the outer path body), mirroring the Rust parser.
+   */
+  private parsePathBlock(): PathCommandAst[] {
+    this.expect(TokenKind.Indent);
+    const commands: PathCommandAst[] = [];
+    while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
+      if (this.peek().kind === TokenKind.Newline) {
+        this.advance();
+        continue;
+      }
+      commands.push(this.parsePathItem());
+      this.skipNewlines();
+    }
+    this.expect(TokenKind.Dedent);
+    return commands;
+  }
+
+  /** Parses one path-body item (command, `set`, or control flow). */
+  private parsePathItem(): PathCommandAst {
+    const tok = this.peek();
+    switch (tok.kind) {
+      case TokenKind.Set: {
+        this.advance();
+        const nameTok = this.advance();
+        const name = softIdentKind(nameTok.kind, nameTok.value);
+        if (name === null) {
+          throw new Error(`Line ${nameTok.line}: Expected identifier name after 'set'`);
+        }
+        this.expect(TokenKind.Equal);
+        return { cmd: "Set", name, expr: this.parseExpression() };
+      }
+      case TokenKind.Start: this.advance(); return { cmd: "Start", pt: this.parseExpression() };
+      case TokenKind.Line: this.advance(); return { cmd: "Line", pt: this.parseExpression() };
+      case TokenKind.Quad: {
+        this.advance();
+        const cp = this.parseExpression();
+        const ep = this.parseExpression();
+        return { cmd: "Quad", cp, ep };
+      }
+      case TokenKind.Curve: {
+        this.advance();
+        const c1 = this.parseExpression();
+        const c2 = this.parseExpression();
+        const ep = this.parseExpression();
+        return { cmd: "Curve", c1, c2, ep };
+      }
+      case TokenKind.Arc: {
+        this.advance();
+        const center = this.parseExpression();
+        const radius = this.parseExpression();
+        const startAngle = this.parseExpression();
+        const endAngle = this.parseExpression();
+        return { cmd: "Arc", center, radius, startAngle, endAngle };
+      }
+      case TokenKind.Close:
+        this.advance();
+        return { cmd: "Close" };
+      case TokenKind.For: {
+        this.advance();
+        const varTok = this.advance();
+        const varName = softIdentKind(varTok.kind, varTok.value);
+        if (varName === null) {
+          throw new Error(`Line ${varTok.line}: Expected loop variable`);
+        }
+        this.expect(TokenKind.From);
+        const from = this.parseExpression();
+        this.expect(TokenKind.To);
+        const to = this.parseExpression();
+        let step: Expr | null = null;
+        if (this.match(TokenKind.Step)) {
+          step = this.parseExpression();
+        }
+        this.skipNewlines();
+        return { cmd: "For", varName, from, to, step, body: this.parsePathBlock() };
+      }
+      case TokenKind.While: {
+        this.advance();
+        const cond = this.parseExpression();
+        this.skipNewlines();
+        return { cmd: "While", cond, body: this.parsePathBlock() };
+      }
+      case TokenKind.If:
+        return this.parsePathIf();
+      default:
+        throw new Error(
+          `Line ${tok.line}: Invalid path command '${tok.kind}' (style properties belong in the outer path body)`
+        );
+    }
+  }
+
+  /** `if <cond>` / `else` (including `else if`) inside a `path` body. */
+  private parsePathIf(): PathCommandAst {
+    this.expect(TokenKind.If);
+    const cond = this.parseExpression();
+    this.skipNewlines();
+    const thenBody = this.parsePathBlock();
+    let elseBody: PathCommandAst[] = [];
+    this.skipNewlines();
+    if (this.match(TokenKind.Else)) {
+      if (this.peek().kind === TokenKind.If) {
+        elseBody = [this.parsePathIf()];
+      } else {
+        this.skipNewlines();
+        elseBody = this.parsePathBlock();
+      }
+    }
+    return { cmd: "If", cond, thenBody, elseBody };
+  }
+
+  /** `palette [c0, c1, ...]` (§18.3). */
+  private parsePaletteArray(): Expr[] {
+    this.expect(TokenKind.LBracket);
+    const items: Expr[] = [];
+    this.skipNewlines();
+    if (this.peek().kind !== TokenKind.RBracket) {
+      for (;;) {
+        items.push(this.parseExpression());
+        if (this.peek().kind === TokenKind.Comma) {
+          this.advance();
+          this.skipNewlines();
+        } else break;
+      }
+    }
+    this.expect(TokenKind.RBracket);
+    return items;
+  }
+
+  /** §18.3 pixel-art sprite: `pos`, `palette`, repeatable `data`/`row` strings. */
+  private parseSprite(): Stmt {
+    this.expect(TokenKind.Indent);
+    let pos: Expr | null = null;
+    let palette: Expr[] = [];
+    const rows: string[] = [];
+    let scale: Expr | null = null;
+    let opacity: Expr | null = null;
+    let blend: Expr | null = null;
+
+    while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
+      switch (this.peek().kind) {
+        case TokenKind.Pos: this.advance(); pos = this.parseExpression(); break;
+        case TokenKind.Palette: this.advance(); palette = this.parsePaletteArray(); break;
+        case TokenKind.Data:
+        case TokenKind.Row: {
+          this.advance();
+          const strTok = this.advance();
+          if (strTok.kind !== TokenKind.String || typeof strTok.value !== "string") {
+            throw new Error(
+              `Line ${strTok.line}: Expected quoted pixel row after \`data\` (e.g. data "..11.." or a """ block).`
+            );
+          }
+          // One row per literal, or a whole triple-quoted block: split on
+          // newlines and keep non-blank rows.
+          let kept = 0;
+          for (const rawRow of strTok.value.split("\n")) {
+            const row = rawRow.endsWith("\r") ? rawRow.slice(0, -1) : rawRow;
+            if (row.trim().length === 0) continue;
+            rows.push(row);
+            kept++;
+          }
+          if (kept === 0) {
+            throw new Error(`Line ${strTok.line}: Sprite \`data\` block has no pixel rows.`);
+          }
+          break;
+        }
+        case TokenKind.Scale: this.advance(); scale = this.parseExpression(); break;
+        case TokenKind.Opacity: this.advance(); opacity = this.parseExpression(); break;
+        case TokenKind.Blend: this.advance(); blend = this.parseExpression(); break;
+        case TokenKind.Newline: this.advance(); break;
+        default:
+          throw new Error(`Line ${this.peek().line}: Invalid sprite property '${this.peek().kind}'`);
+      }
+      this.skipNewlines();
+    }
+    this.expect(TokenKind.Dedent);
+    if (!pos) throw new Error("Sprite requires 'pos [x, y]'");
+    if (palette.length === 0) throw new Error("Sprite requires 'palette [c0, c1, ...]'.");
+    if (rows.length === 0) throw new Error('Sprite requires at least one `data "..."` row.');
+    return { type: "Sprite", pos, palette, rows, scale, opacity, blend };
+  }
+
+  /** §18.5 Catmull-Rom data spline (stroke-only; no `fill`, no `align`). */
+  private parseSpline(): Stmt {
+    this.expect(TokenKind.Indent);
+    let points: Expr | null = null;
+    let pos: Expr | null = null;
+    let size: Expr | null = null;
+    let stroke: Expr | null = null;
+    let width: Expr | null = null;
+    let opacity: Expr | null = null;
+    const fx = emptyFx();
+
+    while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
+      switch (this.peek().kind) {
+        case TokenKind.Points: this.advance(); points = this.parseExpression(); break;
+        case TokenKind.Pos: this.advance(); pos = this.parseExpression(); break;
+        case TokenKind.Size: this.advance(); size = this.parseExpression(); break;
+        case TokenKind.Stroke: this.advance(); stroke = this.parsePaintExpr(); break;
+        case TokenKind.Width: this.advance(); width = this.parseExpression(); break;
+        case TokenKind.Opacity: this.advance(); opacity = this.parseExpression(); break;
+        case TokenKind.Newline: this.advance(); break;
+        default:
+          // `align` is a text anchor in PVG, so it is not a spline property.
+          if (this.peek().kind !== TokenKind.Align && this.parseStylePropInto(fx)) break;
+          throw new Error(`Line ${this.peek().line}: Invalid spline property '${this.peek().kind}'`);
+      }
+      this.skipNewlines();
+    }
+    this.expect(TokenKind.Dedent);
+    if (!points) throw new Error("Spline requires 'points <array>'");
+    return {
+      type: "Spline",
+      points,
+      pos,
+      size,
+      stroke,
+      width,
+      opacity,
+      cap: fx.cap,
+      join: fx.join,
+      miter: fx.miter,
+      dash: fx.dash,
+      blur: fx.blur,
+      shadow: fx.shadow,
+      glow: fx.glow,
+      blend: fx.blend,
+    };
   }
 
   private parseText(): Stmt {
@@ -488,6 +999,10 @@ export class Parser {
       stroke: Expr | null = null,
       width: Expr | null = null,
       opacity: Expr | null = null;
+    let blur: Expr | null = null,
+      shadow: ShadowExpr | null = null,
+      glow: GlowExpr | null = null,
+      blend: Expr | null = null;
 
     while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
       switch (this.peek().kind) {
@@ -497,10 +1012,15 @@ export class Parser {
         case TokenKind.Size: this.advance(); size = this.parseExpression(); break;
         case TokenKind.Font: this.advance(); font = this.parseExpression(); break;
         case TokenKind.Align: this.advance(); align = this.parseExpression(); break;
-        case TokenKind.Fill: this.advance(); fill = this.parseExpression(); break;
-        case TokenKind.Stroke: this.advance(); stroke = this.parseExpression(); break;
+        case TokenKind.Fill: this.advance(); fill = this.parsePaintExpr(); break;
+        case TokenKind.Stroke: this.advance(); stroke = this.parsePaintExpr(); break;
         case TokenKind.Width: this.advance(); width = this.parseExpression(); break;
         case TokenKind.Opacity: this.advance(); opacity = this.parseExpression(); break;
+        // NOTE: text keeps 0.1 align (anchor); cap/join/miter/dash rejected per spec.
+        case TokenKind.Blur: this.advance(); blur = this.parseExpression(); break;
+        case TokenKind.Shadow: this.advance(); shadow = this.parseShadowExpr(); break;
+        case TokenKind.Glow: this.advance(); glow = this.parseGlowExpr(); break;
+        case TokenKind.Blend: this.advance(); blend = this.parseExpression(); break;
         case TokenKind.Newline: this.advance(); break;
         default:
           throw new Error(`Line ${this.peek().line}: Invalid text property '${this.peek().kind}'`);
@@ -509,7 +1029,7 @@ export class Parser {
     }
     this.expect(TokenKind.Dedent);
     if (!pos || !content) throw new Error("Text requires 'pos [x, y]' and 'content <expr>'");
-    return { type: "Text", pos, content, size, font, align, fill, stroke, width, opacity };
+    return { type: "Text", pos, content, size, font, align, fill, stroke, width, opacity, blur, shadow, glow, blend };
   }
 
   private parseGroup(): Stmt {
@@ -520,6 +1040,10 @@ export class Parser {
       opacity: Expr | null = null,
       fill: Expr | null = null,
       stroke: Expr | null = null;
+    let blend: Expr | null = null,
+      blur: Expr | null = null,
+      shadow: ShadowExpr | null = null,
+      glow: GlowExpr | null = null;
     const body: Stmt[] = [];
 
     while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
@@ -528,8 +1052,12 @@ export class Parser {
         case TokenKind.Rot: this.advance(); rot = this.parseExpression(); break;
         case TokenKind.Scale: this.advance(); scale = this.parseExpression(); break;
         case TokenKind.Opacity: this.advance(); opacity = this.parseExpression(); break;
-        case TokenKind.Fill: this.advance(); fill = this.parseExpression(); break;
-        case TokenKind.Stroke: this.advance(); stroke = this.parseExpression(); break;
+        case TokenKind.Fill: this.advance(); fill = this.parsePaintExpr(); break;
+        case TokenKind.Stroke: this.advance(); stroke = this.parsePaintExpr(); break;
+        case TokenKind.Blend: this.advance(); blend = this.parseExpression(); break;
+        case TokenKind.Blur: this.advance(); blur = this.parseExpression(); break;
+        case TokenKind.Shadow: this.advance(); shadow = this.parseShadowExpr(); break;
+        case TokenKind.Glow: this.advance(); glow = this.parseGlowExpr(); break;
         case TokenKind.Newline: this.advance(); break;
         default:
           body.push(this.parseStatement());
@@ -538,7 +1066,24 @@ export class Parser {
       this.skipNewlines();
     }
     this.expect(TokenKind.Dedent);
-    return { type: "Group", pos, rot, scale, opacity, fill, stroke, body };
+    return { type: "Group", pos, rot, scale, opacity, fill, stroke, body, blend, blur, shadow, glow };
+  }
+
+  private parseClip(): Stmt {
+    this.expect(TokenKind.Indent);
+    const stmts: Stmt[] = [];
+    while (this.peek().kind !== TokenKind.Dedent && this.peek().kind !== TokenKind.Eof) {
+      if (this.peek().kind === TokenKind.Newline) { this.advance(); continue; }
+      stmts.push(this.parseStatement());
+      this.skipNewlines();
+    }
+    this.expect(TokenKind.Dedent);
+    if (stmts.length === 0) throw new Error("clip block requires a mask shape as first statement");
+    const maskType = stmts[0].type;
+    if (!["Circle", "Ellipse", "Rectangle", "Line", "Polygon", "Path", "Text"].includes(maskType)) {
+      throw new Error(`clip mask must be a geometric shape, found '${maskType}'`);
+    }
+    return { type: "Clip", mask: stmts[0], content: stmts.slice(1) };
   }
 
   private parseExpression(): Expr {
@@ -652,19 +1197,42 @@ export class Parser {
       case TokenKind.Color:
         return { type: "Color", value: tok.value as PvgColor };
       case TokenKind.LBracket: {
-        const x = this.parseExpression();
-        this.expect(TokenKind.Comma);
-        const y = this.parseExpression();
+        // Bracket list: exactly 2 scalar elements = Vec2 (back-compat for
+        // positions); any other arity = Array literal. Nested compounds
+        // (`[[10, 10], [90, 90]]`) are arrays. Use `array(a, b)` for an
+        // explicit 2-element data array. Trailing comma allowed (§18.5).
+        const first = this.parseExpression();
+        if (this.peek().kind !== TokenKind.Comma) {
+          this.expect(TokenKind.RBracket);
+          return { type: "Array", items: [first] };
+        }
+        const items: Expr[] = [first];
+        while (this.peek().kind === TokenKind.Comma) {
+          this.advance();
+          if (this.peek().kind === TokenKind.RBracket) break;
+          items.push(this.parseExpression());
+        }
         this.expect(TokenKind.RBracket);
-        return { type: "Vec2", x, y };
+        const isCompound = (e: Expr): boolean => e.type === "Vec2" || e.type === "Array";
+        if (items.length === 2 && !items.some(isCompound)) {
+          const [x, y] = items as [Expr, Expr];
+          return { type: "Vec2", x, y };
+        }
+        return { type: "Array", items };
       }
       case TokenKind.LParen: {
         const expr = this.parseExpression();
         this.expect(TokenKind.RParen);
         return expr;
       }
-      case TokenKind.Ident: {
-        const name = tok.value as string;
+      default: {
+        // Plain identifiers and soft keywords (`row`, `data`, `snap`, ...)
+        // alike: variables, `true`/`false`, and calls (mirrors the Rust
+        // `parse_primary` soft-keyword fallback).
+        const name = softIdentKind(tok.kind, tok.value);
+        if (name === null) {
+          throw new Error(`Line ${tok.line}: Unexpected token in expression '${tok.kind}'`);
+        }
         if (name === "true") return { type: "Bool", value: true };
         if (name === "false") return { type: "Bool", value: false };
 
@@ -685,8 +1253,6 @@ export class Parser {
         }
         return { type: "Ident", name };
       }
-      default:
-        throw new Error(`Line ${tok.line}: Unexpected token in expression '${tok.kind}'`);
     }
   }
 }

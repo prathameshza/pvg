@@ -44,6 +44,31 @@ class PvgEngine(
         }
     }
 
+    /**
+     * Sets a host uniform (`param`, PVG 0.2 spec section 18.1) declared by the
+     * current source. Overrides the document's default value and re-renders the
+     * next frame.
+     */
+    fun setParam(name: String, value: Double) {
+        if (nativeHandle != 0L) {
+            nativeSetParam(nativeHandle, name, value)
+        }
+    }
+
+    /** Clears a host uniform override so the document default applies again. */
+    fun clearParam(name: String) {
+        if (nativeHandle != 0L) {
+            nativeClearParam(nativeHandle, name)
+        }
+    }
+
+    /** Names of the `param` declarations in the current source. */
+    fun paramNames(): List<String> {
+        if (nativeHandle == 0L) return emptyList()
+        val arr = nativeGetParamNames(nativeHandle) ?: return emptyList()
+        return (0 until arr.size()).map { arr.get(it) }
+    }
+
     fun onSurfaceCreated(surface: Surface) {
         if (nativeHandle != 0L) {
             nativeOnSurfaceCreated(nativeHandle, surface)
@@ -121,6 +146,15 @@ class PvgEngine(
 
         @JvmStatic
         private external fun nativeSetSpeed(handle: Long, speed: Double)
+
+        @JvmStatic
+        private external fun nativeSetParam(handle: Long, name: String, value: Double)
+
+        @JvmStatic
+        private external fun nativeClearParam(handle: Long, name: String)
+
+        @JvmStatic
+        private external fun nativeGetParamNames(handle: Long): Array<String>
 
         @JvmStatic
         private external fun nativeOnSurfaceCreated(handle: Long, surface: Surface)

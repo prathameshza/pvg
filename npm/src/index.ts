@@ -1,6 +1,6 @@
-import { dedentCode, Lexer, Token, TokenKind } from "./lexer.js";
+import { dedentCode, Lexer, softIdentKind, Token, TokenKind, tripleOpenerBeforeComment } from "./lexer.js";
 import { Parser } from "./parser.js";
-import { Evaluator } from "./evaluator.js";
+import { Evaluator, pvgNoise2, pvgNoise3, splineToBezier } from "./evaluator.js";
 import { PvgColor } from "./color.js";
 import { Transform2D } from "./transform.js";
 import {
@@ -9,11 +9,13 @@ import {
   escapeXml,
   exportToAnimatedSvgString,
   exportToSvgString,
+  newSvgCtx,
   renderDrawListToCanvas,
 } from "./renderer.js";
 import { PvgView, registerPvgView } from "./component.js";
 import type {
   AnimatedSvgOptions,
+  BlendMode,
   CanvasDecl,
   Document,
   DrawCmd,
@@ -21,11 +23,31 @@ import type {
   DrawPathCommand,
   DrawStyle,
   Expr,
+  Glow,
+  GlowExpr,
+  GradientStop,
+  GradientStopExpr,
+  LineCap,
+  LineJoin,
+  Paint,
+  ParamDecl,
+  PatternDef,
+  PixelFilter,
+  DrawPattern,
   RenderCanvasOptions,
+  Shadow,
+  ShadowExpr,
+  ShapeFx,
+  SplineFx,
+  GroupFx,
+  TextFx,
   Stmt,
+  StrokeAlign,
   TextAlign,
   Vec2,
 } from "./types.js";
+import type { SvgRenderCtx } from "./renderer.js";
+import type { Value } from "./evaluator.js";
 
 /**
  * Parses a PVG source string into an Abstract Syntax Tree (`Document`).
@@ -75,9 +97,103 @@ export function evaluate(doc: Document, time = 0.0): DrawList {
  * @param time Elapsed time in seconds (default: 0.0)
  * @returns Evaluated 2D DrawList
  */
-export function compile(source: string, time = 0.0): DrawList {
+export function compile(
+  source: string,
+  time = 0.0,
+  params?: Record<string, Value>
+): DrawList {
   const doc = parse(source);
-  return evaluate(doc, time);
+  const evaluator = new Evaluator(time);
+  if (params) {
+    for (const [k, v] of Object.entries(params)) evaluator.setParam(k, v);
+  }
+  return evaluator.evaluateDocument(doc);
+}
+
+/**
+ * Compiles with host uniforms (`param`, §18.1) overridden — a convenience
+ * wrapper around `compile()` (mirrors `pvg::compile_with_params`).
+ */
+export function compileWithParams(
+  source: string,
+  params: Record<string, Value>,
+  time = 0.0
+): DrawList {
+  return compile(source, time, params);
+}
+
+/**
+ * Host-driven scene handle (§18.1): parse once, push uniforms per frame,
+ * evaluate. Mirrors `pvg::Scene` in the Rust core.
+ *
+ * @example
+ * ```ts
+ * const scene = PvgScene.fromSource(source);
+ * scene.setParam("health", 0.2);
+ * scene.setTime(1 / 60);
+ * const drawList = scene.evaluate();
+ * ```
+ */
+export class PvgScene {
+  private constructor(
+    private readonly doc: Document,
+    private readonly params = new Map<string, Value>(),
+    private time = 0.0,
+    private loopLimit = 100_000
+  ) {}
+
+  /** Parses `source` once; declared `param` defaults apply at evaluate time. */
+  static fromSource(source: string): PvgScene {
+    return new PvgScene(parse(source));
+  }
+
+  /** Wraps an already-parsed document (no re-parse on the host side). */
+  static fromDocument(doc: Document): PvgScene {
+    return new PvgScene(doc);
+  }
+
+  /** Sets/overrides a host uniform; takes precedence over the document default. */
+  setParam(name: string, value: Value): void {
+    this.params.set(name, value);
+  }
+
+  /** Removes an override so the document default applies again. */
+  clearParam(name: string): void {
+    this.params.delete(name);
+  }
+
+  /** Sets the timeline clock (seconds) used by the next `evaluate()`. */
+  setTime(time: number): void {
+    this.time = time;
+  }
+
+  /** Names declared by the document's `param` statements. */
+  paramNames(): string[] {
+    return this.doc.params.map((p) => p.name);
+  }
+
+  /** Current host override for `name`, if any. */
+  paramValue(name: string): Value | undefined {
+    return this.params.get(name);
+  }
+
+  /** Caps the evaluator's cumulative loop budget (default 100 000). */
+  withLoopLimit(limit: number): this {
+    this.loopLimit = limit;
+    return this;
+  }
+
+  /** Evaluates the cached document at the current time and uniform values. */
+  evaluate(): DrawList {
+    const ev = new Evaluator(this.time, this.loopLimit);
+    for (const [k, v] of this.params) ev.setParam(k, v);
+    return ev.evaluateDocument(this.doc);
+  }
+
+  /** The cached AST. */
+  document(): Document {
+    return this.doc;
+  }
 }
 
 /**
@@ -150,38 +266,67 @@ export {
   PvgView,
   registerPvgView,
   dedentCode,
+  softIdentKind,
+  tripleOpenerBeforeComment,
   detectLoopDuration,
   escapeXml,
   exportToSvgString,
   exportToAnimatedSvgString,
   emitSvgCommands,
+  newSvgCtx,
+  pvgNoise2,
+  pvgNoise3,
+  splineToBezier,
 };
 
 export type {
   Vec2,
   TextAlign,
+  LineCap,
+  LineJoin,
+  StrokeAlign,
+  BlendMode,
+  Paint,
+  PixelFilter,
+  GradientStop,
+  Shadow,
+  Glow,
+  GradientStopExpr,
+  ShadowExpr,
+  GlowExpr,
+  ShapeFx,
+  SplineFx,
+  GroupFx,
+  TextFx,
   CanvasDecl,
+  ParamDecl,
+  PatternDef,
   Expr,
   Stmt,
   Document,
   DrawStyle,
   DrawCmd,
   DrawPathCommand,
+  DrawPattern,
   DrawList,
   RenderCanvasOptions,
   AnimatedSvgOptions,
+  SvgRenderCtx,
+  Value,
 };
 
 // Default export
 export default {
   parse,
   compile,
+  compileWithParams,
   evaluate,
   toSvg,
   toAnimatedSvg,
   renderToCanvas,
   PvgColor,
   Transform2D,
+  PvgScene,
   PvgView,
   registerPvgView,
 };

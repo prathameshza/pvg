@@ -1,18 +1,250 @@
 import { PvgColor } from "./color.js";
 import { Transform2D } from "./transform.js";
 import type {
+  BlendMode,
   Document,
   DrawCmd,
   DrawList,
   DrawPathCommand,
+  DrawPattern,
   DrawStyle,
   Expr,
+  Glow,
+  GlowExpr,
+  GradientStop,
+  GradientStopExpr,
+  LineCap,
+  LineJoin,
+  Paint,
+  PathCommandAst,
+  PixelFilter,
+  Shadow,
+  ShadowExpr,
+  ShapeFx,
   Stmt,
+  StrokeAlign,
   TextAlign,
   Vec2,
 } from "./types.js";
 
-type Value = number | string | boolean | PvgColor | Vec2 | null;
+/** Runtime value (dynamic typing, §5.1): number | string | bool | color | vec2 | array | paint | none. */
+export type Value = number | string | boolean | PvgColor | Vec2 | Paint | null | Value[];
+
+function solidPaint(color: PvgColor): Paint {
+  return { kind: "color", color };
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic value noise (§18.2) — bit-exact port of `pvg/src/eval.rs`.
+// Rust uses u64 wrapping arithmetic, so BigInt is required for parity.
+// ---------------------------------------------------------------------------
+
+const MASK64 = 0xffffffffffffffffn;
+const U64_MAX_F64 = 18446744073709551615;
+
+function mulmod(a: bigint, b: bigint): bigint {
+  return (a * b) & MASK64;
+}
+
+function hashLattice2d(ix: number, iy: number): number {
+  let h = mulmod(BigInt.asUintN(64, BigInt(ix)), 0x9e3779b97f4a7c15n);
+  h = (h ^ mulmod(BigInt.asUintN(64, BigInt(iy)), 0xbf58476d1ce4e5b9n)) & MASK64;
+  h = (h ^ (h >> 30n)) & MASK64;
+  h = mulmod(h, 0xbf58476d1ce4e5b9n);
+  h = (h ^ (h >> 27n)) & MASK64;
+  h = mulmod(h, 0x94d049bb133111ebn);
+  h = (h ^ (h >> 31n)) & MASK64;
+  return Number(h) / U64_MAX_F64;
+}
+
+function hashLattice3d(ix: number, iy: number, iz: number): number {
+  let h = mulmod(BigInt.asUintN(64, BigInt(ix)), 0x9e3779b97f4a7c15n);
+  h = (h ^ mulmod(BigInt.asUintN(64, BigInt(iy)), 0xbf58476d1ce4e5b9n)) & MASK64;
+  h = (h ^ mulmod(BigInt.asUintN(64, BigInt(iz)), 0x94d049bb133111ebn)) & MASK64;
+  h = (h ^ (h >> 30n)) & MASK64;
+  h = mulmod(h, 0xbf58476d1ce4e5b9n);
+  h = (h ^ (h >> 27n)) & MASK64;
+  h = mulmod(h, 0x94d049bb133111ebn);
+  h = (h ^ (h >> 31n)) & MASK64;
+  return Number(h) / U64_MAX_F64;
+}
+
+function smooth(t: number): number {
+  return t * t * (3.0 - 2.0 * t);
+}
+
+/** Deterministic 2D value noise in [-1, 1]. Pure function of its coordinates. */
+export function pvgNoise2(x: number, y: number): number {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return 0.0;
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const fx = x - x0;
+  const fy = y - y0;
+  const a = hashLattice2d(x0, y0);
+  const b = hashLattice2d(x0 + 1, y0);
+  const c = hashLattice2d(x0, y0 + 1);
+  const d = hashLattice2d(x0 + 1, y0 + 1);
+  const ux = smooth(fx);
+  const uy = smooth(fy);
+  const v = a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+  return v * 2.0 - 1.0;
+}
+
+/** Deterministic 3D value noise in [-1, 1]. */
+export function pvgNoise3(x: number, y: number, z: number): number {
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return 0.0;
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const z0 = Math.floor(z);
+  const fx = x - x0;
+  const fy = y - y0;
+  const fz = z - z0;
+  const ux = smooth(fx);
+  const uy = smooth(fy);
+  const uz = smooth(fz);
+  const c000 = hashLattice3d(x0, y0, z0);
+  const c100 = hashLattice3d(x0 + 1, y0, z0);
+  const c010 = hashLattice3d(x0, y0 + 1, z0);
+  const c110 = hashLattice3d(x0 + 1, y0 + 1, z0);
+  const c001 = hashLattice3d(x0, y0, z0 + 1);
+  const c101 = hashLattice3d(x0 + 1, y0, z0 + 1);
+  const c011 = hashLattice3d(x0, y0 + 1, z0 + 1);
+  const c111 = hashLattice3d(x0 + 1, y0 + 1, z0 + 1);
+  const x00 = c000 + (c100 - c000) * ux;
+  const x10 = c010 + (c110 - c010) * ux;
+  const x01 = c001 + (c101 - c001) * ux;
+  const x11 = c011 + (c111 - c011) * ux;
+  const y0v = x00 + (x10 - x00) * uy;
+  const y1v = x01 + (x11 - x01) * uy;
+  const v = y0v + (y1v - y0v) * uz;
+  return v * 2.0 - 1.0;
+}
+
+/**
+ * Smooth Catmull-Rom spline through `points`, converted to cubic Bezier
+ * segments `(c1, c2, endpoint)`. Port of `spline_to_bezier` in `pvg/src/eval.rs`.
+ */
+export function splineToBezier(points: Vec2[]): [Vec2, Vec2, Vec2][] {
+  const n = points.length;
+  if (n < 2) return [];
+  if (n === 2) {
+    // Straight line as a degenerate cubic (c1 == c2 == p0).
+    return [[points[0], points[0], points[1]]];
+  }
+  const out: [Vec2, Vec2, Vec2][] = [];
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = i === 0 ? points[0] : points[i - 1];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = i + 2 < n ? points[i + 2] : points[n - 1];
+    const c1: Vec2 = [p1[0] + (p2[0] - p0[0]) / 6.0, p1[1] + (p2[1] - p0[1]) / 6.0];
+    const c2: Vec2 = [p2[0] - (p3[0] - p1[0]) / 6.0, p2[1] - (p3[1] - p1[1]) / 6.0];
+    out.push([c1, c2, p2]);
+  }
+  return out;
+}
+
+/** True when `v` is a nested bracket list (array-of-values, not a Vec2). */
+function isArrayValue(v: Value): v is Value[] {
+  return Array.isArray(v);
+}
+
+function clonePaint(p: Paint): Paint {
+  if (p.kind === "color") {
+    const c = p.color;
+    return { kind: "color", color: new PvgColor(c.r, c.g, c.b, c.a, c.isNone) };
+  }
+  if (p.kind === "pattern") {
+    return { kind: "pattern", name: p.name };
+  }
+  const stops: GradientStop[] = p.stops.map((s) => ({
+    offset: s.offset,
+    color: new PvgColor(s.color.r, s.color.g, s.color.b, s.color.a, s.color.isNone),
+  }));
+  if (p.kind === "linear") {
+    return {
+      kind: "linear",
+      start: [p.start[0], p.start[1]],
+      end: [p.end[0], p.end[1]],
+      stops,
+    };
+  }
+  if (p.kind === "radial") {
+    return {
+      kind: "radial",
+      center: [p.center[0], p.center[1]],
+      radius: p.radius,
+      focal: p.focal ? [p.focal[0], p.focal[1]] : null,
+      stops,
+    };
+  }
+  return {
+    kind: "angular",
+    center: [p.center[0], p.center[1]],
+    startAngle: p.startAngle,
+    stops,
+  };
+}
+
+function defaultStyle(): DrawStyle {
+  return {
+    fill: solidPaint(PvgColor.Black()),
+    stroke: solidPaint(PvgColor.None()),
+    width: 1.0,
+    opacity: 1.0,
+    // PVG 0.2 §8/10/12 defaults
+    cap: "butt",
+    join: "miter",
+    miter: 4.0,
+    dash: [],
+    strokeAlign: "center",
+    blend: "normal",
+    blur: 0.0,
+    shadow: null,
+    glow: null,
+  };
+}
+
+function cloneStyle(s: DrawStyle): DrawStyle {
+  return {
+    fill: clonePaint(s.fill),
+    stroke: clonePaint(s.stroke),
+    width: s.width,
+    opacity: s.opacity,
+    cap: s.cap,
+    join: s.join,
+    miter: s.miter,
+    dash: [...s.dash],
+    strokeAlign: s.strokeAlign,
+    blend: s.blend,
+    blur: s.blur,
+    shadow: s.shadow
+      ? {
+          offset: [s.shadow.offset[0], s.shadow.offset[1]],
+          radius: s.shadow.radius,
+          color: new PvgColor(
+            s.shadow.color.r,
+            s.shadow.color.g,
+            s.shadow.color.b,
+            s.shadow.color.a,
+            s.shadow.color.isNone
+          ),
+        }
+      : null,
+    glow: s.glow
+      ? {
+          radius: s.glow.radius,
+          color: new PvgColor(
+            s.glow.color.r,
+            s.glow.color.g,
+            s.glow.color.b,
+            s.glow.color.a,
+            s.glow.color.isNone
+          ),
+        }
+      : null,
+  };
+}
 
 export class Evaluator {
   private globals: Map<string, Value>;
@@ -22,24 +254,37 @@ export class Evaluator {
   private loopCount = 0;
   private drawList: DrawCmd[] = [];
   private transformStack: Transform2D[] = [Transform2D.identity()];
-  private styleStack: DrawStyle[] = [
-    {
-      fill: PvgColor.Black(),
-      stroke: PvgColor.None(),
-      width: 1.0,
-      opacity: 1.0,
-    },
-  ];
+  private styleStack: DrawStyle[] = [defaultStyle()];
+  /** Pixel snap grid from `canvas snap` (0 = off), applied after the transform. */
+  private snap = 0.0;
+  /** Top-level pattern tile names valid for `fill pattern <name>` (§18.4). */
+  private patternNames: string[] = [];
 
   constructor(time = 0.0, loopLimit = 100_000, seed = 88172645463325252n) {
     this.globals = new Map<string, Value>([
       ["PI", Math.PI],
-      ["TAU", Math.PI * 2.0],
+      ["TAU", Math.PI * 2],
       ["time", time],
       ["t", time],
+      // Helpers so organic-shape examples read naturally: `deg * deg_to_rad`.
+      ["deg_to_rad", Math.PI / 180.0],
+      ["rad_to_deg", 180.0 / Math.PI],
     ]);
     this.loopLimit = loopLimit;
     this.rngState = seed === 0n ? 88172645463325252n : seed;
+  }
+
+  /**
+   * Host override for a declared `param` (§18.1). Values set here win over the
+   * document's declared defaults for every subsequent evaluation.
+   */
+  setParam(name: string, value: Value): void {
+    this.globals.set(name, value);
+  }
+
+  /** Clears a host override so the document default applies again. */
+  clearParam(name: string): void {
+    this.globals.delete(name);
   }
 
   private currentTransform(): Transform2D {
@@ -47,13 +292,7 @@ export class Evaluator {
   }
 
   private currentStyle(): DrawStyle {
-    const s = this.styleStack[this.styleStack.length - 1];
-    return {
-      fill: new PvgColor(s.fill.r, s.fill.g, s.fill.b, s.fill.a, s.fill.isNone),
-      stroke: new PvgColor(s.stroke.r, s.stroke.g, s.stroke.b, s.stroke.a, s.stroke.isNone),
-      width: s.width,
-      opacity: s.opacity,
-    };
+    return cloneStyle(this.styleStack[this.styleStack.length - 1]);
   }
 
   private nextRandom(): number {
@@ -63,15 +302,70 @@ export class Evaluator {
     return Number(this.rngState & 0xffffffffffffffffn) / Number(0xffffffffffffffffn);
   }
 
+  /** Rounds one coordinate to the active pixel grid (`canvas snap`, 0 = off). */
+  private snapVal(v: number): number {
+    if (this.snap > 0.0 && Number.isFinite(v)) {
+      return Math.round(v / this.snap) * this.snap;
+    }
+    return v;
+  }
+
+  /** Rounds a point to the pixel grid after the world transform. */
+  private snapPoint(p: Vec2): Vec2 {
+    return [this.snapVal(p[0]), this.snapVal(p[1])];
+  }
+
+  /**
+   * Evaluates a parsed document in the order the Rust engine does (§18.1/§18.4):
+   * (1) snap + pattern names, (2) host uniforms, (3) pattern tiles, (4) body.
+   */
   evaluateDocument(doc: Document): DrawList {
-    for (const stmt of doc.statements) {
-      this.evalStmt(stmt, new Map());
+    this.snap = doc.canvas.snap;
+    this.patternNames = doc.patterns.map((p) => p.name);
+
+    // 1. Host uniforms: declared defaults apply unless the host already
+    //    overrode them via `setParam` / `compileWithParams`.
+    for (const param of doc.params) {
+      if (!this.globals.has(param.name)) {
+        this.globals.set(param.name, this.evalExpr(param.default, new Map()));
+      }
     }
 
+    // 2. Pattern tiles evaluated in isolation (identity transform, default
+    //    style, fresh locals) so `fill pattern name` has resolved content.
+    const evaluatedPatterns: DrawPattern[] = [];
+    for (const pat of doc.patterns) {
+      const savedDraw = this.drawList;
+      const savedTrans = [...this.transformStack];
+      const savedStyle = [...this.styleStack];
+      this.drawList = [];
+      this.transformStack = [Transform2D.identity()];
+      this.styleStack = [defaultStyle()];
+      const tileLocals = new Map<string, Value>();
+      for (const stmt of pat.body) {
+        this.evalStmt(stmt, tileLocals);
+      }
+      const tiles = this.drawList;
+      this.drawList = savedDraw;
+      this.transformStack = savedTrans;
+      this.styleStack = savedStyle;
+      evaluatedPatterns.push({ name: pat.name, width: pat.width, height: pat.height, tiles });
+    }
+
+    // 3. Main scene body.
+    const bodyLocals = new Map<string, Value>();
+    for (const stmt of doc.statements) {
+      this.evalStmt(stmt, bodyLocals);
+    }
+
+    const pixelFilter: PixelFilter = doc.canvas.pixelFilter;
     return {
       canvasWidth: doc.canvas.width,
       canvasHeight: doc.canvas.height,
       background: doc.canvas.background,
+      snap: doc.canvas.snap,
+      pixelFilter,
+      patterns: evaluatedPatterns,
       items: this.drawList,
     };
   }
@@ -157,12 +451,13 @@ export class Evaluator {
         const centerRaw = this.asVec2(this.evalExpr(stmt.center, locals));
         const radius = this.asNumber(this.evalExpr(stmt.radius, locals));
         const style = this.currentStyle();
-        if (stmt.fill) style.fill = this.asColor(this.evalExpr(stmt.fill, locals));
-        if (stmt.stroke) style.stroke = this.asColor(this.evalExpr(stmt.stroke, locals));
+        if (stmt.fill) style.fill = this.asPaint(this.evalExpr(stmt.fill, locals));
+        if (stmt.stroke) style.stroke = this.asPaint(this.evalExpr(stmt.stroke, locals));
         if (stmt.width) style.width = this.asNumber(this.evalExpr(stmt.width, locals));
         if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
+        this.applyFxProps(style, stmt, locals);
 
-        const center = this.currentTransform().transformPoint(centerRaw);
+        const center = this.snapPoint(this.currentTransform().transformPoint(centerRaw));
         this.drawList.push({ type: "Circle", center, radius, style });
         return null;
       }
@@ -170,12 +465,13 @@ export class Evaluator {
         const centerRaw = this.asVec2(this.evalExpr(stmt.center, locals));
         const radiusRaw = this.asVec2(this.evalExpr(stmt.radius, locals));
         const style = this.currentStyle();
-        if (stmt.fill) style.fill = this.asColor(this.evalExpr(stmt.fill, locals));
-        if (stmt.stroke) style.stroke = this.asColor(this.evalExpr(stmt.stroke, locals));
+        if (stmt.fill) style.fill = this.asPaint(this.evalExpr(stmt.fill, locals));
+        if (stmt.stroke) style.stroke = this.asPaint(this.evalExpr(stmt.stroke, locals));
         if (stmt.width) style.width = this.asNumber(this.evalExpr(stmt.width, locals));
         if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
+        this.applyFxProps(style, stmt, locals);
 
-        const center = this.currentTransform().transformPoint(centerRaw);
+        const center = this.snapPoint(this.currentTransform().transformPoint(centerRaw));
         this.drawList.push({ type: "Ellipse", center, radius: radiusRaw, style });
         return null;
       }
@@ -184,12 +480,13 @@ export class Evaluator {
         const sizeRaw = this.asVec2(this.evalExpr(stmt.size, locals));
         const cornerRadius = stmt.radius ? this.asNumber(this.evalExpr(stmt.radius, locals)) : 0.0;
         const style = this.currentStyle();
-        if (stmt.fill) style.fill = this.asColor(this.evalExpr(stmt.fill, locals));
-        if (stmt.stroke) style.stroke = this.asColor(this.evalExpr(stmt.stroke, locals));
+        if (stmt.fill) style.fill = this.asPaint(this.evalExpr(stmt.fill, locals));
+        if (stmt.stroke) style.stroke = this.asPaint(this.evalExpr(stmt.stroke, locals));
         if (stmt.width) style.width = this.asNumber(this.evalExpr(stmt.width, locals));
         if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
+        this.applyFxProps(style, stmt, locals);
 
-        const pos = this.currentTransform().transformPoint(posRaw);
+        const pos = this.snapPoint(this.currentTransform().transformPoint(posRaw));
         this.drawList.push({ type: "Rectangle", pos, size: sizeRaw, cornerRadius, style });
         return null;
       }
@@ -197,27 +494,29 @@ export class Evaluator {
         const fromRaw = this.asVec2(this.evalExpr(stmt.from, locals));
         const toRaw = this.asVec2(this.evalExpr(stmt.to, locals));
         const style = this.currentStyle();
-        if (stmt.stroke) style.stroke = this.asColor(this.evalExpr(stmt.stroke, locals));
+        if (stmt.stroke) style.stroke = this.asPaint(this.evalExpr(stmt.stroke, locals));
         if (stmt.width) style.width = this.asNumber(this.evalExpr(stmt.width, locals));
         if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
+        this.applyFxProps(style, stmt, locals);
 
         const trans = this.currentTransform();
         this.drawList.push({
           type: "Line",
-          from: trans.transformPoint(fromRaw),
-          to: trans.transformPoint(toRaw),
+          from: this.snapPoint(trans.transformPoint(fromRaw)),
+          to: this.snapPoint(trans.transformPoint(toRaw)),
           style,
         });
         return null;
       }
       case "Polygon": {
         const trans = this.currentTransform();
-        const points = stmt.points.map((p) => trans.transformPoint(this.asVec2(this.evalExpr(p, locals))));
+        const points = stmt.points.map((p) => this.snapPoint(trans.transformPoint(this.asVec2(this.evalExpr(p, locals)))));
         const style = this.currentStyle();
-        if (stmt.fill) style.fill = this.asColor(this.evalExpr(stmt.fill, locals));
-        if (stmt.stroke) style.stroke = this.asColor(this.evalExpr(stmt.stroke, locals));
+        if (stmt.fill) style.fill = this.asPaint(this.evalExpr(stmt.fill, locals));
+        if (stmt.stroke) style.stroke = this.asPaint(this.evalExpr(stmt.stroke, locals));
         if (stmt.width) style.width = this.asNumber(this.evalExpr(stmt.width, locals));
         if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
+        this.applyFxProps(style, stmt, locals);
 
         this.drawList.push({ type: "Polygon", points, style });
         return null;
@@ -236,12 +535,13 @@ export class Evaluator {
         }
 
         const style = this.currentStyle();
-        if (stmt.fill) style.fill = this.asColor(this.evalExpr(stmt.fill, locals));
-        if (stmt.stroke) style.stroke = this.asColor(this.evalExpr(stmt.stroke, locals));
+        if (stmt.fill) style.fill = this.asPaint(this.evalExpr(stmt.fill, locals));
+        if (stmt.stroke) style.stroke = this.asPaint(this.evalExpr(stmt.stroke, locals));
         if (stmt.width) style.width = this.asNumber(this.evalExpr(stmt.width, locals));
         if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
+        this.applyFxProps(style, stmt, locals, true);
 
-        const pos = this.currentTransform().transformPoint(posRaw);
+        const pos = this.snapPoint(this.currentTransform().transformPoint(posRaw));
         this.drawList.push({
           type: "Text",
           pos,
@@ -255,59 +555,17 @@ export class Evaluator {
       }
       case "Path": {
         const style = this.currentStyle();
-        if (stmt.fill) style.fill = this.asColor(this.evalExpr(stmt.fill, locals));
-        if (stmt.stroke) style.stroke = this.asColor(this.evalExpr(stmt.stroke, locals));
+        if (stmt.fill) style.fill = this.asPaint(this.evalExpr(stmt.fill, locals));
+        if (stmt.stroke) style.stroke = this.asPaint(this.evalExpr(stmt.stroke, locals));
         if (stmt.width) style.width = this.asNumber(this.evalExpr(stmt.width, locals));
         if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
+        this.applyFxProps(style, stmt, locals);
 
         const trans = this.currentTransform();
         const drawCommands: DrawPathCommand[] = [];
         const pathLocals = new Map(locals);
 
-        for (const cmd of stmt.commands) {
-          switch (cmd.cmd) {
-            case "Set": {
-              const val = this.evalExpr(cmd.expr, pathLocals);
-              pathLocals.set(cmd.name, val);
-              locals.set(cmd.name, val);
-              break;
-            }
-            case "Start": {
-              const pt = trans.transformPoint(this.asVec2(this.evalExpr(cmd.pt, pathLocals)));
-              drawCommands.push({ cmd: "Start", pt });
-              break;
-            }
-            case "Line": {
-              const pt = trans.transformPoint(this.asVec2(this.evalExpr(cmd.pt, pathLocals)));
-              drawCommands.push({ cmd: "Line", pt });
-              break;
-            }
-            case "Quad": {
-              const cp = trans.transformPoint(this.asVec2(this.evalExpr(cmd.cp, pathLocals)));
-              const ep = trans.transformPoint(this.asVec2(this.evalExpr(cmd.ep, pathLocals)));
-              drawCommands.push({ cmd: "Quad", cp, ep });
-              break;
-            }
-            case "Curve": {
-              const c1 = trans.transformPoint(this.asVec2(this.evalExpr(cmd.c1, pathLocals)));
-              const c2 = trans.transformPoint(this.asVec2(this.evalExpr(cmd.c2, pathLocals)));
-              const ep = trans.transformPoint(this.asVec2(this.evalExpr(cmd.ep, pathLocals)));
-              drawCommands.push({ cmd: "Curve", c1, c2, ep });
-              break;
-            }
-            case "Arc": {
-              const center = trans.transformPoint(this.asVec2(this.evalExpr(cmd.center, pathLocals)));
-              const radius = this.asNumber(this.evalExpr(cmd.radius, pathLocals));
-              const startAngle = this.asNumber(this.evalExpr(cmd.startAngle, pathLocals));
-              const endAngle = this.asNumber(this.evalExpr(cmd.endAngle, pathLocals));
-              drawCommands.push({ cmd: "Arc", center, radius, startAngle, endAngle });
-              break;
-            }
-            case "Close":
-              drawCommands.push({ cmd: "Close" });
-              break;
-          }
-        }
+        this.evalPathCommands(stmt.commands, pathLocals, trans, drawCommands, locals);
 
         this.drawList.push({ type: "Path", commands: drawCommands, style });
         return null;
@@ -334,9 +592,13 @@ export class Evaluator {
         this.transformStack.push(newTrans);
 
         const style = this.currentStyle();
-        if (stmt.fill) style.fill = this.asColor(this.evalExpr(stmt.fill, locals));
-        if (stmt.stroke) style.stroke = this.asColor(this.evalExpr(stmt.stroke, locals));
+        if (stmt.fill) style.fill = this.asPaint(this.evalExpr(stmt.fill, locals));
+        if (stmt.stroke) style.stroke = this.asPaint(this.evalExpr(stmt.stroke, locals));
         if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
+        if (stmt.blend) style.blend = this.evalBlend(this.evalExpr(stmt.blend, locals));
+        if (stmt.blur) style.blur = Math.max(0, this.asNumber(this.evalExpr(stmt.blur, locals)));
+        if (stmt.shadow) style.shadow = this.evalShadow(stmt.shadow, locals);
+        if (stmt.glow) style.glow = this.evalGlow(stmt.glow, locals);
         this.styleStack.push(style);
 
         for (const bStmt of stmt.body) {
@@ -347,7 +609,267 @@ export class Evaluator {
         this.transformStack.pop();
         return null;
       }
+      case "Sprite": {
+        // §18.3: palette-indexed pixel art; ignores the inherited fill/stroke.
+        const posRaw = this.asVec2(this.evalExpr(stmt.pos, locals));
+        const palette: PvgColor[] = [];
+        for (const entry of stmt.palette) {
+          palette.push(this.asColor(this.evalExpr(entry, locals)));
+        }
+        const scale = stmt.scale ? Math.max(0.01, this.asNumber(this.evalExpr(stmt.scale, locals))) : 1.0;
+        const style = this.currentStyle();
+        style.fill = solidPaint(PvgColor.White());
+        style.stroke = solidPaint(PvgColor.None());
+        if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
+        if (stmt.blend) style.blend = this.evalBlend(this.evalExpr(stmt.blend, locals));
+
+        const pos = this.snapPoint(this.currentTransform().transformPoint(posRaw));
+        this.drawList.push({ type: "Sprite", pos, palette, rows: stmt.rows, scale, style });
+        return null;
+      }
+      case "Spline": {
+        // §18.5: Catmull-Rom data spline (stroke-only).
+        const raw = this.evalExpr(stmt.points, locals);
+        const items: Value[] = isArrayValue(raw) ? raw : [];
+        const ctrl: Vec2[] = [];
+        const hasVec = items.some((v) => Array.isArray(v));
+        if (hasVec) {
+          for (const v of items) {
+            if (Array.isArray(v)) {
+              if (v.length === 2 && typeof v[0] === "number" && typeof v[1] === "number") {
+                ctrl.push([v[0], v[1]]);
+              } else {
+                throw new Error("Spline points must be [x, y] vectors or numbers.");
+              }
+            } else if (typeof v === "number") {
+              ctrl.push([ctrl.length, v]);
+            } else {
+              throw new Error("Spline points must be [x, y] vectors or numbers.");
+            }
+          }
+        } else {
+          const n = items.length;
+          if (n === 0) throw new Error("Spline requires at least one point.");
+          const nums = items.map((v) => this.asNumber(v));
+          const [ox, oy] = stmt.pos
+            ? this.asVec2(this.evalExpr(stmt.pos, locals))
+            : ([0.0, 0.0] as Vec2);
+          const [sw, sh] = stmt.size
+            ? this.asVec2(this.evalExpr(stmt.size, locals))
+            : ([Math.max(2, n) - 1, 1] as Vec2);
+          let lo = Infinity;
+          let hi = -Infinity;
+          for (const v of nums) {
+            lo = Math.min(lo, v);
+            hi = Math.max(hi, v);
+          }
+          if (!(hi > lo)) hi = lo + 1.0;
+          for (let i = 0; i < n; i++) {
+            // y is down-positive: the MAX value sits at the top.
+            const t = n > 1 ? i / (n - 1) : 0.0;
+            const y = oy + (1.0 - (nums[i] - lo) / (hi - lo)) * sh;
+            ctrl.push([ox + t * sw, y]);
+          }
+        }
+        if (ctrl.length === 1) ctrl.push([ctrl[0][0], ctrl[0][1]]);
+
+        const style = this.currentStyle();
+        style.stroke = stmt.stroke
+          ? this.asPaint(this.evalExpr(stmt.stroke, locals))
+          : solidPaint(PvgColor.White());
+        style.fill = solidPaint(PvgColor.None());
+        if (stmt.width) style.width = this.asNumber(this.evalExpr(stmt.width, locals));
+        if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
+        this.applyFxProps(style, stmt, locals);
+
+        const trans = this.currentTransform();
+        const points: Vec2[] = ctrl.map((p) => this.snapPoint(trans.transformPoint(p)));
+        this.drawList.push({ type: "Spline", points, style });
+        return null;
+      }
+      case "Clip": {
+        // Evaluate mask in isolation (side-effect free), then content normally.
+        const base = this.drawList.length;
+        const scratch = new Map(locals);
+        this.evalStmt(stmt.mask, scratch);
+        if (this.drawList.length !== base + 1) {
+          this.drawList.length = base;
+          throw new Error("Clip mask must produce exactly one shape.");
+        }
+        const mask = this.drawList.pop()!;
+        const contentBase = this.drawList.length;
+        for (const bStmt of stmt.content) {
+          this.evalStmt(bStmt, locals);
+        }
+        const content = this.drawList.splice(contentBase);
+        this.drawList.push({ type: "Clip", mask, content });
+        return null;
+      }
     }
+  }
+
+  /**
+   * Post-0.2 §18.6: evaluates `path` body items — geometry commands, `set`
+   * (shared with the enclosing scope), and `for`/`while`/`if` control flow that
+   * shares the path's locals. Mirrors `eval_path_command` in the Rust core.
+   */
+  private evalPathCommands(
+    commands: PathCommandAst[],
+    pathLocals: Map<string, Value>,
+    trans: Transform2D,
+    drawCommands: DrawPathCommand[],
+    locals: Map<string, Value>
+  ): void {
+    for (const cmd of commands) {
+      switch (cmd.cmd) {
+        case "Set": {
+          const val = this.evalExpr(cmd.expr, pathLocals);
+          pathLocals.set(cmd.name, val);
+          locals.set(cmd.name, val);
+          break;
+        }
+        case "Start": {
+          const pt = this.snapPoint(trans.transformPoint(this.asVec2(this.evalExpr(cmd.pt, pathLocals))));
+          drawCommands.push({ cmd: "Start", pt });
+          break;
+        }
+        case "Line": {
+          const pt = this.snapPoint(trans.transformPoint(this.asVec2(this.evalExpr(cmd.pt, pathLocals))));
+          drawCommands.push({ cmd: "Line", pt });
+          break;
+        }
+        case "Quad": {
+          const cp = this.snapPoint(trans.transformPoint(this.asVec2(this.evalExpr(cmd.cp, pathLocals))));
+          const ep = this.snapPoint(trans.transformPoint(this.asVec2(this.evalExpr(cmd.ep, pathLocals))));
+          drawCommands.push({ cmd: "Quad", cp, ep });
+          break;
+        }
+        case "Curve": {
+          const c1 = this.snapPoint(trans.transformPoint(this.asVec2(this.evalExpr(cmd.c1, pathLocals))));
+          const c2 = this.snapPoint(trans.transformPoint(this.asVec2(this.evalExpr(cmd.c2, pathLocals))));
+          const ep = this.snapPoint(trans.transformPoint(this.asVec2(this.evalExpr(cmd.ep, pathLocals))));
+          drawCommands.push({ cmd: "Curve", c1, c2, ep });
+          break;
+        }
+        case "Arc": {
+          const center = this.snapPoint(trans.transformPoint(this.asVec2(this.evalExpr(cmd.center, pathLocals))));
+          const radius = this.asNumber(this.evalExpr(cmd.radius, pathLocals));
+          const startAngle = this.asNumber(this.evalExpr(cmd.startAngle, pathLocals));
+          const endAngle = this.asNumber(this.evalExpr(cmd.endAngle, pathLocals));
+          drawCommands.push({ cmd: "Arc", center, radius, startAngle, endAngle });
+          break;
+        }
+        case "Close":
+          drawCommands.push({ cmd: "Close" });
+          break;
+        case "For": {
+          const startVal = this.asNumber(this.evalExpr(cmd.from, pathLocals));
+          const endVal = this.asNumber(this.evalExpr(cmd.to, pathLocals));
+          const stepVal = cmd.step
+            ? this.asNumber(this.evalExpr(cmd.step, pathLocals))
+            : endVal >= startVal
+              ? 1.0
+              : -1.0;
+          if (stepVal === 0.0) throw new Error("For loop step cannot be 0");
+          let current = startVal;
+          while ((stepVal > 0.0 && current <= endVal) || (stepVal < 0.0 && current >= endVal)) {
+            this.loopCount++;
+            if (this.loopCount > this.loopLimit) {
+              throw new Error(`Exceeded safety loop limit of ${this.loopLimit} iterations`);
+            }
+            pathLocals.set(cmd.varName, current);
+            this.evalPathCommands(cmd.body, pathLocals, trans, drawCommands, locals);
+            current += stepVal;
+          }
+          break;
+        }
+        case "While": {
+          while (this.isTruthy(this.evalExpr(cmd.cond, pathLocals))) {
+            this.loopCount++;
+            if (this.loopCount > this.loopLimit) {
+              throw new Error(`Exceeded safety loop limit of ${this.loopLimit} iterations`);
+            }
+            this.evalPathCommands(cmd.body, pathLocals, trans, drawCommands, locals);
+          }
+          break;
+        }
+        case "If": {
+          const body = this.isTruthy(this.evalExpr(cmd.cond, pathLocals)) ? cmd.thenBody : cmd.elseBody;
+          this.evalPathCommands(body, pathLocals, trans, drawCommands, locals);
+          break;
+        }
+      }
+    }
+  }
+
+  // ---- PVG 0.2 style helpers ----
+  private evalCap(v: Value): LineCap {
+    const s = String(this.asString(v)).toLowerCase();
+    if (s === "round") return "round";
+    if (s === "square") return "square";
+    return "butt";
+  }
+
+  private evalJoin(v: Value): LineJoin {
+    const s = String(this.asString(v)).toLowerCase();
+    if (s === "round") return "round";
+    if (s === "bevel") return "bevel";
+    return "miter";
+  }
+
+  private evalStrokeAlign(v: Value): StrokeAlign {
+    const s = String(this.asString(v)).toLowerCase();
+    if (s === "inside") return "inside";
+    if (s === "outside") return "outside";
+    return "center";
+  }
+
+  private evalBlend(v: Value): BlendMode {
+    const s = String(this.asString(v)).toLowerCase();
+    if (s === "add") return "add";
+    if (s === "multiply") return "multiply";
+    if (s === "screen") return "screen";
+    if (s === "overlay") return "overlay";
+    return "normal";
+  }
+
+  private evalDash(items: Expr[] | null, locals: Map<string, Value>): number[] {
+    const out: number[] = [];
+    for (const d of items || []) {
+      const v = this.asNumber(this.evalExpr(d, locals));
+      if (v > 0 && Number.isFinite(v)) out.push(v);
+    }
+    return out;
+  }
+
+  private evalShadow(node: ShadowExpr, locals: Map<string, Value>): Shadow {
+    const offset = this.asVec2(this.evalExpr(node.offset, locals));
+    const radius = Math.max(0, this.asNumber(this.evalExpr(node.radius, locals)));
+    const color = this.asColor(this.evalExpr(node.color, locals));
+    return { offset, radius, color };
+  }
+
+  private evalGlow(node: GlowExpr, locals: Map<string, Value>): Glow {
+    const radius = Math.max(0, this.asNumber(this.evalExpr(node.radius, locals)));
+    const color = this.asColor(this.evalExpr(node.color, locals));
+    return { radius, color };
+  }
+
+  private applyFxProps(
+    style: DrawStyle,
+    stmt: Partial<ShapeFx>,
+    locals: Map<string, Value>,
+    isText = false
+  ): void {
+    if (stmt.cap && !isText) style.cap = this.evalCap(this.evalExpr(stmt.cap, locals));
+    if (stmt.join && !isText) style.join = this.evalJoin(this.evalExpr(stmt.join, locals));
+    if (stmt.miter && !isText) style.miter = Math.max(1, this.asNumber(this.evalExpr(stmt.miter, locals)));
+    if (stmt.dash && !isText) style.dash = this.evalDash(stmt.dash, locals);
+    if (stmt.align && !isText) style.strokeAlign = this.evalStrokeAlign(this.evalExpr(stmt.align, locals));
+    if (stmt.blur) style.blur = Math.max(0, this.asNumber(this.evalExpr(stmt.blur, locals)));
+    if (stmt.shadow) style.shadow = this.evalShadow(stmt.shadow, locals);
+    if (stmt.glow) style.glow = this.evalGlow(stmt.glow, locals);
+    if (stmt.blend) style.blend = this.evalBlend(this.evalExpr(stmt.blend, locals));
   }
 
   private invokeFunction(name: string, args: Value[]): Value {
@@ -379,6 +901,17 @@ export class Evaluator {
         const x = this.asNumber(this.evalExpr(expr.x, locals));
         const y = this.asNumber(this.evalExpr(expr.y, locals));
         return [x, y];
+      }
+      case "Array": {
+        const out: Value[] = [];
+        for (const item of expr.items) out.push(this.evalExpr(item, locals));
+        return out;
+      }
+      case "Pattern": {
+        if (!this.patternNames.includes(expr.name)) {
+          throw new Error(`Unknown pattern '${expr.name}'`);
+        }
+        return { kind: "pattern", name: expr.name } satisfies Paint;
       }
       case "Ident": {
         if (locals.has(expr.name)) return locals.get(expr.name)!;
@@ -441,6 +974,38 @@ export class Evaluator {
           case "min": return Math.min(this.asNumber(args[0]), this.asNumber(args[1]));
           case "max": return Math.max(this.asNumber(args[0]), this.asNumber(args[1]));
           case "pow": return Math.pow(this.asNumber(args[0]), this.asNumber(args[1]));
+          case "radians": return (this.asNumber(args[0]) * Math.PI) / 180.0;
+          case "degrees": return (this.asNumber(args[0]) * 180.0) / Math.PI;
+          case "deg_to_rad": return (this.asNumber(args[0]) * Math.PI) / 180.0;
+          case "noise2d": {
+            if (args.length !== 2) throw new Error("noise2d(x, y) needs 2 arguments");
+            return pvgNoise2(this.asNumber(args[0]), this.asNumber(args[1]));
+          }
+          case "noise3d": {
+            if (args.length !== 3) throw new Error("noise3d(x, y, z) needs 3 arguments");
+            return pvgNoise3(this.asNumber(args[0]), this.asNumber(args[1]), this.asNumber(args[2]));
+          }
+          case "array":
+            return args;
+          case "len": {
+            if (args.length === 0) throw new Error("len(arr) needs 1 argument");
+            const v = args[0];
+            if (isArrayValue(v)) return v.length;
+            if (typeof v === "string") return [...v].length;
+            throw new Error("len() expects an array or string");
+          }
+          case "get": {
+            if (args.length !== 2) throw new Error("get(arr, i) needs 2 arguments");
+            const idx = Math.trunc(this.asNumber(args[1]));
+            const target = args[0];
+            if (isArrayValue(target)) {
+              const n = target.length;
+              if (n === 0) throw new Error("get() from empty array");
+              // Negative indices wrap (Python-style).
+              return target[(((idx % n) + n) % n) | 0];
+            }
+            throw new Error("get() expects an array");
+          }
           case "random": {
             const min = this.asNumber(args[0]);
             const max = this.asNumber(args[1]);
@@ -451,7 +1016,60 @@ export class Evaluator {
             return this.invokeFunction(expr.name, args);
         }
       }
+      case "Linear": {
+        const s = this.asVec2(this.evalExpr(expr.start, locals));
+        const e = this.asVec2(this.evalExpr(expr.end, locals));
+        const trans = this.currentTransform();
+        const paint: Paint = {
+          kind: "linear",
+          start: trans.transformPoint(s),
+          end: trans.transformPoint(e),
+          stops: this.evalStops(expr.stops, locals),
+        };
+        return paint;
+      }
+      case "Radial": {
+        const c = this.asVec2(this.evalExpr(expr.center, locals));
+        const r = Math.max(0, this.asNumber(this.evalExpr(expr.radius, locals)));
+        const trans = this.currentTransform();
+        const f = expr.focal
+          ? trans.transformPoint(this.asVec2(this.evalExpr(expr.focal, locals)))
+          : null;
+        const paint: Paint = {
+          kind: "radial",
+          center: trans.transformPoint(c),
+          radius: r,
+          focal: f,
+          stops: this.evalStops(expr.stops, locals),
+        };
+        return paint;
+      }
+      case "Angular": {
+        const c = this.asVec2(this.evalExpr(expr.center, locals));
+        const sa = this.asNumber(this.evalExpr(expr.startAngle, locals));
+        const trans = this.currentTransform();
+        const paint: Paint = {
+          kind: "angular",
+          center: trans.transformPoint(c),
+          startAngle: sa,
+          stops: this.evalStops(expr.stops, locals),
+        };
+        return paint;
+      }
+      default:
+        throw new Error(`Unknown expression type '${(expr as Expr).type}'`);
     }
+  }
+
+  private evalStops(stops: GradientStopExpr[], locals: Map<string, Value>): GradientStop[] {
+    // Offsets clamped to [0,1]; colors incl. transparent alpha preserved (§9.4).
+    // Sorted by offset at evaluation (stable).
+    const out = (stops || []).map((s) => ({
+      offset: Math.max(0, Math.min(1, this.asNumber(this.evalExpr(s.offset, locals)))),
+      color: this.asColor(this.evalExpr(s.color, locals)),
+    }));
+    out.sort((a, b) => a.offset - b.offset);
+    return out;
   }
 
   private asNumber(val: Value): number {
@@ -464,7 +1082,12 @@ export class Evaluator {
     if (typeof val === "string") return val;
     if (typeof val === "number") return val.toString();
     if (typeof val === "boolean") return val.toString();
-    throw new Error(`Expected string or displayable value, got ${JSON.stringify(val)}`);
+    if (val instanceof PvgColor) return val.toSvgString();
+    if (val !== null && typeof val === "object" && "kind" in val) {
+      const paint = val as Paint;
+      if (paint.kind === "color") return paint.color.toSvgString();
+    }
+    throw new Error("Expected string or displayable value");
   }
 
   private asVec2(val: Value): Vec2 {
@@ -476,7 +1099,28 @@ export class Evaluator {
 
   private asColor(val: Value): PvgColor {
     if (val instanceof PvgColor) return val;
-    throw new Error(`Expected color value, got ${JSON.stringify(val)}`);
+    if (val !== null && typeof val === "object" && "kind" in val) {
+      const paint = val as Paint;
+      if (paint.kind === "color") return paint.color;
+    }
+    throw new Error("Expected color value");
+  }
+
+  private asPaint(val: Value): Paint {
+    if (val instanceof PvgColor) return solidPaint(val);
+    if (val !== null && typeof val === "object" && "kind" in val) {
+      const paint = val as Paint;
+      if (
+        paint.kind === "color" ||
+        paint.kind === "linear" ||
+        paint.kind === "radial" ||
+        paint.kind === "angular" ||
+        paint.kind === "pattern"
+      ) {
+        return paint;
+      }
+    }
+    throw new Error("Expected paint (color, gradient or pattern) value");
   }
 
   private isTruthy(val: Value): boolean {

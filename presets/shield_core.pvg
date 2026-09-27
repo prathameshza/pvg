@@ -1,0 +1,91 @@
+# PVG 0.2 reference preset: sci-fi energy shield core.
+# Showcases gradients, clip, stroke topology, glow/shadow/blur, blend modes.
+PVG 0.2
+canvas 512 512
+  background #07090e
+
+set cx = 256
+set cy = 256
+
+# 1. Ambient Background Glow (Additive Lighting)
+circle
+  center [cx, cy]
+  radius 160
+  fill #00aaff
+  blur 45
+  blend "add"
+  opacity 0.25
+
+# 2. Outer Armor Plate with Drop Shadow & Metallic Linear Gradient
+rectangle
+  pos [106, 106]
+  size [300, 300]
+  radius 36
+  fill linear [106, 106] [406, 406]
+    stop 0.0 #2b3040
+    stop 0.5 #171922
+    stop 1.0 #0e1017
+  stroke #48526e
+  width 2
+  join "miter"
+  shadow [0, 18] 24 #000000bb
+
+# 3. Clipped Core Window (Beveled Glass Housing)
+clip
+  circle
+    center [cx, cy]
+    radius 105
+  for i from -5 to 5
+    line
+      from [cx - 150, cy + i * 30]
+      to [cx + 150, cy + i * 30 + 60]
+      stroke #00ffff
+      width 1.5
+      opacity 0.12
+  circle
+    center [cx, cy]
+    radius 90
+    fill radial [cx, cy] 90
+      stop 0.0 #00ffff
+      stop 0.6 #0033aa
+      stop 1.0 #07090e
+
+# 4. Mechanical Energy Retainer Ring (Exact Crisp Strokes)
+circle
+  center [cx, cy]
+  radius 112
+  fill none
+  stroke #00d2ff
+  width 4
+  cap "butt"
+  dash [28, 8, 12, 8]
+  glow 8 #00d2ff80
+
+# 5. Floating Energy Prisms (Rotated Group with Additive Blend)
+group
+  pos [cx, cy]
+  rot time * 1.5
+  blend "add"
+  for p from 0 to 2
+    set angle = p * (360deg / 3)
+    path
+      fill linear [0, 0] [cos(angle) * 70, sin(angle) * 70]
+        stop 0.0 #ffffff
+        stop 1.0 #0066ff00
+      stroke #ffffff
+      width 1
+      join "miter"
+      set r_inner = 35
+      set r_outer = 68
+      start [r_inner * cos(angle - 15deg), r_inner * sin(angle - 15deg)]
+      line [r_outer * cos(angle), r_outer * sin(angle)]
+      line [r_inner * cos(angle + 15deg), r_inner * sin(angle + 15deg)]
+      close
+
+# 6. Core Hub Highlight (Specularity)
+circle
+  center [cx - 6, cy - 6]
+  radius 14
+  fill #ffffff
+  blur 4
+  blend "screen"

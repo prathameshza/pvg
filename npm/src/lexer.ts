@@ -35,6 +35,7 @@ export const enum TokenKind {
   Path = "Path",
   Text = "Text",
   Group = "Group",
+  Clip = "Clip",
 
   // Properties
   Center = "Center",
@@ -52,12 +53,37 @@ export const enum TokenKind {
   Rot = "Rot",
   Scale = "Scale",
 
+  // PVG 0.2 §§8-12 properties & paints
+  Cap = "Cap",
+  Join = "Join",
+  Miter = "Miter",
+  Dash = "Dash",
+  Blend = "Blend",
+  Blur = "Blur",
+  Shadow = "Shadow",
+  Glow = "Glow",
+  Linear = "Linear",
+  Radial = "Radial",
+  Angular = "Angular",
+  Stop = "Stop",
+
   // Path Commands
   Start = "Start",
   Quad = "Quad",
   Curve = "Curve",
   Arc = "Arc",
   Close = "Close",
+
+  // Post-0.2 §18 keywords (soft keywords: also legal as identifiers)
+  Snap = "Snap",
+  Filter = "Filter",
+  Param = "Param",
+  Pattern = "Pattern",
+  Sprite = "Sprite",
+  Spline = "Spline",
+  Palette = "Palette",
+  Data = "Data",
+  Row = "Row",
 
   // Symbols
   LBracket = "[",
@@ -175,8 +201,11 @@ export class Lexer {
       }
 
       const content = rawLine.slice(spaces);
-      const lineTokens = this.tokenizeLine(content, lineNum, spaces + 1);
-      tokens.push(...lineTokens);
+      if (tripleOpenerBeforeComment(content)) {
+        this.tokenizeLineWithTriple(content, lineNum, spaces + 1, spaces, tokens);
+      } else {
+        tokens.push(...this.tokenizeLine(content, lineNum, spaces + 1));
+      }
       tokens.push(new Token(TokenKind.Newline, null, lineNum, rawLine.length + 1));
     }
 
@@ -187,6 +216,78 @@ export class Lexer {
 
     tokens.push(new Token(TokenKind.Eof, null, this.lines.length || 1, 1));
     return tokens;
+  }
+
+  /**
+   * Lexes a line containing a `"""` opener. Emits the prefix tokens, one raw
+   * multi-line `String` token, then consumes the continuation lines up to and
+   * including the closing `"""` line (a trailing `# comment` is allowed on both
+   * the opener and the closer line).
+   */
+  private tokenizeLineWithTriple(
+    content: string,
+    lineNum: number,
+    colOffset: number,
+    baseSpaces: number,
+    tokens: Token[]
+  ): void {
+    const open = content.indexOf('"""');
+    const prefix = content.slice(0, open);
+    if (prefix.trim().length > 0) {
+      tokens.push(...this.tokenizeLine(prefix, lineNum, colOffset));
+    }
+    const openCol = colOffset + open;
+    const afterOpen = content.slice(open + 3);
+
+    // Opener and closer on the same line: `data """..11.."""`.
+    const close = afterOpen.indexOf('"""');
+    if (close >= 0) {
+      tokens.push(new Token(TokenKind.String, afterOpen.slice(0, close), lineNum, openCol));
+      const tail = afterOpen.slice(close + 3);
+      if (tail.trim().length > 0) {
+        tokens.push(...this.tokenizeLine(tail, lineNum, openCol + 3 + close + 3));
+      }
+      return;
+    }
+
+    // Multi-line form: the opener must end the line (trailing comment allowed).
+    const openTail = afterOpen.trimStart();
+    if (!(openTail.length === 0 || openTail.startsWith("#"))) {
+      throw new Error(
+        `Line ${lineNum}, Col ${openCol}: Multi-line """ strings must start at the end of the line (e.g. \`data """\`).`
+      );
+    }
+
+    const body: string[] = [];
+    for (;;) {
+      const nextIdx = this.currentLineIdx;
+      if (nextIdx >= this.lines.length) {
+        throw new Error(`Line ${lineNum}, Col ${openCol}: Unclosed triple-quoted string.`);
+      }
+      const raw = this.lines[nextIdx];
+      this.currentLineIdx++;
+
+      let sp = 0;
+      while (sp < raw.length && raw[sp] === " ") sp++;
+
+      if (raw.slice(sp).startsWith('"""')) {
+        const closerTail = raw.slice(sp + 3).trimStart();
+        if (!(closerTail.length === 0 || closerTail.startsWith("#"))) {
+          throw new Error(
+            `Line ${nextIdx + 1}, Col ${sp + 4}: Unexpected content after closing """.`
+          );
+        }
+        break;
+      }
+
+      // Dedent continuation lines by the opener's block indent so sprite art
+      // and text blocks read naturally in the source.
+      let cut = 0;
+      while (cut < baseSpaces && cut < raw.length && raw[cut] === " ") cut++;
+      body.push(raw.slice(cut));
+    }
+
+    tokens.push(new Token(TokenKind.String, body.join("\n"), lineNum, openCol));
   }
 
   private tokenizeLine(text: string, lineNum: number, colOffset: number): Token[] {
@@ -382,6 +483,7 @@ export class Lexer {
           case "path": kind = TokenKind.Path; break;
           case "text": kind = TokenKind.Text; break;
           case "group": kind = TokenKind.Group; break;
+          case "clip": kind = TokenKind.Clip; break;
           case "center": kind = TokenKind.Center; break;
           case "radius": kind = TokenKind.Radius; break;
           case "pos": kind = TokenKind.Pos; break;
@@ -401,6 +503,30 @@ export class Lexer {
           case "curve": kind = TokenKind.Curve; break;
           case "arc": kind = TokenKind.Arc; break;
           case "close": kind = TokenKind.Close; break;
+          // PVG 0.2 reserved keywords (§2.7)
+          case "cap": kind = TokenKind.Cap; break;
+          case "join": kind = TokenKind.Join; break;
+          case "miter": kind = TokenKind.Miter; break;
+          case "dash": kind = TokenKind.Dash; break;
+          case "blend": kind = TokenKind.Blend; break;
+          case "blur": kind = TokenKind.Blur; break;
+          case "shadow": kind = TokenKind.Shadow; break;
+          case "glow": kind = TokenKind.Glow; break;
+          case "linear": kind = TokenKind.Linear; break;
+          case "radial": kind = TokenKind.Radial; break;
+          case "angular":
+          case "conic": kind = TokenKind.Angular; break;
+          case "stop": kind = TokenKind.Stop; break;
+          // Post-0.2 §18 keywords (soft: legal as identifiers where a name is expected)
+          case "snap": kind = TokenKind.Snap; break;
+          case "filter": kind = TokenKind.Filter; break;
+          case "param": kind = TokenKind.Param; break;
+          case "pattern": kind = TokenKind.Pattern; break;
+          case "sprite": kind = TokenKind.Sprite; break;
+          case "spline": kind = TokenKind.Spline; break;
+          case "palette": kind = TokenKind.Palette; break;
+          case "data": kind = TokenKind.Data; break;
+          case "row": kind = TokenKind.Row; break;
           case "and": kind = TokenKind.And; break;
           case "or": kind = TokenKind.Or; break;
           case "not": kind = TokenKind.Not; break;
@@ -426,4 +552,69 @@ export class Lexer {
 
     return tokens;
   }
+}
+
+/**
+ * Post-0.2 "soft" keyword names. These words open new syntax in statement and
+ * property position, but older documents use some of them as ordinary variable
+ * names (`for row from 0 to 7`). Wherever an *identifier* is expected they are
+ * accepted as names (mirrors `soft_ident` in `pvg/src/parser.rs`).
+ */
+export function softIdentKind(kind: TokenKind, value: unknown): string | null {
+  switch (kind) {
+    case TokenKind.Ident:
+      return typeof value === "string" ? value : null;
+    case TokenKind.Row:
+      return "row";
+    case TokenKind.Data:
+      return "data";
+    case TokenKind.Filter:
+      return "filter";
+    case TokenKind.Snap:
+      return "snap";
+    case TokenKind.Palette:
+      return "palette";
+    case TokenKind.Param:
+      return "param";
+    case TokenKind.Pattern:
+      return "pattern";
+    case TokenKind.Sprite:
+      return "sprite";
+    case TokenKind.Spline:
+      return "spline";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Reports whether a `"""` opener appears on this line *before* any real `#`
+ * comment start (mirroring the hex-color rule so `#fff` colors don't count as
+ * comments). Port of `triple_opener_before_comment` in `pvg/src/lexer.rs`.
+ */
+export function tripleOpenerBeforeComment(content: string): boolean {
+  const open = content.indexOf('"""');
+  if (open < 0) return false;
+  let i = 0;
+  while (i < open) {
+    if (content[i] === "#") {
+      let hexEnd = i + 1;
+      while (hexEnd < content.length && /[0-9a-fA-F]/.test(content[hexEnd])) hexEnd++;
+      const hexLen = hexEnd - (i + 1);
+      if (hexLen === 3 || hexLen === 6 || hexLen === 8) {
+        const isDelim =
+          hexEnd === content.length ||
+          /\s/.test(content[hexEnd]) ||
+          ["]", ")", ",", ":", '"'].includes(content[hexEnd]);
+        if (isDelim) {
+          i = hexEnd;
+          continue;
+        }
+      }
+      // A real comment starts here; the `"""` is inside it.
+      return false;
+    }
+    i++;
+  }
+  return true;
 }

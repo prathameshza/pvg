@@ -1,4 +1,5 @@
 mod renderer;
+mod software;
 
 use eframe::egui::{self, Color32, Rect, Vec2};
 use pvg::ast::Document;
@@ -7,12 +8,12 @@ use pvg::eval::Evaluator;
 use pvg::parse_pvg;
 use std::fs;
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("PVG 0.1 Studio - Procedural Vector Graphics")
+            .with_title("PVG 0.2 Studio - Procedural Vector Graphics")
             .with_inner_size([1440.0, 880.0])
             .with_min_inner_size([920.0, 600.0]),
         ..Default::default()
@@ -67,6 +68,16 @@ const PRESETS: &[PresetItem] = &[
         path: "presets/gears.pvg",
         fallback: include_str!("../../presets/gears.pvg"),
     },
+    PresetItem {
+        name: "Shield Core (0.2 FX)",
+        path: "presets/shield_core.pvg",
+        fallback: include_str!("../../presets/shield_core.pvg"),
+    },
+    PresetItem {
+        name: "Tactical HUD (Params)",
+        path: "presets/tactical_hud.pvg",
+        fallback: include_str!("../../presets/tactical_hud.pvg"),
+    },
 ];
 
 struct PvgApp {
@@ -74,7 +85,14 @@ struct PvgApp {
     cached_doc: Option<Document>,
     draw_list: Option<DrawList>,
     error_msg: Option<String>,
+    /// False when the current code fails to parse. Gates per-frame animation
+    /// evaluation so a stale `cached_doc` can never overwrite the error or
+    /// keep a dead scene on screen.
+    code_valid: bool,
     status_notification: Option<(String, Instant)>,
+    /// Bumped on every recompile so the preview cache invalidates on edit.
+    doc_rev: u64,
+    preview: renderer::PreviewCache,
 
     // Real-time Telemetry
     raw_parse_us: f64,
@@ -110,7 +128,10 @@ impl PvgApp {
             cached_doc: None,
             draw_list: None,
             error_msg: None,
+            code_valid: true,
             status_notification: None,
+            doc_rev: 0,
+            preview: renderer::PreviewCache::default(),
             raw_parse_us: 0.0,
             raw_eval_us: 0.0,
             primitive_count: 0,
@@ -154,15 +175,24 @@ impl PvgApp {
 
     /// Full recompile: Parses the AST from string source, then evaluates at `time`
     fn full_recompile(&mut self, time: f64) {
+        self.doc_rev = self.doc_rev.wrapping_add(1);
         let parse_start = Instant::now();
         match parse_pvg(&self.code) {
             Ok(doc) => {
                 self.raw_parse_us = parse_start.elapsed().as_secs_f64() * 1_000_000.0;
                 self.cached_doc = Some(doc);
+                self.code_valid = true;
                 self.error_msg = None;
                 self.evaluate_cached(time);
             }
             Err(e) => {
+                // Drop everything from the previous good compile: showing a
+                // stale scene while the code is broken is worse than showing
+                // nothing. The viewport renders the error card instead.
+                self.cached_doc = None;
+                self.draw_list = None;
+                self.primitive_count = 0;
+                self.code_valid = false;
                 self.error_msg = Some(format!("Parse Error: {}", e));
             }
         }
@@ -170,10 +200,12 @@ impl PvgApp {
 
     /// Fast per-frame evaluation: Re-evaluates only the cached AST (microseconds)
     fn evaluate_cached(&mut self, time: f64) {
-        if let Some(ref doc) = self.cached_doc {
+        if self.cached_doc.is_some() {
             let eval_start = Instant::now();
             let evaluator = Evaluator::new_with_time(time);
-            match evaluator.evaluate_document(doc) {
+            // Borrow ends before the assignments below (result is owned).
+            let result = evaluator.evaluate_document(self.cached_doc.as_ref().unwrap());
+            match result {
                 Ok(dl) => {
                     self.raw_eval_us = eval_start.elapsed().as_secs_f64() * 1_000_000.0;
                     self.primitive_count = dl.items.len();
@@ -184,7 +216,7 @@ impl PvgApp {
                     self.error_msg = Some(format!("Runtime Error: {}", e));
                 }
             }
-        } else {
+        } else if self.code_valid {
             self.full_recompile(time);
         }
     }
@@ -234,11 +266,16 @@ impl eframe::App for PvgApp {
             || self.code.contains("(t)")
             || self.code.contains("* t");
 
-        // 60 FPS Timeline Advance (Uses fast cached AST evaluation)
-        if self.is_playing && self.is_animated {
+        // 60 FPS Timeline Advance (Uses fast cached AST evaluation).
+        // Gated on code_valid: while the code has a parse error the error
+        // card stays up and no stale scene is re-animated underneath it.
+        if self.is_playing && self.is_animated && self.code_valid {
             self.current_time += dt * self.speed;
             self.evaluate_cached(self.current_time);
-            ctx.request_repaint();
+            // Paced repaint (~60fps): uncapped `request_repaint` re-runs the
+            // whole frame (eval + CPU raster + texture upload) as fast as the
+            // machine allows, pinning a core for frames nobody can see.
+            ctx.request_repaint_after(Duration::from_millis(16));
         }
 
         // Top Toolbar Panel
@@ -451,9 +488,36 @@ impl eframe::App for PvgApp {
 
                                 ui.separator();
 
+                                // No-wrap layouter: a code editor must keep 1
+                                // source line = 1 visual row, or the line-number
+                                // gutter desyncs from wrapped continuations.
+                                // Mirrors TextEdit's default multiline layouter
+                                // with an infinite wrap width (horizontal scroll
+                                // comes from the surrounding ScrollArea::both).
+                                let mut no_wrap_layouter =
+                                    |ui: &egui::Ui, text: &str, _wrap_width: f32| {
+                                        let font_id = egui::TextStyle::Monospace
+                                            .resolve(ui.style());
+                                        let text_color = ui
+                                            .visuals()
+                                            .override_text_color
+                                            .unwrap_or_else(|| {
+                                                ui.visuals().widgets.inactive.text_color()
+                                            });
+                                        ui.fonts(|f| {
+                                            f.layout(
+                                                text.to_owned(),
+                                                font_id,
+                                                text_color,
+                                                f32::INFINITY,
+                                            )
+                                        })
+                                    };
+
                                 let text_edit = egui::TextEdit::multiline(&mut self.code)
                                     .font(egui::TextStyle::Monospace)
                                     .code_editor()
+                                    .layouter(&mut no_wrap_layouter)
                                     .lock_focus(true)
                                     .desired_width(f32::INFINITY)
                                     .frame(false);
@@ -469,6 +533,38 @@ impl eframe::App for PvgApp {
 
         // Center Viewport Panel
         egui::CentralPanel::default().show(ctx, |ui| {
+            // Broken code: show the error here, where it can't be missed,
+            // instead of a stale scene from the last good compile.
+            if let Some(err) = self.error_msg.clone() {
+                ui.centered_and_justified(|ui| {
+                    egui::Frame::none()
+                        .fill(Color32::from_rgb(38, 12, 16))
+                        .stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(200, 60, 70)))
+                        .rounding(8.0)
+                        .inner_margin(18.0)
+                        .show(ui, |ui| {
+                            ui.set_max_width(560.0);
+                            ui.label(
+                                egui::RichText::new("PREVIEW UNAVAILABLE — FIX THE ERROR BELOW")
+                                    .strong()
+                                    .color(Color32::from_rgb(255, 110, 110)),
+                            );
+                            ui.add_space(8.0);
+                            ui.label(
+                                egui::RichText::new(err)
+                                    .monospace()
+                                    .color(Color32::from_rgb(255, 170, 170)),
+                            );
+                            ui.add_space(8.0);
+                            ui.label(
+                                egui::RichText::new("Edit the code, then press Run (F5).")
+                                    .color(Color32::from_rgb(150, 155, 175)),
+                            );
+                        });
+                });
+                return;
+            }
+
             let (response, painter) = ui.allocate_painter(ui.available_size_before_wrap(), egui::Sense::drag());
 
             // Pan canvas
@@ -499,7 +595,15 @@ impl eframe::App for PvgApp {
                     0.0_f32,
                     egui::Stroke::new(1.0_f32, Color32::from_rgb(60, 60, 72)),
                 );
-                renderer::render_draw_list(&painter, dl, canvas_origin, self.zoom);
+                self.preview.render_draw_list(
+                    ctx,
+                    &painter,
+                    dl,
+                    canvas_origin,
+                    self.zoom,
+                    self.doc_rev,
+                    self.current_time,
+                );
             }
         });
     }

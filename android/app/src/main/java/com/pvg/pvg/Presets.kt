@@ -1,4 +1,4 @@
-package com.pvg.pvg
+﻿package com.pvg.pvg
 
 data class Preset(
     val name: String,
@@ -10,7 +10,7 @@ data class Preset(
 object Presets {
     val list = listOf(
         Preset(
-            name = "🦖 Chrome Dino Runner",
+            name = "ðŸ¦– Chrome Dino Runner",
             description = "Sine gravity jump curve and procedural moving ground dashes",
             isAnimated = true,
             code = """
@@ -92,7 +92,7 @@ group
 """.trimIndent()
         ),
         Preset(
-            name = "🌀 Radar Scanner",
+            name = "ðŸŒ€ Radar Scanner",
             description = "Concentric range rings, sweep phosphor trail, and orbiting beacons",
             isAnimated = true,
             code = """
@@ -181,7 +181,7 @@ circle
 """.trimIndent()
         ),
         Preset(
-            name = "🎛️ Technical Dial",
+            name = "ðŸŽ›ï¸ Technical Dial",
             description = "Forward circular arcs, tick loop, and pointer needle",
             isAnimated = false,
             code = """
@@ -249,7 +249,7 @@ path
 """.trimIndent()
         ),
         Preset(
-            name = "⚙️ Gears & Functions",
+            name = "âš™ï¸ Gears & Functions",
             description = "User-defined procedural def functions with trigonometric cogs",
             isAnimated = false,
             code = """
@@ -286,7 +286,7 @@ draw_gear(410, 300, 8, 75, 20, #03a9f4)
 """.trimIndent()
         ),
         Preset(
-            name = "🔲 Procedural Grid",
+            name = "ðŸ”² Procedural Grid",
             description = "Nested 2D loops with 64-bit Xorshift pseudorandom radii",
             isAnimated = false,
             code = """
@@ -321,7 +321,7 @@ for row from 0 to 7
 """.trimIndent()
         ),
         Preset(
-            name = "🌀 Golden Spiral",
+            name = "ðŸŒ€ Golden Spiral",
             description = "Logarithmic spiral evaluation with fading opacity",
             isAnimated = false,
             code = """
@@ -347,6 +347,169 @@ for i from 0 to 60
     stroke #00ffff
     width 1
     opacity 0.85 - (i * 0.008)
+""".trimIndent()
+        )
+        ),
+        Preset(
+            name = "🛡️ Sci-Fi Shield Core (0.2 FX)",
+            description = "Gradients, clip mask, dashed stroke, drop shadow, additive glow and blur",
+            isAnimated = true,
+            code = """
+PVG 0.2
+canvas 512 512
+  background #07090e
+
+set cx = 256
+set cy = 256
+
+# 1. Ambient background glow (additive, blurred)
+circle
+  center [cx, cy]
+  radius 160
+  fill #00aaff
+  blur 45
+  blend "add"
+  opacity 0.25
+
+# 2. Outer armor plate with drop shadow and a metallic linear gradient
+rectangle
+  pos [106, 106]
+  size [300, 300]
+  radius 36
+  fill linear [106, 106] [406, 406]
+    stop 0.0 #2b3040
+    stop 0.5 #171922
+    stop 1.0 #0e1017
+  stroke #48526e
+  width 2
+  join "miter"
+  shadow [0, 18] 24 #000000bb
+
+# 3. Clipped core window: a radial sphere behind a scanline sweep
+clip
+  circle
+    center [cx, cy]
+    radius 105
+  for i from -5 to 5
+    line
+      from [cx - 150, cy + i * 30]
+      to [cx + 150, cy + i * 30 + 60]
+      stroke #00ffff
+      width 1.5
+      opacity 0.12
+  circle
+    center [cx, cy]
+    radius 90
+    fill radial [cx, cy] 90
+      stop 0.0 #00ffff
+      stop 0.6 #0033aa
+      stop 1.0 #07090e
+
+# 4. Mechanical retainer ring: dashed stroke plus neon glow
+circle
+  center [cx, cy]
+  radius 112
+  fill none
+  stroke #00d2ff
+  width 4
+  cap "butt"
+  dash [28, 8, 12, 8]
+  glow 8 #00d2ff80
+
+# 5. Rotating additive energy prisms
+group
+  pos [cx, cy]
+  rot time * 1.5
+  blend "add"
+  for p from 0 to 2
+    set angle = p * (360deg / 3)
+    path
+      fill linear [0, 0] [cos(angle) * 70, sin(angle) * 70]
+        stop 0.0 #ffffff
+        stop 1.0 #0066ff00
+      stroke #ffffff
+      width 1
+      join "miter"
+      set r_inner = 35
+      set r_outer = 68
+      start [r_inner * cos(angle - 15deg), r_inner * sin(angle - 15deg)]
+      line [r_outer * cos(angle), r_outer * sin(angle)]
+      line [r_inner * cos(angle + 15deg), r_inner * sin(angle + 15deg)]
+      close
+
+# 6. Specularity highlight
+circle
+  center [cx - 6, cy - 6]
+  radius 14
+  fill #ffffff
+  blur 4
+  blend "screen"
+""".trimIndent()
+        ),
+        Preset(
+            name = "🎛️ Host Uniforms + Pattern + Spline (0.2)",
+            description = "param uniforms driven from Kotlin, a 16x16 pattern fill and a Catmull-Rom spline",
+            isAnimated = true,
+            code = """
+PVG 0.2
+canvas 512 512
+  background #06080d
+
+param shield_power: 0.82
+param hull_hp: 0.65
+
+set cx = 256
+set cy = 256
+
+# Repeatable carbon-mesh tile
+pattern carbon_mesh 16 16
+  line
+    from [0, 0]
+    to [16, 16]
+    stroke #ffffff0a
+    width 1
+  line
+    from [16, 0]
+    to [0, 16]
+    stroke #ffffff0a
+    width 1
+
+# Chassis card with a real pattern fill and a drop shadow
+rectangle
+  pos [26, 26]
+  size [460, 460]
+  radius 24
+  fill pattern carbon_mesh
+  stroke #1b2336
+  width 2
+  shadow [0, 16] 24 #000000ee
+
+# Health bar driven by the hull_hp uniform
+rectangle
+  pos [56, 430]
+  size [400 * hull_hp, 14]
+  fill hull_hp < 0.3 ? #ff3344 : #00e676
+
+# Shield arc filled from the shield_power uniform, wobbled by value noise
+path
+  fill none
+  stroke #00d2ff
+  width 2
+  glow 6 #00d2ff80
+  start [56, 400]
+  line [56 + 400 * shield_power, 400 + noise2d(1.0, time * 1.5) * 10]
+  line [456, 400]
+
+# Telemetry waveform from an array of samples
+set history = [12, 45, 68, 30, 85, 92, 40, 58]
+
+spline
+  points history
+  pos [56, 60]
+  size [400, 120]
+  stroke #00ffcc
+  width 2
+  glow 4 #00ffcc
 """.trimIndent()
         )
     )

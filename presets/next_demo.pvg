@@ -1,0 +1,66 @@
+PVG 0.2
+canvas 512 512
+  background #07090e
+  snap 1.0
+  filter "nearest"
+
+param health: 0.75
+param shield: 0.40
+
+seed 9921
+
+pattern grid_pattern 16 16
+  line
+    from [0, 0]
+    to [16, 0]
+    stroke #ffffff
+    width 1
+  line
+    from [0, 0]
+    to [0, 16]
+    stroke #ffffff
+    width 1
+
+# Textured backplate
+rectangle
+  pos [106, 106]
+  size [300, 300]
+  radius 24
+  fill pattern grid_pattern
+  stroke #48526e
+  width 2
+
+# Health bar driven by host uniform
+rectangle
+  pos [156, 156]
+  size [200 * health, 12]
+  fill health < 0.25 ? #ff3344 : #00e676
+
+# Shield arc wobbled by deterministic noise
+path
+  fill none
+  stroke #00ffff
+  width 2
+  glow 6 #00ffff80
+  start [256, 156]
+  line [276, 156 + noise2d(1.0, time * 1.5) * 12]
+  line [296, 156 + noise2d(2.0, time * 1.5) * 12]
+
+# Retro sprite icon
+sprite
+  pos [156, 200]
+  palette [#00000000, #b84418, #fc9838]
+  data "0110"
+  data "1221"
+  data "0110"
+
+# Telemetry wave
+set history = [12, 45, 68, 30, 85, 92, 40]
+
+spline
+  points history
+  pos [156, 280]
+  size [200, 80]
+  stroke #00ffcc
+  width 2
+  glow 4 #00ffcc

@@ -30,6 +30,10 @@ class PvgController(
     var currentTime by mutableDoubleStateOf(0.0)
         private set
 
+    /** Host uniform overrides applied on top of the document's `param` defaults. */
+    val params = mutableStateOf<Map<String, Double>>(emptyMap())
+        private set
+
     internal val engine = PvgEngine(initialSource, initialPlaying, initialSpeed)
 
     fun load(pvgCode: String) {
@@ -55,6 +59,25 @@ class PvgController(
         speed = playbackSpeed
         engine.setSpeed(playbackSpeed)
     }
+
+    /**
+     * Sets a host uniform (`param`, PVG 0.2 spec section 18.1) declared by the
+     * document, e.g. `engine.setParam("shield", 0.42)`. Overrides the declared
+     * default for every subsequent frame.
+     */
+    fun setParam(name: String, value: Double) {
+        params[name] = value
+        engine.setParam(name, value)
+    }
+
+    /** Clears a host uniform override so the document default applies again. */
+    fun clearParam(name: String) {
+        params.remove(name)
+        engine.clearParam(name)
+    }
+
+    /** Names of the `param` declarations in the loaded document. */
+    fun paramNames(): List<String> = engine.paramNames()
 
     fun seekTo(timeSeconds: Double) {
         currentTime = timeSeconds
