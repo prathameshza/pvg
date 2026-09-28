@@ -1,7 +1,9 @@
 /**
  * Procedural Vector Graphics (PVG) 0.2 - Pure Vanilla JavaScript Engine
  * Specification Conformant Lexer, Recursive Descent Parser, Evaluator & Render Pipeline
- * Implements PVG 0.2 §§8-12: stroke topology, gradients, blur/shadow/glow, clip, blend.
+ * Implements PVG 0.2 Sections 8-12: stroke topology, gradients, blur/shadow/glow, clip, blend;
+ * post-0.2 Section 18: params, noise, sprites, patterns, splines, path control flow;
+ * plus Section 2.6 rgb()/rgba() and the Section 15 safety caps (100k loops, 64 stack frames, 50k primitives).
  * Includes standard <pvg-view> W3C Custom Element Web Component
  */
 
@@ -200,7 +202,7 @@ class DrawStyle {
     this.stroke = stroke instanceof PvgColor ? solidPaint(stroke) : (stroke || solidPaint(PvgColor.None()));
     this.width = width;
     this.opacity = opacity;
-    // PVG 0.2 §8/10/12 defaults (match Rust DrawStyle::default)
+    // PVG 0.2 Section 8/10/12 defaults (match Rust DrawStyle::default)
     this.cap = 'butt';       // butt | round | square
     this.join = 'miter';     // miter | round | bevel
     this.miter = 4.0;
@@ -294,7 +296,7 @@ const TokenKind = {
   Rot: 'Rot',
   Scale: 'Scale',
 
-  // PVG 0.2 §8-12 properties & paints
+  // PVG 0.2 Section 8-12 properties & paints
   Cap: 'Cap',
   Join: 'Join',
   Miter: 'Miter',
@@ -308,7 +310,7 @@ const TokenKind = {
   Angular: 'Angular',
   Stop: 'Stop',
 
-  // Post-0.2 §18 keywords (soft: still legal as identifiers)
+  // Post-0.2 Section 18 keywords (soft: still legal as identifiers)
   Snap: 'Snap',
   Filter: 'Filter',
   Param: 'Param',
@@ -699,7 +701,7 @@ class Lexer {
           case 'curve': kind = TokenKind.Curve; break;
           case 'arc': kind = TokenKind.Arc; break;
           case 'close': kind = TokenKind.Close; break;
-          // PVG 0.2 reserved keywords (§2.7)
+          // PVG 0.2 reserved keywords (Section 2.7)
           case 'clip': kind = TokenKind.Clip; break;
           case 'cap': kind = TokenKind.Cap; break;
           case 'join': kind = TokenKind.Join; break;
@@ -714,7 +716,7 @@ class Lexer {
           case 'angular':
           case 'conic': kind = TokenKind.Angular; break;
           case 'stop': kind = TokenKind.Stop; break;
-          // Post-0.2 §18 keywords (soft keywords: accepted as names too)
+          // Post-0.2 Section 18 keywords (soft keywords: accepted as names too)
           case 'snap': kind = TokenKind.Snap; break;
           case 'filter': kind = TokenKind.Filter; break;
           case 'param': kind = TokenKind.Param; break;
@@ -854,11 +856,11 @@ class Parser {
   parseDocument() {
     this.skipNewlines();
 
-    // 1. Header: PVG 0.1
+    // 1. Header: PVG 0.1 / 0.2 (0.2 readers accept both; 0.1 docs evaluate identically)
     this.expect(TokenKind.Pvg);
     const verTok = this.advance();
     if (verTok.kind !== TokenKind.Number) {
-      throw new Error(`Line ${verTok.line}: Expected version number after PVG (e.g. 0.1)`);
+      throw new Error(`Line ${verTok.line}: Expected version number after PVG (e.g. 0.2)`);
     }
     const version = [Math.floor(verTok.value), Math.round((verTok.value % 1) * 10)];
     this.skipNewlines();
@@ -991,7 +993,7 @@ class Parser {
       case TokenKind.Seed: {
         this.advance();
         const seedTok = this.advance();
-        return { type: 'Seed', seed: seedTok.kind === TokenKind.Number ? Math.floor(seedTok.value) : 42 };
+        return { type: 'Seed', seed: seedTok.kind === TokenKind.Number ? Math.floor(seedTok.value) : 0 };
       }
       case TokenKind.Def: {
         this.advance();
@@ -1111,7 +1113,18 @@ class Parser {
         this.advance();
         this.skipNewlines();
         return this.parseSpline();
+      case TokenKind.Param: {
+        // `param` inside a block behaves like `set` with a default that the
+        // host may override; evaluates identically at runtime (Rust parity).
+        // Top-level `param` is handled by parseDocument (host uniforms).
+        const decl = this.parseParamDecl();
+        return { type: 'Set', name: decl.name, expr: decl.default };
+      }
       default: {
+        // `pattern` tiles must be declared at top level (Rust parity).
+        if (tok.kind === TokenKind.Pattern) {
+          throw new Error(`Line ${tok.line}: Pattern blocks must be declared at top level.`);
+        }
         // Plain identifiers and soft keywords alike: a function call.
         const softName = softIdentKind(tok.kind, tok.value);
         if (softName !== null && this.tokens[this.pos + 1] && this.tokens[this.pos + 1].kind === TokenKind.LParen) {
@@ -1905,7 +1918,7 @@ class Parser {
       case TokenKind.LBracket: {
         // Bracket list: exactly 2 scalar elements = Vec2 (back-compat for
         // positions); any other arity = Array literal. Nested compounds
-        // (`[[10, 10], [90, 90]]`) are arrays. Trailing comma allowed (§18.5).
+        // (`[[10, 10], [90, 90]]`) are arrays. Trailing comma allowed (Section 18.5).
         const first = this.parseExpression();
         if (this.peek().kind !== TokenKind.Comma) {
           this.expect(TokenKind.RBracket);
@@ -1968,6 +1981,11 @@ class Parser {
 // Rust uses u64 wrapping arithmetic, so BigInt is required for cross-engine parity.
 const NOISE_MASK64 = 0xffffffffffffffffn;
 const NOISE_U64_MAX = 18446744073709551615;
+
+/** Maximum nested user-function call frames per evaluation (spec Section 15). */
+const MAX_CALL_STACK_DEPTH = 64;
+/** Maximum top-level draw commands per evaluated scene (spec Section 15). */
+const MAX_SCENE_PRIMITIVES = 50000;
 
 function noiseMulmod(a, b) {
   return (a * b) & NOISE_MASK64;
@@ -2074,11 +2092,16 @@ class Evaluator {
       ['TAU', Math.PI * 2.0],
       ['time', time],
       ['t', time],
+      // Helpers so organic-shape examples read naturally: `deg * deg_to_rad`.
+      ['deg_to_rad', Math.PI / 180.0],
+      ['rad_to_deg', 180.0 / Math.PI],
     ]);
     this.functions = new Map();
     this.rngState = 88172645463325252n;
     this.loopLimit = 100000;
     this.loopCount = 0;
+    /** Current nested user-function call depth (guarded by MAX_CALL_STACK_DEPTH). */
+    this.callDepth = 0;
     this.drawList = [];
     this.transformStack = [Transform2D.identity()];
     this.styleStack = [new DrawStyle()];
@@ -2104,6 +2127,14 @@ class Evaluator {
 
   currentStyle() {
     return this.styleStack[this.styleStack.length - 1].clone();
+  }
+
+  /** Pushes one top-level draw command, enforcing the scene primitive budget (Section 15). */
+  pushDrawCmd(cmd) {
+    if (this.drawList.length >= MAX_SCENE_PRIMITIVES) {
+      throw new Error(`Exceeded scene primitive limit of ${MAX_SCENE_PRIMITIVES} draw commands`);
+    }
+    this.drawList.push(cmd);
   }
 
   nextRandom() {
@@ -2191,7 +2222,9 @@ class Evaluator {
         return null;
       }
       case 'Seed': {
-        const s = BigInt(stmt.seed || 42);
+        // `seed 0` (or a non-numeric seed, normalized to 0 by the parser)
+        // selects the engine default, mirroring the Rust core.
+        const s = BigInt(stmt.seed);
         this.rngState = s === 0n ? 88172645463325252n : s;
         return null;
       }
@@ -2267,7 +2300,7 @@ class Evaluator {
         this.applyFxProps(style, stmt, locals);
 
         const center = this.snapPoint(this.currentTransform().transformPoint(centerRaw));
-        this.drawList.push({ type: 'Circle', center, radius, style });
+        this.pushDrawCmd({ type: 'Circle', center, radius, style });
         return null;
       }
       case 'Ellipse': {
@@ -2281,7 +2314,7 @@ class Evaluator {
         this.applyFxProps(style, stmt, locals);
 
         const center = this.snapPoint(this.currentTransform().transformPoint(centerRaw));
-        this.drawList.push({ type: 'Ellipse', center, radius: radiusRaw, style });
+        this.pushDrawCmd({ type: 'Ellipse', center, radius: radiusRaw, style });
         return null;
       }
       case 'Rectangle': {
@@ -2296,7 +2329,7 @@ class Evaluator {
         this.applyFxProps(style, stmt, locals);
 
         const pos = this.snapPoint(this.currentTransform().transformPoint(posRaw));
-        this.drawList.push({ type: 'Rectangle', pos, size: sizeRaw, cornerRadius, style });
+        this.pushDrawCmd({ type: 'Rectangle', pos, size: sizeRaw, cornerRadius, style });
         return null;
       }
       case 'Line': {
@@ -2309,7 +2342,7 @@ class Evaluator {
         this.applyFxProps(style, stmt, locals);
 
         const trans = this.currentTransform();
-        this.drawList.push({
+        this.pushDrawCmd({
           type: 'Line',
           from: this.snapPoint(trans.transformPoint(fromRaw)),
           to: this.snapPoint(trans.transformPoint(toRaw)),
@@ -2327,7 +2360,7 @@ class Evaluator {
         if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
         this.applyFxProps(style, stmt, locals);
 
-        this.drawList.push({ type: 'Polygon', points, style });
+        this.pushDrawCmd({ type: 'Polygon', points, style });
         return null;
       }
       case 'Text': {
@@ -2351,7 +2384,7 @@ class Evaluator {
         this.applyFxProps(style, stmt, locals, true);
 
         const pos = this.snapPoint(this.currentTransform().transformPoint(posRaw));
-        this.drawList.push({
+        this.pushDrawCmd({
           type: 'Text',
           pos,
           content,
@@ -2378,7 +2411,7 @@ class Evaluator {
           this.evalPathCommand(cmd, pathLocals, trans, drawCommands, locals);
         }
 
-        this.drawList.push({ type: 'Path', commands: drawCommands, style });
+        this.pushDrawCmd({ type: 'Path', commands: drawCommands, style });
         return null;
       }
       case 'Sprite': {
@@ -2395,7 +2428,7 @@ class Evaluator {
         if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
         if (stmt.blend) style.blend = this.evalBlend(this.evalExpr(stmt.blend, locals));
         const pos = this.snapPoint(this.currentTransform().transformPoint(posRaw));
-        this.drawList.push({ type: 'Sprite', pos, palette, rows: stmt.rows, scale, style });
+        this.pushDrawCmd({ type: 'Sprite', pos, palette, rows: stmt.rows, scale, style });
         return null;
       }
       case 'Spline': {
@@ -2455,7 +2488,7 @@ class Evaluator {
 
         const trans = this.currentTransform();
         const points = ctrl.map((p) => this.snapPoint(trans.transformPoint(p)));
-        this.drawList.push({ type: 'Spline', points, style });
+        this.pushDrawCmd({ type: 'Spline', points, style });
         return null;
       }
       case 'Group': {
@@ -2512,7 +2545,7 @@ class Evaluator {
           this.evalStmt(bStmt, locals);
         }
         const content = this.drawList.splice(contentBase);
-        this.drawList.push({ type: 'Clip', mask, content });
+        this.pushDrawCmd({ type: 'Clip', mask, content });
         return null;
       }
     }
@@ -2674,6 +2707,9 @@ class Evaluator {
   }
 
   invokeFunction(name, args) {
+    if (this.callDepth >= MAX_CALL_STACK_DEPTH) {
+      throw new Error(`Exceeded call stack limit of ${MAX_CALL_STACK_DEPTH} frames`);
+    }
     const func = this.functions.get(name);
     if (!func) throw new Error(`Undefined function '${name}'`);
     if (func.params.length !== args.length) {
@@ -2685,11 +2721,17 @@ class Evaluator {
       locals.set(func.params[i], args[i]);
     }
 
-    for (const stmt of func.body) {
-      const ret = this.evalStmt(stmt, locals);
-      if (ret && ret.isReturn) return ret.value;
+    // Depth is released on every exit path (return value or error).
+    this.callDepth++;
+    try {
+      for (const stmt of func.body) {
+        const ret = this.evalStmt(stmt, locals);
+        if (ret && ret.isReturn) return ret.value;
+      }
+      return null;
+    } finally {
+      this.callDepth--;
     }
-    return null;
   }
 
   evalExpr(expr, locals) {
@@ -2731,7 +2773,7 @@ class Evaluator {
         switch (expr.op) {
           case '+': {
             if (typeof l === 'string' || typeof r === 'string') {
-              return `${l}${r}`;
+              return `${this.displayValue(l)}${this.displayValue(r)}`;
             }
             return this.asNumber(l) + this.asNumber(r);
           }
@@ -2743,8 +2785,10 @@ class Evaluator {
           }
           case '%': return this.asNumber(l) % this.asNumber(r);
           case '^': return Math.pow(this.asNumber(l), this.asNumber(r));
-          case '==': return l === r;
-          case '!=': return l !== r;
+          // Equality and relational operators coerce via asNumber (numbers and
+          // bools only, mirroring Rust `as_f64`); any other type is a runtime error.
+          case '==': return this.asNumber(l) === this.asNumber(r);
+          case '!=': return this.asNumber(l) !== this.asNumber(r);
           case '<': return this.asNumber(l) < this.asNumber(r);
           case '<=': return this.asNumber(l) <= this.asNumber(r);
           case '>': return this.asNumber(l) > this.asNumber(r);
@@ -2776,6 +2820,16 @@ class Evaluator {
           case 'radians': return (this.asNumber(args[0]) * Math.PI) / 180.0;
           case 'degrees': return (this.asNumber(args[0]) * 180.0) / Math.PI;
           case 'deg_to_rad': return (this.asNumber(args[0]) * Math.PI) / 180.0;
+          case 'rgb': {
+            if (args.length !== 3) throw new Error('rgb(r, g, b) needs 3 arguments');
+            return new PvgColor(this.colorChannel(args[0]), this.colorChannel(args[1]), this.colorChannel(args[2]), 255);
+          }
+          case 'rgba': {
+            if (args.length !== 4) throw new Error('rgba(r, g, b, a) needs 4 arguments');
+            const av = this.asNumber(args[3]);
+            const ab = Number.isNaN(av) ? 0 : Math.round(Math.max(0, Math.min(1, av)) * 255);
+            return new PvgColor(this.colorChannel(args[0]), this.colorChannel(args[1]), this.colorChannel(args[2]), ab);
+          }
           case 'noise2d': {
             if (args.length !== 2) throw new Error('noise2d(x, y) needs 2 arguments');
             return pvgNoise2(this.asNumber(args[0]), this.asNumber(args[1]));
@@ -2858,7 +2912,7 @@ class Evaluator {
   }
 
   evalStops(stops, locals) {
-    // Offsets clamped to [0,1]; colors incl. transparent alpha preserved (§9.4).
+    // Offsets clamped to [0,1]; colors incl. transparent alpha preserved (Section 9.4).
     // Sorted by offset at evaluation (stable).
     const out = (stops || []).map((s) => ({
       offset: Math.max(0, Math.min(1, this.asNumber(this.evalExpr(s.offset, locals)))),
@@ -2875,12 +2929,50 @@ class Evaluator {
   }
 
   asString(val) {
+    return this.displayValue(val);
+  }
+
+  /**
+   * String display conversion for `+` concatenation and text content.
+   * Mirrors Rust `Value::as_string`: strings pass through, numbers use integer
+   * formatting when integral and |n| < 1e15, bools print as `true`/`false`,
+   * arrays render recursively as `[a, b]`; colors, paints and `None` are
+   * runtime errors (never silent `[object Object]` output).
+   */
+  displayValue(val) {
     if (typeof val === 'string') return val;
-    if (typeof val === 'number') return val.toString();
-    if (typeof val === 'boolean') return val.toString();
-    if (val instanceof PvgColor) return val.toSvgString();
-    if (val && val.kind === 'color' && val.color instanceof PvgColor) return val.color.toSvgString();
+    if (typeof val === 'number') {
+      if (Number.isNaN(val)) return 'NaN';
+      if (val === Infinity) return 'inf';
+      if (val === -Infinity) return '-inf';
+      if (Object.is(val, -0)) return '-0';
+      if (Number.isInteger(val) && Math.abs(val) < 1e15) return String(Math.trunc(val));
+      return String(val);
+    }
+    if (typeof val === 'boolean') return val ? 'true' : 'false';
+    if (Array.isArray(val)) {
+      const parts = val.map((v) => {
+        try {
+          return this.displayValue(v);
+        } catch (e) {
+          return '?';
+        }
+      });
+      return `[${parts.join(', ')}]`;
+    }
     throw new Error('Expected string or displayable value');
+  }
+
+  /**
+   * Rounds a color channel to the nearest integer and clamps it to [0, 255]
+   * (Section 2.6 functional `rgb()` / `rgba()` form). Mirrors the Rust core's
+   * `color_channel` (round-then-clamp; NaN maps to 0 via an explicit guard,
+   * matching Rust's saturating float-to-int cast).
+   */
+  colorChannel(val) {
+    const rounded = Math.round(this.asNumber(val));
+    if (Number.isNaN(rounded)) return 0;
+    return Math.max(0, Math.min(255, rounded));
   }
 
   asVec2(val) {
@@ -2910,6 +3002,9 @@ class Evaluator {
     if (typeof val === 'boolean') return val;
     if (typeof val === 'number') return val !== 0.0;
     if (typeof val === 'string') return val.length > 0;
+    // Empty data arrays are falsy (Rust parity); a 2-element vector array is
+    // never empty so vectors stay truthy, matching Rust.
+    if (Array.isArray(val)) return val.length > 0;
     return val != null;
   }
 }
@@ -3143,12 +3238,20 @@ function paintCmdFillStroke(ctx, cmd, style) {
 }
 
 function drawSingleCmd(ctx, cmd, patterns) {
+  if (cmd.type === 'Clip') {
+    // Mask path is never drawn itself; content is composited through the intersection.
+    ctx.save();
+    if (traceCmdPath(ctx, cmd.mask)) ctx.clip();
+    for (const c of cmd.content) drawSingleCmd(ctx, c, patterns);
+    ctx.restore();
+    return;
+  }
   const style = cmd.style;
   ctx.save();
   applyCanvasStyle(ctx, style, patterns);
   const glow = style.glow;
   const blur = style.blur || 0;
-  // Glow: blurred silhouette additively underneath (§10.1 order shadow→glow→shape).
+  // Glow: blurred silhouette additively underneath (Section 10.1 order shadow→glow→shape).
   if (glow && glow.radius > 0 && cmd.type !== 'Text' && cmd.type !== 'Clip' && cmd.type !== 'Sprite') {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -4440,6 +4543,8 @@ window.PVG = {
   detectLoopDuration,
   dedent: dedentCode,
   PvgView,
+  MAX_CALL_STACK_DEPTH,
+  MAX_SCENE_PRIMITIVES,
   get presets() {
     return window.PVG_PRESETS || [];
   },

@@ -156,6 +156,13 @@ pub fn pvg_noise3(x: f64, y: f64, z: f64) -> f64 {
     v * 2.0 - 1.0
 }
 
+/// Rounds a color channel to the nearest integer and clamps it to `[0, 255]`
+/// (Section 2.6 functional `rgb()` / `rgba()` form). NaN maps to 0 via the saturating
+/// float-to-int cast, matching the TypeScript engine's explicit NaN guard.
+fn color_channel(v: f64) -> u8 {
+    v.round().clamp(0.0, 255.0) as u8
+}
+
 impl Value {
     pub fn as_f64(&self) -> Result<f64, PvgError> {
         match self {
@@ -229,6 +236,13 @@ impl Value {
     }
 }
 
+/// Maximum nested user-function call frames per evaluation (Section 15).
+/// Prevents stack-overflow crashes from runaway recursion.
+pub const MAX_CALL_STACK_DEPTH: usize = 64;
+/// Maximum top-level draw commands per evaluated scene (Section 15).
+/// Prevents memory/time denial-of-service from unbounded procedural output.
+pub const MAX_SCENE_PRIMITIVES: usize = 50_000;
+
 /// The procedural evaluator and runtime environment for PVG documents.
 pub struct Evaluator {
     globals: HashMap<String, Value>,
@@ -236,6 +250,8 @@ pub struct Evaluator {
     rng_state: u64,
     loop_limit: usize,
     loop_count: usize,
+    /// Current nested user-function call depth (guarded by [`MAX_CALL_STACK_DEPTH`]).
+    call_depth: usize,
     draw_list: Vec<DrawCmd>,
     transform_stack: Vec<Transform2D>,
     style_stack: Vec<DrawStyle>,
@@ -269,6 +285,7 @@ impl Evaluator {
             rng_state: 88172645463325252,
             loop_limit: 100_000,
             loop_count: 0,
+            call_depth: 0,
             draw_list: Vec::new(),
             transform_stack: vec![Transform2D::identity()],
             style_stack: vec![DrawStyle::default()],
@@ -311,6 +328,19 @@ impl Evaluator {
     pub fn set_time(&mut self, time: f64) {
         self.globals.insert("time".into(), Value::Number(time));
         self.globals.insert("t".into(), Value::Number(time));
+    }
+
+    /// Pushes one top-level draw command, enforcing the scene primitive
+    /// budget (Section 15). Every shape/sprite/spline/clip emission funnels here.
+    fn push_draw_cmd(&mut self, cmd: DrawCmd) -> Result<(), PvgError> {
+        if self.draw_list.len() >= MAX_SCENE_PRIMITIVES {
+            return Err(PvgError::safety_limit(format!(
+                "Exceeded scene primitive limit of {} draw commands",
+                MAX_SCENE_PRIMITIVES
+            )));
+        }
+        self.draw_list.push(cmd);
+        Ok(())
     }
 
     /// Snap helper: rounds to the active pixel grid (0 = off).
@@ -745,7 +775,7 @@ impl Evaluator {
 
                 let trans = self.current_transform();
                 let center = self.snap_point(trans.transform_point(center_raw));
-                self.draw_list.push(DrawCmd::Circle { center, radius, style });
+                self.push_draw_cmd(DrawCmd::Circle { center, radius, style })?;
                 Ok(None)
             }
             Stmt::Ellipse(e) => {
@@ -760,7 +790,7 @@ impl Evaluator {
 
                 let trans = self.current_transform();
                 let center = self.snap_point(trans.transform_point(center_raw));
-                self.draw_list.push(DrawCmd::Ellipse { center, radius: radius_raw, style });
+                self.push_draw_cmd(DrawCmd::Ellipse { center, radius: radius_raw, style })?;
                 Ok(None)
             }
             Stmt::Rectangle(r) => {
@@ -776,7 +806,7 @@ impl Evaluator {
 
                 let trans = self.current_transform();
                 let pos = self.snap_point(trans.transform_point(pos_raw));
-                self.draw_list.push(DrawCmd::Rectangle { pos, size: size_raw, corner_radius, style });
+                self.push_draw_cmd(DrawCmd::Rectangle { pos, size: size_raw, corner_radius, style })?;
                 Ok(None)
             }
             Stmt::Line(l) => {
@@ -791,7 +821,7 @@ impl Evaluator {
                 let trans = self.current_transform();
                 let from = self.snap_point(trans.transform_point(from_raw));
                 let to = self.snap_point(trans.transform_point(to_raw));
-                self.draw_list.push(DrawCmd::Line { from, to, style });
+                self.push_draw_cmd(DrawCmd::Line { from, to, style })?;
                 Ok(None)
             }
             Stmt::Polygon(p) => {
@@ -808,7 +838,7 @@ impl Evaluator {
                 if let Some(ref o) = p.opacity { style.opacity *= self.eval_expr(o, locals)?.as_f64()?; }
                 self.apply_fx_props(&mut style, &p.cap, &p.join, &p.miter, &p.dash, &p.align, &p.blur, &p.shadow, &p.glow, &p.blend, locals)?;
 
-                self.draw_list.push(DrawCmd::Polygon { points, style });
+                self.push_draw_cmd(DrawCmd::Polygon { points, style })?;
                 Ok(None)
             }
             Stmt::Path(p) => {
@@ -826,7 +856,7 @@ impl Evaluator {
                     self.eval_path_command(cmd, locals, trans, &mut draw_commands)?;
                 }
 
-                self.draw_list.push(DrawCmd::Path { commands: draw_commands, style });
+                self.push_draw_cmd(DrawCmd::Path { commands: draw_commands, style })?;
                 Ok(None)
             }
             Stmt::Text(t) => {
@@ -872,14 +902,14 @@ impl Evaluator {
 
                 let trans = self.current_transform();
                 let pos = self.snap_point(trans.transform_point(pos_raw));
-                self.draw_list.push(DrawCmd::Text {
+                self.push_draw_cmd(DrawCmd::Text {
                     pos,
                     content,
                     size,
                     font_family,
                     align,
                     style,
-                });
+                })?;
                 Ok(None)
             }
             Stmt::Group(g) => {
@@ -953,13 +983,13 @@ impl Evaluator {
                 }
                 let trans = self.current_transform();
                 let pos = self.snap_point(trans.transform_point(pos_raw));
-                self.draw_list.push(DrawCmd::Sprite {
+                self.push_draw_cmd(DrawCmd::Sprite {
                     pos,
                     palette,
                     rows: s.rows.clone(),
                     scale,
                     style,
-                });
+                })?;
                 Ok(None)
             }
             Stmt::Spline(sp) => {
@@ -1047,7 +1077,7 @@ impl Evaluator {
                 let trans = self.current_transform();
                 let points: Vec<(f64, f64)> =
                     ctrl.into_iter().map(|p| self.snap_point(trans.transform_point(p))).collect();
-                self.draw_list.push(DrawCmd::Spline { points, style });
+                self.push_draw_cmd(DrawCmd::Spline { points, style })?;
                 Ok(None)
             }
             Stmt::Clip { mask, content } => {
@@ -1057,13 +1087,19 @@ impl Evaluator {
                     self.eval_stmt(s, locals)?;
                 }
                 let content_cmds: Vec<DrawCmd> = self.draw_list.drain(content_base..).collect();
-                self.draw_list.push(DrawCmd::Clip { mask: Box::new(mask_cmd), content: content_cmds });
+                self.push_draw_cmd(DrawCmd::Clip { mask: Box::new(mask_cmd), content: content_cmds })?;
                 Ok(None)
             }
         }
     }
 
     fn invoke_function(&mut self, name: &str, args: Vec<Value>) -> Result<Option<Value>, PvgError> {
+        if self.call_depth >= MAX_CALL_STACK_DEPTH {
+            return Err(PvgError::safety_limit(format!(
+                "Exceeded call stack limit of {} frames",
+                MAX_CALL_STACK_DEPTH
+            )));
+        }
         let func = self.functions.get(name).cloned().ok_or_else(|| {
             PvgError::runtime(format!("Undefined function '{}'", name))
         })?;
@@ -1081,13 +1117,24 @@ impl Evaluator {
             locals.insert(param.clone(), val);
         }
 
+        // Depth is released on every exit path (return value or error).
+        self.call_depth += 1;
+        let mut result = Ok(None);
         for stmt in &func.body {
-            if let Some(ret) = self.eval_stmt(stmt, &mut locals)? {
-                return Ok(Some(ret));
+            match self.eval_stmt(stmt, &mut locals) {
+                Ok(Some(ret)) => {
+                    result = Ok(Some(ret));
+                    break;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    result = Err(e);
+                    break;
+                }
             }
         }
-
-        Ok(None)
+        self.call_depth -= 1;
+        result
     }
 
     fn eval_expr(&mut self, expr: &Expr, locals: &HashMap<String, Value>) -> Result<Value, PvgError> {
@@ -1197,6 +1244,29 @@ impl Evaluator {
                     "radians" => Ok(Value::Number(evaluated_args[0].as_f64()?.to_radians())),
                     "degrees" => Ok(Value::Number(evaluated_args[0].as_f64()?.to_degrees())),
                     "deg_to_rad" => Ok(Value::Number(evaluated_args[0].as_f64()? * std::f64::consts::PI / 180.0)),
+                    "rgb" => {
+                        if evaluated_args.len() != 3 {
+                            return Err(PvgError::runtime("rgb(r, g, b) needs 3 arguments"));
+                        }
+                        Ok(Value::Color(Color::Rgba(
+                            color_channel(evaluated_args[0].as_f64()?),
+                            color_channel(evaluated_args[1].as_f64()?),
+                            color_channel(evaluated_args[2].as_f64()?),
+                            255,
+                        )))
+                    }
+                    "rgba" => {
+                        if evaluated_args.len() != 4 {
+                            return Err(PvgError::runtime("rgba(r, g, b, a) needs 4 arguments"));
+                        }
+                        let a = (evaluated_args[3].as_f64()?.clamp(0.0, 1.0) * 255.0).round() as u8;
+                        Ok(Value::Color(Color::Rgba(
+                            color_channel(evaluated_args[0].as_f64()?),
+                            color_channel(evaluated_args[1].as_f64()?),
+                            color_channel(evaluated_args[2].as_f64()?),
+                            a,
+                        )))
+                    }
                     "noise2d" => {
                         if evaluated_args.len() != 2 {
                             return Err(PvgError::runtime("noise2d(x, y) needs 2 arguments"));

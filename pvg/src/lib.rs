@@ -83,6 +83,7 @@ pub use draw_list::{
 };
 pub use error::{PvgError, PvgErrorKind};
 pub use eval::{pvg_noise2, pvg_noise3, spline_to_bezier, Evaluator, Scene, Value};
+pub use eval::{MAX_CALL_STACK_DEPTH, MAX_SCENE_PRIMITIVES};
 pub use lexer::{Lexer, Token, TokenKind};
 pub use parser::Parser;
 pub use svg::{emit_animated_svg, emit_draw_commands, emit_svg, escape_xml, format_svg_attributes};

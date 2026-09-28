@@ -111,7 +111,7 @@ fn style_to_blend(style: &DrawStyle) -> SkBlend {
     }
 }
 // ---------------------------------------------------------------------------
-// PVG 0.2 §10 FX: blur / shadow / glow
+// PVG 0.2 Section 10 FX: blur / shadow / glow
 // ---------------------------------------------------------------------------
 //
 // Ported from `pvg_win_gui::software` (identical tiny-skia 0.11 backend and
@@ -638,7 +638,7 @@ fn stroke_shape_path(
 
 /// Renders a shape's fill + stroke with the style's own blend mode / mask.
 ///
-/// Splines are stroke-only (spec §4.2 forces their fill to NONE) and lines
+/// Splines are stroke-only (spec Section 4.2 forces their fill to NONE) and lines
 /// have no interior, so their fill pass is skipped exactly as before.
 #[allow(clippy::too_many_arguments)]
 fn paint_shape(
@@ -724,7 +724,7 @@ fn render_fx_into(
 }
 
 /// Fill + stroke one geometric command, routing through an offscreen FX layer
-/// when the style carries §10 `blur`/`shadow`/`glow`.
+/// when the style carries Section 10 `blur`/`shadow`/`glow`.
 ///
 /// The layer is cropped to [`fx_layer_rect`] in device pixels and its local
 /// draw transform is the caller's `transform` shifted by the crop origin, so
@@ -1330,7 +1330,7 @@ mod tests {
         buf.chunks(4).map(|p| p[0] as u64).sum()
     }
 
-    /// PVG 0.2 §10 `blur`: the filtered shape must spread energy past the sharp
+    /// PVG 0.2 Section 10 `blur`: the filtered shape must spread energy past the sharp
     /// silhouette edge onto the (black) canvas background, and must redistribute
     /// rather than create energy.
     #[test]
@@ -1362,7 +1362,7 @@ mod tests {
         );
     }
 
-    /// PVG 0.2 §10 `shadow [dx, dy] r color`: a blurred silhouette in the shadow
+    /// PVG 0.2 Section 10 `shadow [dx, dy] r color`: a blurred silhouette in the shadow
     /// color, offset and drawn UNDER the sharp shape.
     #[test]
     fn shadow_paints_at_offset() {
@@ -1395,7 +1395,7 @@ mod tests {
         let _ = shape_a;
     }
 
-    /// PVG 0.2 §10 `glow r color`: an additive blurred halo under the shape.
+    /// PVG 0.2 Section 10 `glow r color`: an additive blurred halo under the shape.
     #[test]
     fn glow_adds_halo() {
         let size = 120u32;
@@ -1420,7 +1420,7 @@ mod tests {
         );
     }
 
-    /// A shape without §10 FX must rasterize byte-identically to the same shape
+    /// A shape without Section 10 FX must rasterize byte-identically to the same shape
     /// with explicit zero FX values - guards against always taking the FX path.
     #[test]
     fn no_fx_is_unchanged() {
@@ -1436,7 +1436,7 @@ mod tests {
         assert_eq!(a.0, b.0, "blur 0 must not alter the rasterization");
     }
 
-    /// Host uniforms (`param`, §18.1) must drive the Android evaluator exactly
+    /// Host uniforms (`param`, Section 18.1) must drive the Android evaluator exactly
     /// like the core `Scene` API that the JNI layer wraps.
     #[test]
     fn host_param_overrides_apply() {

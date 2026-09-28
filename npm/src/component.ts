@@ -88,7 +88,7 @@ export class PvgView extends CustomElementBase {
   private _isVisible = true;
   private _isAnimatedDoc = false;
   private _manuallySetCode = false;
-  /** Host uniform overrides (`param`, §18.1) pushed into the evaluator. */
+  /** Host uniform overrides (`param`, Section 18.1) pushed into the evaluator. */
   private _params = new Map<string, string | number | boolean>();
 
   private _panX = 0;
@@ -223,7 +223,7 @@ export class PvgView extends CustomElementBase {
   }
 
   /**
-   * Sets a host uniform (`param`, §18.1) and re-renders.
+   * Sets a host uniform (`param`, Section 18.1) and re-renders.
    * Values override the document's declared defaults.
    */
   setParam(name: string, value: string | number | boolean): void {
@@ -504,7 +504,7 @@ export class PvgView extends CustomElementBase {
       const parser = new Parser(tokens);
       const ast = parser.parseDocument();
       const evaluator = new Evaluator(time);
-      // Host uniforms win over the document's declared defaults (§18.1).
+      // Host uniforms win over the document's declared defaults (Section 18.1).
       for (const [k, v] of this._params) evaluator.setParam(k, v);
       this._currentDrawList = evaluator.evaluateDocument(ast);
 

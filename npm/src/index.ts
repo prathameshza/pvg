@@ -1,6 +1,6 @@
 import { dedentCode, Lexer, softIdentKind, Token, TokenKind, tripleOpenerBeforeComment } from "./lexer.js";
 import { Parser } from "./parser.js";
-import { Evaluator, pvgNoise2, pvgNoise3, splineToBezier } from "./evaluator.js";
+import { Evaluator, MAX_CALL_STACK_DEPTH, MAX_SCENE_PRIMITIVES, pvgNoise2, pvgNoise3, splineToBezier } from "./evaluator.js";
 import { PvgColor } from "./color.js";
 import { Transform2D } from "./transform.js";
 import {
@@ -57,10 +57,10 @@ import type { Value } from "./evaluator.js";
  *
  * @example
  * ```ts
- * import { parse } from 'pvg';
+ * import { parse } from 'pvgview';
  *
  * const ast = parse(`
- * PVG 0.1
+ * PVG 0.2
  * canvas 400 400
  * circle
  *   center [200, 200]
@@ -111,7 +111,7 @@ export function compile(
 }
 
 /**
- * Compiles with host uniforms (`param`, §18.1) overridden — a convenience
+ * Compiles with host uniforms (`param`, Section 18.1) overridden — a convenience
  * wrapper around `compile()` (mirrors `pvg::compile_with_params`).
  */
 export function compileWithParams(
@@ -123,7 +123,7 @@ export function compileWithParams(
 }
 
 /**
- * Host-driven scene handle (§18.1): parse once, push uniforms per frame,
+ * Host-driven scene handle (Section 18.1): parse once, push uniforms per frame,
  * evaluate. Mirrors `pvg::Scene` in the Rust core.
  *
  * @example
@@ -205,10 +205,10 @@ export class PvgScene {
  *
  * @example
  * ```ts
- * import { toSvg } from 'pvg';
+ * import { toSvg } from 'pvgview';
  *
  * const svgXml = toSvg(`
- * PVG 0.1
+ * PVG 0.2
  * canvas 200 200
  * circle
  *   center [100, 100]
@@ -277,6 +277,8 @@ export {
   pvgNoise2,
   pvgNoise3,
   splineToBezier,
+  MAX_CALL_STACK_DEPTH,
+  MAX_SCENE_PRIMITIVES,
 };
 
 export type {

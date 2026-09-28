@@ -6,13 +6,13 @@
 
 PVG 0.1 covered flat-color vector geometry. PVG 0.2 adds the five rendering essentials for game-ready assets with depth, weight, and visual punch:
 
-1. **Stroke topology** — `cap` (`butt`/`round`/`square`), `join` (`miter`/`round`/`bevel`), `miter` limit, `dash` patterns, and stroke `align` (`center`/`inside`/`outside`) (§8).
-2. **Gradients** — `linear`, `radial` (with focal point), and `angular`/`conic` paints with `stop` color lists (§9).
-3. **Lighting & depth FX** — O(N) CPU `blur`, offset `shadow`, and additive `glow` (§10).
-4. **Clipping & masks** — declarative `clip` blocks whose first shape bounds all content (§11).
-5. **Blend modes** — `blend "normal" | "add" | "multiply" | "screen" | "overlay"` (§12).
+1. **Stroke topology** — `cap` (`butt`/`round`/`square`), `join` (`miter`/`round`/`bevel`), `miter` limit, `dash` patterns, and stroke `align` (`center`/`inside`/`outside`) (Section 8).
+2. **Gradients** — `linear`, `radial` (with focal point), and `angular`/`conic` paints with `stop` color lists (Section 9).
+3. **Lighting & depth FX** — O(N) CPU `blur`, offset `shadow`, and additive `glow` (Section 10).
+4. **Clipping & masks** — declarative `clip` blocks whose first shape bounds all content (Section 11).
+5. **Blend modes** — `blend "normal" | "add" | "multiply" | "screen" | "overlay"` (Section 12).
 
-**Versioning policy:** a document declares `PVG 0.1` or `PVG 0.2` in its header (§2.1). Readers implementing 0.2 **must** accept both headers; every valid 0.1 document evaluates identically under 0.2 (new properties default to 0.1 behavior: `butt` caps, `miter` joins, solid paints, `normal` blending, no filters, no clipping). Authors should declare `PVG 0.2` when using 0.2 features. The words `clip`, `cap`, `join`, `miter`, `dash`, `blend`, `blur`, `shadow`, `glow`, `linear`, `radial`, `angular`, `conic`, and `stop` are reserved keywords in 0.2 (§2.7) and can no longer be used as variable or function names.
+**Versioning policy:** a document declares `PVG 0.1` or `PVG 0.2` in its header (Section 2.1). Readers implementing 0.2 **must** accept both headers; every valid 0.1 document evaluates identically under 0.2 (new properties default to 0.1 behavior: `butt` caps, `miter` joins, solid paints, `normal` blending, no filters, no clipping). Authors should declare `PVG 0.2` when using 0.2 features. The words `clip`, `cap`, `join`, `miter`, `dash`, `blend`, `blur`, `shadow`, `glow`, `linear`, `radial`, `angular`, `conic`, and `stop` are reserved keywords in 0.2 (Section 2.7) and can no longer be used as variable or function names.
 
 ---
 
@@ -76,7 +76,7 @@ Strings are enclosed in double quotes (`"..."`) and support standard escape sequ
 string = '"' , { character | escape_sequence } , '"' ;
 ```
 * *Examples:* `"ENGINE SPEED"`, `"Telemetry Active\nStatus: OK"`, `"60 °C"`
-* **Triple-quoted blocks** (`"""..."""`) are raw multi-line literals (no escapes): the opener must end its line, the closer must be alone on its line (a trailing `# comment` is allowed on both), and continuation lines are dedented by the opener's indent. Ideal for sprite art and text blocks (§18.3).
+* **Triple-quoted blocks** (`"""..."""`) are raw multi-line literals (no escapes): the opener must end its line, the closer must be alone on its line (a trailing `# comment` is allowed on both), and continuation lines are dedented by the opener's indent. Ideal for sprite art and text blocks (Section 18.3).
 
 ### 2.5 2D Coordinate & Vector Literals
 To eliminate operator ambiguity with arithmetic expressions, all 2D vector coordinates **must** use bracket delimiters:
@@ -88,8 +88,8 @@ vector2 = "[" , expression , "," , expression , "]" ;
 ### 2.6 Color Literals
 * **Hex Color:** `#RGB`, `#RRGGBB`, `#RRGGBBAA` (e.g., `#fff`, `#00ffcc`, `#ff005580`). The last two hex digits of the 8-digit form are the alpha channel (`00` = fully transparent, `ff` = opaque).
 * **Keywords:** `black`, `white`, `red`, `green`, `blue`, `yellow`, `cyan`, `magenta`, `none`, `transparent`.
-* **Functional Form:** `rgb(r, g, b)` and `rgba(r, g, b, a)` where $r, g, b \in [0, 255]$ and $a \in [0.0, 1.0]$.
-* **Transparent stops are meaningful:** a gradient stop such as `stop 1.0 #0066ff00` (alpha `00`) is a genuine fade-out endpoint, not an empty value. Renderers must interpolate the alpha channel across stops (§9.4).
+* **Functional Form:** `rgb(r, g, b)` and `rgba(r, g, b, a)` where $r, g, b \in [0, 255]$ and $a \in [0.0, 1.0]$. Components are rounded to the nearest integer and clamped into range ($r, g, b$ into $[0, 255]$, $a$ into $[0.0, 1.0]$ before mapping to a byte); wrong arities and non-numeric components are runtime errors.
+* **Transparent stops are meaningful:** a gradient stop such as `stop 1.0 #0066ff00` (alpha `00`) is a genuine fade-out endpoint, not an empty value. Renderers must interpolate the alpha channel across stops (Section 9.4).
 
 ### 2.7 Reserved Keywords (0.2)
 The following words are keywords in 0.2 and cannot be used as variable, function, or loop-variable names: `clip`, `cap`, `join`, `miter`, `dash`, `blend`, `blur`, `shadow`, `glow`, `linear`, `radial`, `angular`, `conic`, `stop`. (The word `conic` is accepted as an alias of `angular`.) A 0.1 document that uses any of these as an identifier must rename it before declaring `PVG 0.2`.
@@ -108,13 +108,13 @@ CanvasDecl      ::= "canvas" NUMBER NUMBER NEWLINE
 CanvasProp      ::= ( "background" Color
                     | "snap" NUMBER
                     | "filter" ( STRING | IDENTIFIER ) ) NEWLINE ;
-(* §18.3: `snap 1.0` rounds coords to the pixel grid (0 = off);
+(* Section 18.3: `snap 1.0` rounds coords to the pixel grid (0 = off);
    `filter "nearest"` = crisp pixels, `"linear"` (default) = smooth. *)
 
-(* §18.1: host-overridable uniforms (top level, or `set`-like in blocks). *)
+(* Section 18.1: host-overridable uniforms (top level, or `set`-like in blocks). *)
 ParamDecl       ::= "param" IDENTIFIER ( ":" | "=" ) Expression NEWLINE ;
 
-(* §18.4: repeatable tile (top level only). *)
+(* Section 18.4: repeatable tile (top level only). *)
 PatternDef      ::= "pattern" IDENTIFIER NUMBER NUMBER NEWLINE Block ;
 
 Statement       ::= SetStmt
@@ -133,8 +133,8 @@ Statement       ::= SetStmt
                   | TextStmt
                   | PathStmt
                   | GroupStmt
-                  | SpriteStmt     (* §18.3: pixel-art sprite *)
-                  | SplineStmt     (* §18.5: Catmull-Rom data spline *)
+                  | SpriteStmt     (* Section 18.3: pixel-art sprite *)
+                  | SplineStmt     (* Section 18.5: Catmull-Rom data spline *)
                   | ClipStmt ;   (* 0.2: clipping / masking block *)
 
 SetStmt         ::= "set" IDENTIFIER "=" Expression NEWLINE ;
@@ -194,7 +194,7 @@ TextStyleProp   ::= "fill" PaintExpr | "stroke" PaintExpr | "width" Expression
                   | "shadow" Vector2 Expression Expression
                   | "glow" Expression Expression | "blend" Expression ;
 
-(* §18.3: indexed-color pixel sprite. `palette` is a bracketed color
+(* Section 18.3: indexed-color pixel sprite. `palette` is a bracketed color
    list; each `data`/`row` string is one pixel row (`0`-`9`/`a`-`z` index the
    palette, `.`/space = transparent); a `"""` block holds many rows. *)
 SpriteStmt      ::= "sprite" NEWLINE INDENT SpriteProp+ DEDENT ;
@@ -204,7 +204,7 @@ SpriteProp      ::= ( "pos" Vector2
                     | "scale" Expression | "opacity" Expression
                     | "blend" Expression ) NEWLINE ;
 
-(* §18.5: smooth spline through an array of `[x, y]` points, or of bare
+(* Section 18.5: smooth spline through an array of `[x, y]` points, or of bare
    numbers auto-laid-out across `pos`/`size`. *)
 SplineStmt      ::= "spline" NEWLINE INDENT SplineProp+ DEDENT ;
 SplineProp      ::= ( "points" Expression | "pos" Vector2 | "size" Vector2
@@ -217,12 +217,12 @@ SplineProp      ::= ( "points" Expression | "pos" Vector2 | "size" Vector2
                     | "blend" Expression ) NEWLINE ;
 
 (* 0.2: a clip block. The FIRST shape is the mask; all following
-   statements render confined to it. See §11. *)
+   statements render confined to it. See Section 11. *)
 ClipStmt        ::= "clip" NEWLINE INDENT ShapeStmt ( Statement )* DEDENT ;
 ShapeStmt       ::= CircleStmt | EllipseStmt | RectStmt | LineStmt
                   | PolygonStmt | PathStmt | TextStmt ;
 
-(* 0.2: paints — solid colors or gradients with nested stops. See §9. *)
+(* 0.2: paints — solid colors or gradients with nested stops. See Section 9. *)
 StyleProp       ::= "fill" PaintExpr
                   | "stroke" PaintExpr
                   | "width" Expression
@@ -238,7 +238,7 @@ StyleProp       ::= "fill" PaintExpr
                   | "blend" Expression ;
 
 PaintExpr       ::= LinearGrad | RadialGrad | AngularGrad | PatternRef | Expression ;
-(* §18.4: `fill pattern name` references a top-level tile. A bare variable
+(* Section 18.4: `fill pattern name` references a top-level tile. A bare variable
    literally named `pattern` still parses as an expression elsewhere. *)
 PatternRef      ::= "pattern" IDENTIFIER ;
 
@@ -251,14 +251,14 @@ DashArray       ::= "[" Expression ( "," Expression )* "]" ;
 
 Vector2         ::= "[" Expression "," Expression "]" ;
 ArrayLit        ::= "[" [ Expression ( "," Expression )* [ "," ] ] "]" ;
-(* §18.5: a bracket list with arity ≠ 2 is an Array; exactly 2 *scalar*
+(* Section 18.5: a bracket list with arity ≠ 2 is an Array; exactly 2 *scalar*
    components stay a Vec2 (back-compat for positions); nested compounds
    (`[[10, 10], [90, 90]]`) are Arrays. `array(a, b)` builds an explicit
    2-element Array. *)
 ```
 
 **Conventions used above:**
-* `IDENTIFIER` also matches the post-0.2 *soft* keywords (`param`, `pattern`, `sprite`, `spline`, `palette`, `data`, `row`, `snap`, `filter`) wherever a name is expected — e.g. `for row from 0 to 7` stays valid; their special meaning applies only where their syntax applies (§18).
+* `IDENTIFIER` also matches the post-0.2 *soft* keywords (`param`, `pattern`, `sprite`, `spline`, `palette`, `data`, `row`, `snap`, `filter`) wherever a name is expected — e.g. `for row from 0 to 7` stays valid; their special meaning applies only where their syntax applies (Section 18).
 * `PaintExpr` falls back to a plain `Expression` (solid color or computed value) when the next token is not `linear` / `radial` / `angular` / `conic` / `pattern`, so every 0.1 `fill`/`stroke` line is still a valid `PaintExpr`.
 * `shadow` takes three operands: offset `Vector2`, blur-radius `Expression`, color `Expression` (e.g., `shadow [4, 6] 8 #00000080`).
 * `glow` takes two operands: blur-radius `Expression` and color `Expression` (e.g., `glow 12 #00ffcc`).
@@ -298,8 +298,8 @@ set status = "System OK: " + true           # Evaluates to "System OK: true"
 * **Clamping & Min/Max:** `min(a, b)`, `max(a, b)`.
 * **Angle Conversion:** `radians(deg)`, `degrees(rad)`, `deg_to_rad(deg)`.
 * **RNG:** `random(min, max)` returns a deterministic pseudorandom float in $[min, max]$.
-* **Deterministic Noise (§18.2):** `noise2d(x, y)` / `noise3d(x, y, z)` return value noise in $[-1, 1]$, pure functions of their coordinates (no RNG state).
-* **Arrays (§18.5):** `array(...)` builds an explicit array, `len(arr)` counts elements (or string characters), `get(arr, i)` indexes with negative-wrap.
+* **Deterministic Noise (Section 18.2):** `noise2d(x, y)` / `noise3d(x, y, z)` return value noise in $[-1, 1]$, pure functions of their coordinates (no RNG state).
+* **Arrays (Section 18.5):** `array(...)` builds an explicit array, `len(arr)` counts elements (or string characters), `get(arr, i)` indexes with negative-wrap.
 
 ---
 
@@ -312,14 +312,14 @@ The runtime supports 8 primitive value types (0.2 adds `Paint`, post-0.2 adds `A
 3. `String(String)`
 4. `Color(Color)`
 5. `Vec2(f64, f64)`
-6. `Array(Vec<Value>)` — 1D data list for charts, waves, and spline control values (§18.5).
-7. `Paint(Paint)` — a solid color, an evaluated `linear` / `radial` / `angular` gradient (see §9), or a `pattern` tile reference (see §18.4). Anywhere a `Color` is accepted, a `Paint` holding a solid color is accepted too.
+6. `Array(Vec<Value>)` — 1D data list for charts, waves, and spline control values (Section 18.5).
+7. `Paint(Paint)` — a solid color, an evaluated `linear` / `radial` / `angular` gradient (see Section 9), or a `pattern` tile reference (see Section 18.4). Anywhere a `Color` is accepted, a `Paint` holding a solid color is accepted too.
 8. `None`
 
 ### 5.2 Lexical Scoping & State Isolation
 * **Global Scope:** Variables declared via `set` at the root document level are available globally.
 * **Function Scope:** Function definitions create a distinct local activation frame. Arguments and local variables shadow outer variables.
-* **Path & Group Scope:** `path` and `group` blocks inherit current variable scopes and can execute nested `set` statements without mutating parent state unless explicitly shadowed. Post-0.2, `path` bodies may also contain `for` / `while` / `if` control flow sharing the path's locals scope (§18.6).
+* **Path & Group Scope:** `path` and `group` blocks inherit current variable scopes and can execute nested `set` statements without mutating parent state unless explicitly shadowed. Post-0.2, `path` bodies may also contain `for` / `while` / `if` control flow sharing the path's locals scope (Section 18.6).
 
 ```pvg
 set global_radius = 50
@@ -352,7 +352,7 @@ for i from 0 to 10
 
 ## 6. 2D Geometry & Typography Primitives
 
-All visual nodes inherit parent `group` styles unless explicitly overridden. In 0.2, `fill` and `stroke` accept any `PaintExpr` (solid color or gradient, §9), and every geometric primitive additionally accepts the §8 stroke-topology properties (`cap`, `join`, `miter`, `dash`, `align`), the §10 filter properties (`blur`, `shadow`, `glow`), and the §12 `blend` mode. `text` accepts `blur`, `shadow`, `glow`, and `blend` (its `align` remains the text anchor).
+All visual nodes inherit parent `group` styles unless explicitly overridden. In 0.2, `fill` and `stroke` accept any `PaintExpr` (solid color or gradient, Section 9), and every geometric primitive additionally accepts the Section 8 stroke-topology properties (`cap`, `join`, `miter`, `dash`, `align`), the Section 10 filter properties (`blur`, `shadow`, `glow`), and the Section 12 `blend` mode. `text` accepts `blur`, `shadow`, `glow`, and `blend` (its `align` remains the text anchor).
 
 ### 6.1 Circle
 ```pvg
@@ -503,7 +503,7 @@ line
 
 ## 9. Gradients (0.2)
 
-`fill` and `stroke` accept gradient paints with nested `stop` declarations. Offsets are expressions in $[0.0, 1.0]$ (clamped); colors are any color expression, **including transparent ones** (`#rrggbbaa` with low alpha is a genuine fade-out endpoint, §2.6). Stops are sorted by offset at evaluation; an empty stop list paints transparent; a single stop paints solid; a degenerate linear gradient (`start == end`) paints the last stop's color.
+`fill` and `stroke` accept gradient paints with nested `stop` declarations. Offsets are expressions in $[0.0, 1.0]$ (clamped); colors are any color expression, **including transparent ones** (`#rrggbbaa` with low alpha is a genuine fade-out endpoint, Section 2.6). Stops are sorted by offset at evaluation; an empty stop list paints transparent; a single stop paints solid; a degenerate linear gradient (`start == end`) paints the last stop's color.
 
 ### 9.1 Linear Gradients (directional light & shading)
 ```pvg
@@ -652,7 +652,7 @@ group
   scale [sx, sy]        # Scaling factors
   opacity alpha         # Multiplicative opacity factor
   blend "add"           # 0.2: inherited blend default for children
-  blur number           # 0.2: group-wide blur (see §10)
+  blur number           # 0.2: group-wide blur (see Section 10)
   shadow [dx, dy] r color  # 0.2: group-wide drop shadow
   glow r color          # 0.2: group-wide glow
 
@@ -1151,23 +1151,23 @@ spline
 Geometric primitives (`circle`, `ellipse`, `rectangle`, `line`, `polygon`, `text`, `path` with 6 sub-commands), procedural control (`set`, `for`, `while`, `if`, `def`/`call`/`return`, `seed`), expressions with full operator precedence, `time`/`t` timeline clock, group affine transforms, flat solid-color styling, multi-backend draw list (GUI / SVG+SMIL / PNG / Android / Web).
 
 ### 0.2 — Game-asset rendering essentials (this document)
-* **Stroke topology** (§8): `cap`, `join`, `miter`, `dash`, stroke `align`. Defaults reproduce 0.1 output exactly.
-* **Paints & gradients** (§9): `linear` / `radial` (+focal) / `angular` (`conic` alias) with `stop` lists; transparent stops are meaningful fade-outs; new `Paint` runtime value.
-* **Filters** (§10): `blur`, `shadow [dx, dy] r color`, `glow r color`, composited shadow → glow → shape with ~3r layer padding.
-* **Clipping** (§11): `clip` blocks, first shape is the mask, intersection semantics, nestable.
-* **Blending** (§12): `blend` on shapes, text, and groups (`normal`/`add`/`multiply`/`screen`/`overlay`).
-* **Compatibility**: 0.2 readers accept `PVG 0.1` and `PVG 0.2` headers; all 0.1 documents evaluate identically. Fourteen words became reserved keywords (§2.7).
-* **Reference preset**: `presets/shield_core.pvg` (§16, Preset 4).
+* **Stroke topology** (Section 8): `cap`, `join`, `miter`, `dash`, stroke `align`. Defaults reproduce 0.1 output exactly.
+* **Paints & gradients** (Section 9): `linear` / `radial` (+focal) / `angular` (`conic` alias) with `stop` lists; transparent stops are meaningful fade-outs; new `Paint` runtime value.
+* **Filters** (Section 10): `blur`, `shadow [dx, dy] r color`, `glow r color`, composited shadow → glow → shape with ~3r layer padding.
+* **Clipping** (Section 11): `clip` blocks, first shape is the mask, intersection semantics, nestable.
+* **Blending** (Section 12): `blend` on shapes, text, and groups (`normal`/`add`/`multiply`/`screen`/`overlay`).
+* **Compatibility**: 0.2 readers accept `PVG 0.1` and `PVG 0.2` headers; all 0.1 documents evaluate identically. Fourteen words became reserved keywords (Section 2.7).
+* **Reference preset**: `presets/shield_core.pvg` (Section 16, Preset 4).
 
-### Post-0.2 engine batch (§18)
-* **Host uniforms** (§18.1): `param name: default`, `Scene` host API.
-* **Noise** (§18.2): `noise2d` / `noise3d`, angle helpers.
-* **Pixel mode & sprites** (§18.3): `canvas snap` / `filter`, `sprite` blocks, `"""` multi-line strings (§2.4).
-* **Patterns** (§18.4): top-level `pattern` tiles, `fill pattern name`, real tiling in every backend.
-* **Arrays & splines** (§18.5): `Array` value type, `array` / `len` / `get`, `spline` statements.
-* **Path control flow** (§18.6): `for` / `while` / `if` inside `path` bodies.
-* **Soft keywords**: the new words stay usable as identifiers (§3 conventions).
-* **Reference preset**: `presets/tactical_hud.pvg` (§16, Preset 5).
+### Post-0.2 engine batch (Section 18)
+* **Host uniforms** (Section 18.1): `param name: default`, `Scene` host API.
+* **Noise** (Section 18.2): `noise2d` / `noise3d`, angle helpers.
+* **Pixel mode & sprites** (Section 18.3): `canvas snap` / `filter`, `sprite` blocks, `"""` multi-line strings (Section 2.4).
+* **Patterns** (Section 18.4): top-level `pattern` tiles, `fill pattern name`, real tiling in every backend.
+* **Arrays & splines** (Section 18.5): `Array` value type, `array` / `len` / `get`, `spline` statements.
+* **Path control flow** (Section 18.6): `for` / `while` / `if` inside `path` bodies.
+* **Soft keywords**: the new words stay usable as identifiers (Section 3 conventions).
+* **Reference preset**: `presets/tactical_hud.pvg` (Section 16, Preset 5).
 
 ---
 
@@ -1237,7 +1237,7 @@ spline
 ```
 Splines store control points (`DrawCmd::Spline`); all backends tessellate identically via `pvg::spline_to_bezier` (Catmull-Rom → cubic).
 
-### 18.6 Control flow inside `path` (§7, EBNF updated)
+### 18.6 Control flow inside `path` (Section 7, EBNF updated)
 `for` / `while` / `if` (with `else` / `else if` chains, nestable) may appear directly in `path` bodies, sharing the path's locals scope and loop safety budget — e.g. noise-deformed perimeters that `start` on the first iteration and `line` after. Style props (`fill`, `stroke`, …) must stay in the outer path body. Note: `? :` branches are *expressions*, so `cond ? start pt : line pt` is invalid — use `if`/`else`.
 
-Reference presets: `presets/next_demo.pvg` (all five features), `presets/tactical_hud.pvg` (§16, Preset 5).
+Reference presets: `presets/next_demo.pvg` (all five features), `presets/tactical_hud.pvg` (Section 16, Preset 5).

@@ -50,7 +50,7 @@ struct PvgEngineState {
     last_fps: f64,
     primitive_count: usize,
 
-    /// Host uniform overrides for declared `param` declarations (§18.1).
+    /// Host uniform overrides for declared `param` declarations (Section 18.1).
     /// Applied on every evaluate; values win over the document defaults.
     params: HashMap<String, f64>,
 }
@@ -344,7 +344,7 @@ impl PvgEngine {
         }
     }
 
-    /// Sets a host uniform (`param`, §18.1) for the next evaluated frame.
+    /// Sets a host uniform (`param`, Section 18.1) for the next evaluated frame.
     pub fn set_param(&self, name: String, value: f64) {
         if let Ok(mut s) = self.state.lock() {
             s.params.insert(name.clone(), value);
@@ -518,7 +518,7 @@ pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetSpeed(
     }
 }
 
-/// Sets a declared `param` (host uniform, §18.1) for the running scene.
+/// Sets a declared `param` (host uniform, Section 18.1) for the running scene.
 #[no_mangle]
 pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetParam(
     mut env: JNIEnv,

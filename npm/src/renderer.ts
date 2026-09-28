@@ -303,7 +303,7 @@ function drawSingleCmd(
   applyCanvasStyle(ctx, style, patterns);
   const glow = style.glow;
   const blur = style.blur || 0;
-  // Glow: blurred silhouette additively underneath (§10.1 order shadow→glow→shape).
+  // Glow: blurred silhouette additively underneath (Section 10.1 order shadow→glow→shape).
   if (glow && glow.radius > 0 && cmd.type !== "Text" && cmd.type !== "Sprite") {
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
@@ -390,7 +390,7 @@ function drawTextCmd(
   if (hasStroke) ctx.strokeText(cmd.content, x, y);
 }
 
-/** §18.3: palette-indexed pixel art drawn as crisp `fillRect` cells. */
+/** Section 18.3: palette-indexed pixel art drawn as crisp `fillRect` cells. */
 function drawSpriteCmd(
   ctx: CanvasRenderingContext2D,
   cmd: Extract<DrawCmd, { type: "Sprite" }>,
@@ -415,7 +415,7 @@ function drawSpriteCmd(
 }
 
 /**
- * §18.4: pre-renders each pattern tile once into an offscreen canvas and wraps
+ * Section 18.4: pre-renders each pattern tile once into an offscreen canvas and wraps
  * it in a `CanvasPattern` (tiles render with an EMPTY pattern map, so a tile
  * referencing itself falls back to gray and the cycle terminates).
  */
@@ -644,7 +644,7 @@ function clipMaskToSvg(mask: DrawCmd, ctx: SvgRenderCtx): string {
   }
 }
 
-/** §18.5: Catmull-Rom spline -> SVG path data (`M ... C ...`), 2-decimal coords. */
+/** Section 18.5: Catmull-Rom spline -> SVG path data (`M ... C ...`), 2-decimal coords. */
 function splinePathData(points: Vec2[]): string {
   if (points.length === 0) return "";
   if (points.length === 1) return `M ${points[0][0].toFixed(2)} ${points[0][1].toFixed(2)}`;
@@ -739,7 +739,7 @@ export function emitSvgCommands(items: DrawCmd[], indent = "  ", ctx?: SvgRender
         break;
       }
       case "Sprite": {
-        // Palette-indexed pixels as crisp rects (§18.3); `.`/space = transparent.
+        // Palette-indexed pixels as crisp rects (Section 18.3); `.`/space = transparent.
         const opacityAttr =
           Math.abs(cmd.style.opacity - 1.0) > 0.001 ? ` opacity="${cmd.style.opacity.toFixed(3)}"` : "";
         const blendAttr = blendToSvg(cmd.style.blend);
@@ -778,7 +778,7 @@ export function exportToSvgString(drawList: DrawList): string {
   // Second pass populates ids in deterministic order
   const body = emitSvgCommands(drawList.items, "  ", ctx);
 
-  // §18.4: repeatable tiles as real SVG <pattern> defs.
+  // Section 18.4: repeatable tiles as real SVG <pattern> defs.
   let patternDefs = "";
   for (const pat of patterns) {
     let tileBody = "";

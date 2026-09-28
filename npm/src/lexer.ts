@@ -53,7 +53,7 @@ export const enum TokenKind {
   Rot = "Rot",
   Scale = "Scale",
 
-  // PVG 0.2 §§8-12 properties & paints
+  // PVG 0.2 Sections 8-12 properties & paints
   Cap = "Cap",
   Join = "Join",
   Miter = "Miter",
@@ -74,7 +74,7 @@ export const enum TokenKind {
   Arc = "Arc",
   Close = "Close",
 
-  // Post-0.2 §18 keywords (soft keywords: also legal as identifiers)
+  // Post-0.2 Section 18 keywords (soft keywords: also legal as identifiers)
   Snap = "Snap",
   Filter = "Filter",
   Param = "Param",
@@ -503,7 +503,7 @@ export class Lexer {
           case "curve": kind = TokenKind.Curve; break;
           case "arc": kind = TokenKind.Arc; break;
           case "close": kind = TokenKind.Close; break;
-          // PVG 0.2 reserved keywords (§2.7)
+          // PVG 0.2 reserved keywords (Section 2.7)
           case "cap": kind = TokenKind.Cap; break;
           case "join": kind = TokenKind.Join; break;
           case "miter": kind = TokenKind.Miter; break;
@@ -517,7 +517,7 @@ export class Lexer {
           case "angular":
           case "conic": kind = TokenKind.Angular; break;
           case "stop": kind = TokenKind.Stop; break;
-          // Post-0.2 §18 keywords (soft: legal as identifiers where a name is expected)
+          // Post-0.2 Section 18 keywords (soft: legal as identifiers where a name is expected)
           case "snap": kind = TokenKind.Snap; break;
           case "filter": kind = TokenKind.Filter; break;
           case "param": kind = TokenKind.Param; break;

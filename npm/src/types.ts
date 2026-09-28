@@ -5,28 +5,28 @@ export type Vec2 = [x: number, y: number];
 
 export type TextAlign = "left" | "center" | "right";
 
-/** PVG 0.2 §8: stroke line-cap topology. */
+/** PVG 0.2 Section 8: stroke line-cap topology. */
 export type LineCap = "butt" | "round" | "square";
 
-/** PVG 0.2 §8: stroke line-join topology. */
+/** PVG 0.2 Section 8: stroke line-join topology. */
 export type LineJoin = "miter" | "round" | "bevel";
 
-/** PVG 0.2 §8: stroke alignment. */
+/** PVG 0.2 Section 8: stroke alignment. */
 export type StrokeAlign = "center" | "inside" | "outside";
 
-/** PVG 0.2 §12: blend/composite mode. */
+/** PVG 0.2 Section 12: blend/composite mode. */
 export type BlendMode = "normal" | "add" | "multiply" | "screen" | "overlay";
 
-/** Post-0.2 §18: pixel sampling for `canvas filter` (sprite / retro mode). */
+/** Post-0.2 Section 18: pixel sampling for `canvas filter` (sprite / retro mode). */
 export type PixelFilter = "linear" | "nearest";
 
 export interface CanvasDecl {
   width: number;
   height: number;
   background: PvgColor | null;
-  /** Post-0.2 §18: pixel snap grid in px (0 = off). */
+  /** Post-0.2 Section 18: pixel snap grid in px (0 = off). */
   snap: number;
-  /** Post-0.2 §18: image smoothing for raster backends. */
+  /** Post-0.2 Section 18: image smoothing for raster backends. */
   pixelFilter: PixelFilter;
 }
 
@@ -48,14 +48,14 @@ export type BinaryOp =
   | "and"
   | "or";
 
-/** PVG 0.2 §9: single gradient stop expression (`stop <offset> <color>`). */
+/** PVG 0.2 Section 9: single gradient stop expression (`stop <offset> <color>`). */
 export interface GradientStopExpr {
   type: "GradientStop";
   offset: Expr;
   color: Expr;
 }
 
-/** PVG 0.2 §10: drop-shadow expression (`shadow [dx, dy] <radius> <color>`). */
+/** PVG 0.2 Section 10: drop-shadow expression (`shadow [dx, dy] <radius> <color>`). */
 export interface ShadowExpr {
   type: "ShadowExpr";
   offset: Expr;
@@ -63,7 +63,7 @@ export interface ShadowExpr {
   color: Expr;
 }
 
-/** PVG 0.2 §10: outer-glow expression (`glow <radius> <color>`). */
+/** PVG 0.2 Section 10: outer-glow expression (`glow <radius> <color>`). */
 export interface GlowExpr {
   type: "GlowExpr";
   radius: Expr;
@@ -76,9 +76,9 @@ export type Expr =
   | { type: "Bool"; value: boolean }
   | { type: "Color"; value: PvgColor }
   | { type: "Vec2"; x: Expr; y: Expr }
-  /** Post-0.2 §18.5: 1D data array (bracket literal with arity != 2, or nested). */
+  /** Post-0.2 Section 18.5: 1D data array (bracket literal with arity != 2, or nested). */
   | { type: "Array"; items: Expr[] }
-  /** Post-0.2 §18.4: reference to a top-level `pattern` tile (`fill pattern name`). */
+  /** Post-0.2 Section 18.4: reference to a top-level `pattern` tile (`fill pattern name`). */
   | { type: "Pattern"; name: string }
   | { type: "Ident"; name: string }
   | { type: "Unary"; op: UnaryOp; inner: Expr }
@@ -100,13 +100,13 @@ export type PathCommandAst =
   | { cmd: "Curve"; c1: Expr; c2: Expr; ep: Expr }
   | { cmd: "Arc"; center: Expr; radius: Expr; startAngle: Expr; endAngle: Expr }
   | { cmd: "Close" }
-  /** Post-0.2 §18.6: control flow inside `path` bodies (shares the path locals). */
+  /** Post-0.2 Section 18.6: control flow inside `path` bodies (shares the path locals). */
   | { cmd: "For"; varName: string; from: Expr; to: Expr; step: Expr | null; body: PathCommandAst[] }
   | { cmd: "While"; cond: Expr; body: PathCommandAst[] }
   | { cmd: "If"; cond: Expr; thenBody: PathCommandAst[]; elseBody: PathCommandAst[] };
 
 /**
- * PVG 0.2 §§8/10/12 per-shape style properties.
+ * PVG 0.2 Sections 8/10/12 per-shape style properties.
  * `null` (or empty `dash`) means inherit the current style / engine default.
  */
 export interface ShapeFx {
@@ -211,7 +211,7 @@ export type Stmt =
       body: Stmt[];
     } & GroupFx)
   | { type: "Clip"; mask: Stmt; content: Stmt[] }
-  /** Post-0.2 §18.3: pixel-art sprite (palette-indexed rows). */
+  /** Post-0.2 Section 18.3: pixel-art sprite (palette-indexed rows). */
   | {
       type: "Sprite";
       pos: Expr;
@@ -221,7 +221,7 @@ export type Stmt =
       opacity: Expr | null;
       blend: Expr | null;
     }
-  /** Post-0.2 §18.5: smooth Catmull-Rom spline through an array of points. */
+  /** Post-0.2 Section 18.5: smooth Catmull-Rom spline through an array of points. */
   | (SplineFx & {
       type: "Spline";
       points: Expr;
@@ -232,16 +232,16 @@ export type Stmt =
       opacity: Expr | null;
     });
 
-/** Spline style surface (stroke topology + §10 FX; no fill, no align). */
+/** Spline style surface (stroke topology + Section 10 FX; no fill, no align). */
 export type SplineFx = Pick<ShapeFx, "cap" | "join" | "miter" | "dash" | "blur" | "shadow" | "glow" | "blend">;
 
-/** Post-0.2 §18.1: host-overridable uniform (`param name: default`). */
+/** Post-0.2 Section 18.1: host-overridable uniform (`param name: default`). */
 export interface ParamDecl {
   name: string;
   default: Expr;
 }
 
-/** Post-0.2 §18.4: repeatable tile (`pattern name w h` + body block). */
+/** Post-0.2 Section 18.4: repeatable tile (`pattern name w h` + body block). */
 export interface PatternDef {
   name: string;
   width: number;
@@ -257,29 +257,29 @@ export interface Document {
   statements: Stmt[];
 }
 
-/** PVG 0.2 §9: evaluated gradient stop (offset clamped to [0, 1]). */
+/** PVG 0.2 Section 9: evaluated gradient stop (offset clamped to [0, 1]). */
 export interface GradientStop {
   offset: number;
   color: PvgColor;
 }
 
-/** PVG 0.2 §9: evaluated paint (solid color, world-space gradient, or pattern tile). */
+/** PVG 0.2 Section 9: evaluated paint (solid color, world-space gradient, or pattern tile). */
 export type Paint =
   | { kind: "color"; color: PvgColor }
   | { kind: "linear"; start: Vec2; end: Vec2; stops: GradientStop[] }
   | { kind: "radial"; center: Vec2; radius: number; focal: Vec2 | null; stops: GradientStop[] }
   | { kind: "angular"; center: Vec2; startAngle: number; stops: GradientStop[] }
-  /** Post-0.2 §18.4: resolved via `DrawList.patterns`. */
+  /** Post-0.2 Section 18.4: resolved via `DrawList.patterns`. */
   | { kind: "pattern"; name: string };
 
-/** PVG 0.2 §10: evaluated drop shadow. */
+/** PVG 0.2 Section 10: evaluated drop shadow. */
 export interface Shadow {
   offset: Vec2;
   radius: number;
   color: PvgColor;
 }
 
-/** PVG 0.2 §10: evaluated outer glow. */
+/** PVG 0.2 Section 10: evaluated outer glow. */
 export interface Glow {
   radius: number;
   color: PvgColor;
@@ -326,7 +326,7 @@ export type DrawCmd =
     }
   | { type: "Path"; commands: DrawPathCommand[]; style: DrawStyle }
   | { type: "Clip"; mask: DrawCmd; content: DrawCmd[] }
-  /** Post-0.2 §18.3: pixel-art sprite rasterized as crisp palette rects. */
+  /** Post-0.2 Section 18.3: pixel-art sprite rasterized as crisp palette rects. */
   | {
       type: "Sprite";
       pos: Vec2;
@@ -335,10 +335,10 @@ export type DrawCmd =
       scale: number;
       style: DrawStyle;
     }
-  /** Post-0.2 §18.5: smooth Catmull-Rom spline (stroke-only). */
+  /** Post-0.2 Section 18.5: smooth Catmull-Rom spline (stroke-only). */
   | { type: "Spline"; points: Vec2[]; style: DrawStyle };
 
-/** Post-0.2 §18.4: evaluated repeatable pattern tile. */
+/** Post-0.2 Section 18.4: evaluated repeatable pattern tile. */
 export interface DrawPattern {
   name: string;
   width: number;
@@ -350,11 +350,11 @@ export interface DrawList {
   canvasWidth: number;
   canvasHeight: number;
   background: PvgColor | null;
-  /** Post-0.2 §18.3: pixel snap grid in px (0 = off). */
+  /** Post-0.2 Section 18.3: pixel snap grid in px (0 = off). */
   snap: number;
-  /** Post-0.2 §18.3: pixel sampling hint for raster backends. */
+  /** Post-0.2 Section 18.3: pixel sampling hint for raster backends. */
   pixelFilter: PixelFilter;
-  /** Post-0.2 §18.4: evaluated pattern tiles referenced by pattern paints. */
+  /** Post-0.2 Section 18.4: evaluated pattern tiles referenced by pattern paints. */
   patterns: DrawPattern[];
   items: DrawCmd[];
 }

@@ -469,7 +469,9 @@ circle
     );
   });
 
-  it("still honours the loop safety limit", () => {
+  it("still honours the safety limits (primitive budget trips first here)", () => {
+    // Each iteration emits a circle, so the 50k scene-primitive budget (Section 15)
+    // trips before the 100k loop-iteration cap — either safety error passes.
     assert.throws(
       () =>
         compile(`PVG 0.2
@@ -478,6 +480,18 @@ while true
   circle
     center [0, 0]
     radius 1`),
+      /limit/
+    );
+  });
+
+  it("still honours the loop safety limit without emitting shapes", () => {
+    assert.throws(
+      () =>
+        compile(`PVG 0.2
+canvas 10 10
+set i = 0
+while true
+  set i = i + 1`),
       /safety loop limit/
     );
   });

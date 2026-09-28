@@ -27,15 +27,20 @@ import type {
   Vec2,
 } from "./types.js";
 
-/** Runtime value (dynamic typing, §5.1): number | string | bool | color | vec2 | array | paint | none. */
+/** Runtime value (dynamic typing, Section 5.1): number | string | bool | color | vec2 | array | paint | none. */
 export type Value = number | string | boolean | PvgColor | Vec2 | Paint | null | Value[];
+
+/** Maximum nested user-function call frames per evaluation (Section 15). */
+export const MAX_CALL_STACK_DEPTH = 64;
+/** Maximum top-level draw commands per evaluated scene (Section 15). */
+export const MAX_SCENE_PRIMITIVES = 50_000;
 
 function solidPaint(color: PvgColor): Paint {
   return { kind: "color", color };
 }
 
 // ---------------------------------------------------------------------------
-// Deterministic value noise (§18.2) — bit-exact port of `pvg/src/eval.rs`.
+// Deterministic value noise (Section 18.2) — bit-exact port of `pvg/src/eval.rs`.
 // Rust uses u64 wrapping arithmetic, so BigInt is required for parity.
 // ---------------------------------------------------------------------------
 
@@ -192,7 +197,7 @@ function defaultStyle(): DrawStyle {
     stroke: solidPaint(PvgColor.None()),
     width: 1.0,
     opacity: 1.0,
-    // PVG 0.2 §8/10/12 defaults
+    // PVG 0.2 Section 8/10/12 defaults
     cap: "butt",
     join: "miter",
     miter: 4.0,
@@ -252,12 +257,14 @@ export class Evaluator {
   private rngState = 88172645463325252n;
   private loopLimit: number;
   private loopCount = 0;
+  /** Current nested user-function call depth (guarded by MAX_CALL_STACK_DEPTH). */
+  private callDepth = 0;
   private drawList: DrawCmd[] = [];
   private transformStack: Transform2D[] = [Transform2D.identity()];
   private styleStack: DrawStyle[] = [defaultStyle()];
   /** Pixel snap grid from `canvas snap` (0 = off), applied after the transform. */
   private snap = 0.0;
-  /** Top-level pattern tile names valid for `fill pattern <name>` (§18.4). */
+  /** Top-level pattern tile names valid for `fill pattern <name>` (Section 18.4). */
   private patternNames: string[] = [];
 
   constructor(time = 0.0, loopLimit = 100_000, seed = 88172645463325252n) {
@@ -275,7 +282,7 @@ export class Evaluator {
   }
 
   /**
-   * Host override for a declared `param` (§18.1). Values set here win over the
+   * Host override for a declared `param` (Section 18.1). Values set here win over the
    * document's declared defaults for every subsequent evaluation.
    */
   setParam(name: string, value: Value): void {
@@ -285,6 +292,14 @@ export class Evaluator {
   /** Clears a host override so the document default applies again. */
   clearParam(name: string): void {
     this.globals.delete(name);
+  }
+
+  /** Pushes one top-level draw command, enforcing the scene primitive budget (Section 15). */
+  private pushDrawCmd(cmd: DrawCmd): void {
+    if (this.drawList.length >= MAX_SCENE_PRIMITIVES) {
+      throw new Error(`Exceeded scene primitive limit of ${MAX_SCENE_PRIMITIVES} draw commands`);
+    }
+    this.drawList.push(cmd);
   }
 
   private currentTransform(): Transform2D {
@@ -316,7 +331,7 @@ export class Evaluator {
   }
 
   /**
-   * Evaluates a parsed document in the order the Rust engine does (§18.1/§18.4):
+   * Evaluates a parsed document in the order the Rust engine does (Section 18.1/Section 18.4):
    * (1) snap + pattern names, (2) host uniforms, (3) pattern tiles, (4) body.
    */
   evaluateDocument(doc: Document): DrawList {
@@ -382,7 +397,9 @@ export class Evaluator {
         return null;
       }
       case "Seed": {
-        const s = BigInt(stmt.seed || 42);
+        // `seed 0` (or a non-numeric seed, normalized to 0 by the parser)
+        // selects the engine default, mirroring the Rust core.
+        const s = BigInt(stmt.seed);
         this.rngState = s === 0n ? 88172645463325252n : s;
         return null;
       }
@@ -458,7 +475,7 @@ export class Evaluator {
         this.applyFxProps(style, stmt, locals);
 
         const center = this.snapPoint(this.currentTransform().transformPoint(centerRaw));
-        this.drawList.push({ type: "Circle", center, radius, style });
+        this.pushDrawCmd({ type: "Circle", center, radius, style });
         return null;
       }
       case "Ellipse": {
@@ -472,7 +489,7 @@ export class Evaluator {
         this.applyFxProps(style, stmt, locals);
 
         const center = this.snapPoint(this.currentTransform().transformPoint(centerRaw));
-        this.drawList.push({ type: "Ellipse", center, radius: radiusRaw, style });
+        this.pushDrawCmd({ type: "Ellipse", center, radius: radiusRaw, style });
         return null;
       }
       case "Rectangle": {
@@ -487,7 +504,7 @@ export class Evaluator {
         this.applyFxProps(style, stmt, locals);
 
         const pos = this.snapPoint(this.currentTransform().transformPoint(posRaw));
-        this.drawList.push({ type: "Rectangle", pos, size: sizeRaw, cornerRadius, style });
+        this.pushDrawCmd({ type: "Rectangle", pos, size: sizeRaw, cornerRadius, style });
         return null;
       }
       case "Line": {
@@ -500,7 +517,7 @@ export class Evaluator {
         this.applyFxProps(style, stmt, locals);
 
         const trans = this.currentTransform();
-        this.drawList.push({
+        this.pushDrawCmd({
           type: "Line",
           from: this.snapPoint(trans.transformPoint(fromRaw)),
           to: this.snapPoint(trans.transformPoint(toRaw)),
@@ -518,7 +535,7 @@ export class Evaluator {
         if (stmt.opacity) style.opacity *= this.asNumber(this.evalExpr(stmt.opacity, locals));
         this.applyFxProps(style, stmt, locals);
 
-        this.drawList.push({ type: "Polygon", points, style });
+        this.pushDrawCmd({ type: "Polygon", points, style });
         return null;
       }
       case "Text": {
@@ -542,7 +559,7 @@ export class Evaluator {
         this.applyFxProps(style, stmt, locals, true);
 
         const pos = this.snapPoint(this.currentTransform().transformPoint(posRaw));
-        this.drawList.push({
+        this.pushDrawCmd({
           type: "Text",
           pos,
           content,
@@ -567,7 +584,7 @@ export class Evaluator {
 
         this.evalPathCommands(stmt.commands, pathLocals, trans, drawCommands, locals);
 
-        this.drawList.push({ type: "Path", commands: drawCommands, style });
+        this.pushDrawCmd({ type: "Path", commands: drawCommands, style });
         return null;
       }
       case "Group": {
@@ -610,7 +627,7 @@ export class Evaluator {
         return null;
       }
       case "Sprite": {
-        // §18.3: palette-indexed pixel art; ignores the inherited fill/stroke.
+        // Section 18.3: palette-indexed pixel art; ignores the inherited fill/stroke.
         const posRaw = this.asVec2(this.evalExpr(stmt.pos, locals));
         const palette: PvgColor[] = [];
         for (const entry of stmt.palette) {
@@ -624,11 +641,11 @@ export class Evaluator {
         if (stmt.blend) style.blend = this.evalBlend(this.evalExpr(stmt.blend, locals));
 
         const pos = this.snapPoint(this.currentTransform().transformPoint(posRaw));
-        this.drawList.push({ type: "Sprite", pos, palette, rows: stmt.rows, scale, style });
+        this.pushDrawCmd({ type: "Sprite", pos, palette, rows: stmt.rows, scale, style });
         return null;
       }
       case "Spline": {
-        // §18.5: Catmull-Rom data spline (stroke-only).
+        // Section 18.5: Catmull-Rom data spline (stroke-only).
         const raw = this.evalExpr(stmt.points, locals);
         const items: Value[] = isArrayValue(raw) ? raw : [];
         const ctrl: Vec2[] = [];
@@ -684,7 +701,7 @@ export class Evaluator {
 
         const trans = this.currentTransform();
         const points: Vec2[] = ctrl.map((p) => this.snapPoint(trans.transformPoint(p)));
-        this.drawList.push({ type: "Spline", points, style });
+        this.pushDrawCmd({ type: "Spline", points, style });
         return null;
       }
       case "Clip": {
@@ -702,14 +719,14 @@ export class Evaluator {
           this.evalStmt(bStmt, locals);
         }
         const content = this.drawList.splice(contentBase);
-        this.drawList.push({ type: "Clip", mask, content });
+        this.pushDrawCmd({ type: "Clip", mask, content });
         return null;
       }
     }
   }
 
   /**
-   * Post-0.2 §18.6: evaluates `path` body items — geometry commands, `set`
+   * Post-0.2 Section 18.6: evaluates `path` body items — geometry commands, `set`
    * (shared with the enclosing scope), and `for`/`while`/`if` control flow that
    * shares the path's locals. Mirrors `eval_path_command` in the Rust core.
    */
@@ -873,6 +890,9 @@ export class Evaluator {
   }
 
   private invokeFunction(name: string, args: Value[]): Value {
+    if (this.callDepth >= MAX_CALL_STACK_DEPTH) {
+      throw new Error(`Exceeded call stack limit of ${MAX_CALL_STACK_DEPTH} frames`);
+    }
     const func = this.functions.get(name);
     if (!func) throw new Error(`Undefined function '${name}'`);
     if (func.params.length !== args.length) {
@@ -884,11 +904,17 @@ export class Evaluator {
       locals.set(func.params[i], args[i]);
     }
 
-    for (const stmt of func.body) {
-      const ret = this.evalStmt(stmt, locals);
-      if (ret && ret.isReturn) return ret.value;
+    // Depth is released on every exit path (return value or error).
+    this.callDepth++;
+    try {
+      for (const stmt of func.body) {
+        const ret = this.evalStmt(stmt, locals);
+        if (ret && ret.isReturn) return ret.value;
+      }
+      return null;
+    } finally {
+      this.callDepth--;
     }
-    return null;
   }
 
   private evalExpr(expr: Expr, locals: Map<string, Value>): Value {
@@ -932,7 +958,7 @@ export class Evaluator {
         switch (op) {
           case "+": {
             if (typeof l === "string" || typeof r === "string") {
-              return `${l}${r}`;
+              return `${this.displayValue(l)}${this.displayValue(r)}`;
             }
             return this.asNumber(l) + this.asNumber(r);
           }
@@ -944,8 +970,11 @@ export class Evaluator {
           }
           case "%": return this.asNumber(l) % this.asNumber(r);
           case "^": return Math.pow(this.asNumber(l), this.asNumber(r));
-          case "==": return l === r;
-          case "!=": return l !== r;
+          // Equality and relational operators coerce via asNumber (numbers and
+          // bools only, mirroring Rust `as_f64`); any other type is a runtime
+          // error — e.g. `"a" == "a"` fails in both engines.
+          case "==": return this.asNumber(l) === this.asNumber(r);
+          case "!=": return this.asNumber(l) !== this.asNumber(r);
           case "<": return this.asNumber(l) < this.asNumber(r);
           case "<=": return this.asNumber(l) <= this.asNumber(r);
           case ">": return this.asNumber(l) > this.asNumber(r);
@@ -977,6 +1006,16 @@ export class Evaluator {
           case "radians": return (this.asNumber(args[0]) * Math.PI) / 180.0;
           case "degrees": return (this.asNumber(args[0]) * 180.0) / Math.PI;
           case "deg_to_rad": return (this.asNumber(args[0]) * Math.PI) / 180.0;
+          case "rgb": {
+            if (args.length !== 3) throw new Error("rgb(r, g, b) needs 3 arguments");
+            return new PvgColor(this.colorChannel(args[0]), this.colorChannel(args[1]), this.colorChannel(args[2]), 255);
+          }
+          case "rgba": {
+            if (args.length !== 4) throw new Error("rgba(r, g, b, a) needs 4 arguments");
+            const av = this.asNumber(args[3]);
+            const ab = Number.isNaN(av) ? 0 : Math.round(Math.max(0, Math.min(1, av)) * 255);
+            return new PvgColor(this.colorChannel(args[0]), this.colorChannel(args[1]), this.colorChannel(args[2]), ab);
+          }
           case "noise2d": {
             if (args.length !== 2) throw new Error("noise2d(x, y) needs 2 arguments");
             return pvgNoise2(this.asNumber(args[0]), this.asNumber(args[1]));
@@ -1062,7 +1101,7 @@ export class Evaluator {
   }
 
   private evalStops(stops: GradientStopExpr[], locals: Map<string, Value>): GradientStop[] {
-    // Offsets clamped to [0,1]; colors incl. transparent alpha preserved (§9.4).
+    // Offsets clamped to [0,1]; colors incl. transparent alpha preserved (Section 9.4).
     // Sorted by offset at evaluation (stable).
     const out = (stops || []).map((s) => ({
       offset: Math.max(0, Math.min(1, this.asNumber(this.evalExpr(s.offset, locals)))),
@@ -1078,14 +1117,51 @@ export class Evaluator {
     throw new Error(`Expected number, got ${JSON.stringify(val)}`);
   }
 
+  /**
+   * Rounds a color channel to the nearest integer and clamps it to [0, 255]
+   * (Section 2.6 functional `rgb()` / `rgba()` form). Mirrors the Rust core's
+   * `color_channel` (round-then-clamp; NaN maps to 0 via an explicit guard,
+   * matching Rust's saturating float-to-int cast).
+   */
+  private colorChannel(val: Value): number {
+    const rounded = Math.round(this.asNumber(val));
+    if (Number.isNaN(rounded)) return 0;
+    return Math.max(0, Math.min(255, rounded));
+  }
+
   private asString(val: Value): string {
+    return this.displayValue(val);
+  }
+
+  /**
+   * String display conversion for `+` concatenation and text content.
+   * Mirrors Rust `Value::as_string`: strings pass through, numbers use integer
+   * formatting when integral and |n| < 1e15, bools print as `true`/`false`,
+   * arrays render recursively as `[a, b]`; colors, paints, vectors-as-values
+   * and `None` are runtime errors (never silent `[object Object]` output).
+   * (Note: plain `[x, y]` vectors are JS arrays here and format as arrays —
+   * the only accepted deviation from Rust, which rejects vectors.)
+   */
+  private displayValue(val: Value): string {
     if (typeof val === "string") return val;
-    if (typeof val === "number") return val.toString();
-    if (typeof val === "boolean") return val.toString();
-    if (val instanceof PvgColor) return val.toSvgString();
-    if (val !== null && typeof val === "object" && "kind" in val) {
-      const paint = val as Paint;
-      if (paint.kind === "color") return paint.color.toSvgString();
+    if (typeof val === "number") {
+      if (Number.isNaN(val)) return "NaN";
+      if (val === Infinity) return "inf";
+      if (val === -Infinity) return "-inf";
+      if (Object.is(val, -0)) return "-0";
+      if (Number.isInteger(val) && Math.abs(val) < 1e15) return String(Math.trunc(val));
+      return String(val);
+    }
+    if (typeof val === "boolean") return val ? "true" : "false";
+    if (Array.isArray(val)) {
+      const parts = (val as Value[]).map((v) => {
+        try {
+          return this.displayValue(v);
+        } catch {
+          return "?";
+        }
+      });
+      return `[${parts.join(", ")}]`;
     }
     throw new Error("Expected string or displayable value");
   }
@@ -1127,6 +1203,9 @@ export class Evaluator {
     if (typeof val === "boolean") return val;
     if (typeof val === "number") return val !== 0.0;
     if (typeof val === "string") return val.length > 0;
+    // Empty data arrays are falsy (Rust parity); a 2-element vector array is
+    // never empty so vectors stay truthy, matching Rust.
+    if (Array.isArray(val)) return val.length > 0;
     return val != null;
   }
 }

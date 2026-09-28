@@ -91,6 +91,7 @@ for i from 0 to 2
   });
 
   it("should prevent infinite loops with safety bounds", () => {
+    // Shape-emitting loop: the 50k scene-primitive budget (Section 15) trips first.
     const src = `
 PVG 0.1
 canvas 400 400
@@ -98,6 +99,20 @@ while true
   circle
     center [0, 0]
     radius 1
+`;
+    assert.throws(
+      () => compile(src),
+      /limit/
+    );
+  });
+
+  it("should prevent non-emitting infinite loops with the loop bound", () => {
+    const src = `
+PVG 0.1
+canvas 400 400
+set i = 0
+while true
+  set i = i + 1
 `;
     assert.throws(
       () => compile(src),

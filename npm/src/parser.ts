@@ -79,11 +79,11 @@ export class Parser {
   parseDocument(): Document {
     this.skipNewlines();
 
-    // 1. Header: PVG 0.1
+    // 1. Header: PVG 0.1 / 0.2 (0.2 readers accept both; 0.1 docs evaluate identically)
     this.expect(TokenKind.Pvg);
     const verTok = this.advance();
     if (verTok.kind !== TokenKind.Number || typeof verTok.value !== "number") {
-      throw new Error(`Line ${verTok.line}: Expected version number after PVG (e.g. 0.1)`);
+      throw new Error(`Line ${verTok.line}: Expected version number after PVG (e.g. 0.2)`);
     }
     const version: [number, number] = [
       Math.floor(verTok.value),
@@ -174,7 +174,7 @@ export class Parser {
     };
   }
 
-  /** `param <name> : <expr>` or `param <name> = <expr>` (§18.1). */
+  /** `param <name> : <expr>` or `param <name> = <expr>` (Section 18.1). */
   private parseParamDecl(): ParamDecl {
     this.expect(TokenKind.Param);
     const nameTok = this.advance();
@@ -189,7 +189,7 @@ export class Parser {
     return { name, default: def };
   }
 
-  /** `pattern <name> <w> <h>` + indented body block (§18.4). */
+  /** `pattern <name> <w> <h>` + indented body block (Section 18.4). */
   private parsePatternDef(): PatternDef {
     this.expect(TokenKind.Pattern);
     const nameTok = this.advance();
@@ -232,9 +232,11 @@ export class Parser {
         const seedTok = this.advance();
         return {
           type: "Seed",
+          // Non-numeric seeds fall back to 0 (= engine default seed), mirroring
+          // the Rust core (`Number(n) => n as u64, _ => 0`).
           seed: seedTok.kind === TokenKind.Number && typeof seedTok.value === "number"
             ? Math.floor(seedTok.value)
-            : 42,
+            : 0,
         };
       }
       case TokenKind.Def: {
@@ -357,7 +359,19 @@ export class Parser {
         this.advance();
         this.skipNewlines();
         return this.parseSpline();
+      case TokenKind.Param: {
+        // `param` inside a block behaves like `set` with a default that the
+        // host may override; evaluates identically at runtime (Rust parity:
+        // `Stmt::Set(decl.name, decl.default)`). Top-level `param` is handled
+        // by parseDocument (host uniforms) and never reaches here.
+        const decl = this.parseParamDecl();
+        return { type: "Set", name: decl.name, expr: decl.default };
+      }
       default: {
+        // `pattern` tiles must be declared at top level (Rust parity).
+        if (tok.kind === TokenKind.Pattern) {
+          throw new Error(`Line ${tok.line}: Pattern blocks must be declared at top level.`);
+        }
         const softName = softIdentKind(tok.kind, tok.value);
         if (softName !== null && this.tokens[this.pos + 1]?.kind === TokenKind.LParen) {
           this.advance();
@@ -681,7 +695,7 @@ export class Parser {
           commands.push({ cmd: "Set", name, expr });
           break;
         }
-        // Post-0.2 §18.6: control flow inside a path body shares the path locals
+        // Post-0.2 Section 18.6: control flow inside a path body shares the path locals
         // and emits path commands (style props stay in the outer body).
         case TokenKind.For: {
           this.advance();
@@ -758,7 +772,7 @@ export class Parser {
   }
 
   /**
-   * Post-0.2 §18.6: a `path` sub-block. Accepts only path commands, `set` and
+   * Post-0.2 Section 18.6: a `path` sub-block. Accepts only path commands, `set` and
    * nested control flow — style properties are rejected inside a control block
    * (they belong to the outer path body), mirroring the Rust parser.
    */
@@ -869,7 +883,7 @@ export class Parser {
     return { cmd: "If", cond, thenBody, elseBody };
   }
 
-  /** `palette [c0, c1, ...]` (§18.3). */
+  /** `palette [c0, c1, ...]` (Section 18.3). */
   private parsePaletteArray(): Expr[] {
     this.expect(TokenKind.LBracket);
     const items: Expr[] = [];
@@ -887,7 +901,7 @@ export class Parser {
     return items;
   }
 
-  /** §18.3 pixel-art sprite: `pos`, `palette`, repeatable `data`/`row` strings. */
+  /** Section 18.3 pixel-art sprite: `pos`, `palette`, repeatable `data`/`row` strings. */
   private parseSprite(): Stmt {
     this.expect(TokenKind.Indent);
     let pos: Expr | null = null;
@@ -940,7 +954,7 @@ export class Parser {
     return { type: "Sprite", pos, palette, rows, scale, opacity, blend };
   }
 
-  /** §18.5 Catmull-Rom data spline (stroke-only; no `fill`, no `align`). */
+  /** Section 18.5 Catmull-Rom data spline (stroke-only; no `fill`, no `align`). */
   private parseSpline(): Stmt {
     this.expect(TokenKind.Indent);
     let points: Expr | null = null;
@@ -1016,7 +1030,7 @@ export class Parser {
         case TokenKind.Stroke: this.advance(); stroke = this.parsePaintExpr(); break;
         case TokenKind.Width: this.advance(); width = this.parseExpression(); break;
         case TokenKind.Opacity: this.advance(); opacity = this.parseExpression(); break;
-        // NOTE: text keeps 0.1 align (anchor); cap/join/miter/dash rejected per spec.
+        // NOTE: text keeps 0.1-compatible align (anchor); cap/join/miter/dash rejected per spec.
         case TokenKind.Blur: this.advance(); blur = this.parseExpression(); break;
         case TokenKind.Shadow: this.advance(); shadow = this.parseShadowExpr(); break;
         case TokenKind.Glow: this.advance(); glow = this.parseGlowExpr(); break;
@@ -1200,7 +1214,7 @@ export class Parser {
         // Bracket list: exactly 2 scalar elements = Vec2 (back-compat for
         // positions); any other arity = Array literal. Nested compounds
         // (`[[10, 10], [90, 90]]`) are arrays. Use `array(a, b)` for an
-        // explicit 2-element data array. Trailing comma allowed (§18.5).
+        // explicit 2-element data array. Trailing comma allowed (Section 18.5).
         const first = this.parseExpression();
         if (this.peek().kind !== TokenKind.Comma) {
           this.expect(TokenKind.RBracket);
