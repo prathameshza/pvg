@@ -10,7 +10,136 @@ data class Preset(
 object Presets {
     val list = listOf(
         Preset(
-            name = "ðŸ¦– Chrome Dino Runner",
+            name = "📊 Telemetry Monitor Card",
+            description = "System-font text, live RPM/temp values, multi-alignment footer (mirrors presets/telemetry_card.pvg)",
+            isAnimated = true,
+            code = """
+PVG 0.1
+canvas 600 400
+  background #0b0c10
+
+# Card Background Container
+rectangle
+  pos [40, 40]
+  size [520, 320]
+  radius 12
+  fill #12141c
+  stroke #1f2333
+  width 1.5
+
+# Top Header Bar
+rectangle
+  pos [40, 40]
+  size [520, 52]
+  radius 12
+  fill #181b26
+  stroke none
+
+# Card Header Title (Sans-Serif Font)
+text
+  pos [60, 56]
+  content "TELEMETRY MONITOR"
+  size 16
+  font "sans"
+  align "left"
+  fill #00ffcc
+
+# Live Status Badge
+circle
+  center [480, 66]
+  radius 4
+  fill #00e676
+
+text
+  pos [495, 58]
+  content "LIVE"
+  size 13
+  font "mono"
+  align "left"
+  fill #00e676
+
+# Dynamic Animated Values
+set rpm = floor(3200 + 400 * sin(time * 3.0))
+set temp = floor(68 + 8 * cos(time * 2.0))
+
+# Left Metric Card
+rectangle
+  pos [60, 115]
+  size [225, 110]
+  radius 8
+  fill #171922
+  stroke #282c3f
+  width 1
+
+text
+  pos [80, 130]
+  content "ENGINE SPEED"
+  size 12
+  font "sans"
+  align "left"
+  fill #8f96b0
+
+text
+  pos [80, 155]
+  content "" + rpm + " RPM"
+  size 28
+  font "mono"
+  align "left"
+  fill #ffffff
+
+# Right Metric Card
+rectangle
+  pos [315, 115]
+  size [225, 110]
+  radius 8
+  fill #171922
+  stroke #282c3f
+  width 1
+
+text
+  pos [335, 130]
+  content "CORE TEMP"
+  size 12
+  font "sans"
+  align "left"
+  fill #8f96b0
+
+text
+  pos [335, 155]
+  content "" + temp + " °C"
+  size 28
+  font "mono"
+  align "left"
+  fill #ff3355
+
+# Multi-alignment Footer Test
+text
+  pos [60, 310]
+  content "LEFT: System OK"
+  size 12
+  font "mono"
+  align "left"
+  fill #5e6278
+
+text
+  pos [300, 310]
+  content "CENTER: 60 FPS"
+  size 12
+  font "mono"
+  align "center"
+  fill #5e6278
+
+text
+  pos [540, 310]
+  content "RIGHT: Time " + floor(time) + "s"
+  size 12
+  font "mono"
+  align "right"
+  fill #5e6278
+""".trimIndent()
+        ),
+        Preset(
+            name = "🦖 Chrome Dino Runner",
             description = "Sine gravity jump curve and procedural moving ground dashes",
             isAnimated = true,
             code = """
@@ -92,7 +221,7 @@ group
 """.trimIndent()
         ),
         Preset(
-            name = "ðŸŒ€ Radar Scanner",
+            name = "🌀 Radar Scanner",
             description = "Concentric range rings, sweep phosphor trail, and orbiting beacons",
             isAnimated = true,
             code = """
@@ -181,7 +310,7 @@ circle
 """.trimIndent()
         ),
         Preset(
-            name = "ðŸŽ›ï¸ Technical Dial",
+            name = "🎛️ Technical Dial",
             description = "Forward circular arcs, tick loop, and pointer needle",
             isAnimated = false,
             code = """
@@ -249,7 +378,7 @@ path
 """.trimIndent()
         ),
         Preset(
-            name = "âš™ï¸ Gears & Functions",
+            name = "⚙️ Gears & Functions",
             description = "User-defined procedural def functions with trigonometric cogs",
             isAnimated = false,
             code = """
@@ -348,7 +477,6 @@ for i from 0 to 60
     width 1
     opacity 0.85 - (i * 0.008)
 """.trimIndent()
-        )
         ),
         Preset(
             name = "🛡️ Sci-Fi Shield Core (0.2 FX)",
@@ -447,8 +575,8 @@ circle
 """.trimIndent()
         ),
         Preset(
-            name = "🎛️ Host Uniforms + Pattern + Spline (0.2)",
-            description = "param uniforms driven from Kotlin, a 16x16 pattern fill and a Catmull-Rom spline",
+            name = "🎛️ Tactical HUD (0.2 Full)",
+            description = "Full reference HUD: params, pattern chassis, drone sprite, noise shield, spline, system-font labels",
             isAnimated = true,
             code = """
 PVG 0.2
@@ -457,21 +585,27 @@ canvas 512 512
 
 param shield_power: 0.82
 param hull_hp: 0.65
+param flux_temp: 74
+param pilot_tag: "VIPER-7"
 
 set cx = 256
-set cy = 256
+set cy = 230
 
 # Repeatable carbon-mesh tile
 pattern carbon_mesh 16 16
   line
-    from [0, 0]
-    to [16, 16]
+    from [0, 0] to [16, 16]
     stroke #ffffff0a
     width 1
   line
-    from [16, 0]
-    to [0, 16]
+    from [16, 0] to [0, 16]
     stroke #ffffff0a
+    width 1
+  rectangle
+    pos [0, 0]
+    size [16, 16]
+    fill none
+    stroke #00ffff08
     width 1
 
 # Chassis card with a real pattern fill and a drop shadow
@@ -484,32 +618,123 @@ rectangle
   width 2
   shadow [0, 16] 24 #000000ee
 
-# Health bar driven by the hull_hp uniform
-rectangle
-  pos [56, 430]
-  size [400 * hull_hp, 14]
-  fill hull_hp < 0.3 ? #ff3344 : #00e676
+# 16x16 retro targeting drone (indexed-color sprite, one data row per line)
+sprite
+  pos [410, 48]
+  scale 2
+  palette [#00000000, #ff1a4b, #1e2333, #ffffff, #ffaa00]
+  data "..11........11.."
+  data ".1441......1441."
+  data "142241....142241"
+  data "1423241..1423241"
+  data ".12222111122221."
+  data "..122222222221.."
+  data "...1222222221..."
+  data "...1244224421..."
+  data "...1222222221..."
+  data "...1221111221..."
+  data "..1221....1221.."
+  data ".14221....12241."
+  data "142221....122241"
+  data "142241....142241"
+  data ".1441......1441."
+  data "..11........11.."
 
-# Shield arc filled from the shield_power uniform, wobbled by value noise
-path
+# Ambient core glow
+circle
+  center [cx, cy]
+  radius 115
+  fill #0066ff
+  blur 38
+  opacity 0.22
+  blend "add"
+
+# Fixed tactical reticle (dashed ring)
+circle
+  center [cx, cy]
+  radius 125
   fill none
   stroke #00d2ff
   width 2
-  glow 6 #00d2ff80
-  start [56, 400]
-  line [56 + 400 * shield_power, 400 + noise2d(1.0, time * 1.5) * 10]
-  line [456, 400]
+  cap "butt"
+  dash [24, 10, 6, 10]
+  glow 6 #00d2ff66
+
+# Organic fluctuating shield perimeter (noise2d + shield_power)
+path
+  fill none
+  stroke shield_power > 0.3 ? #00ffff : #ff2255
+  width 2.5
+  glow 10 (shield_power > 0.3 ? #00ffff80 : #ff225580)
+  blend "add"
+  for deg from 0 to 360 step 6
+    set rad = deg * (PI / 180)
+    set n = noise2d(cos(rad) * 1.8 + time * 0.9, sin(rad) * 1.8 + time * 0.9)
+    set r = 100 + n * (18 * shield_power)
+    set pt = [cx + r * cos(rad), cy + r * sin(rad)]
+    if deg == 0
+      start pt
+    else
+      line pt
+  close
+
+# Central radar hub
+circle
+  center [cx, cy]
+  radius 12
+  fill #ffffff
+  blur 4
+  blend "screen"
+
+# Labels render with on-device system fonts (mono/sans/serif).
+text
+  pos [50, 48]
+  content "TACTICAL HUD // " + pilot_tag
+  size 14
+  font "mono"
+  align "left"
+  fill #00ffff
+
+# Hull bar track + fill driven by hull_hp
+rectangle
+  pos [50, 78]
+  size [160, 10]
+  radius 3
+  fill #111522
+  stroke #232c42
+  width 1
+
+rectangle
+  pos [50, 78]
+  size [160 * hull_hp, 10]
+  radius 3
+  fill hull_hp > 0.3 ? #00e676 : #ff3344
+  glow 4 (hull_hp > 0.3 ? #00e67680 : #ff334480)
+
+text
+  pos [220, 76]
+  content "" + floor(hull_hp * 100) + "% HULL"
+  size 11
+  font "mono"
+  fill #8fa2c7
+
+text
+  pos [50, 375]
+  content "HARMONIC FLUX: " + flux_temp + " °C"
+  size 12
+  font "mono"
+  fill #00d2ff
 
 # Telemetry waveform from an array of samples
-set history = [12, 45, 68, 30, 85, 92, 40, 58]
+set wave_samples = [430, 418, 435, 395, 420, 405, 445, 410, 428, 390, 425]
 
 spline
-  points history
-  pos [56, 60]
-  size [400, 120]
+  pos [50, 395]
+  size [412, 50]
+  points wave_samples
   stroke #00ffcc
-  width 2
-  glow 4 #00ffcc
+  width 2.5
+  glow 8 #00ffcc66
 """.trimIndent()
         )
     )

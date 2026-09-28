@@ -66,7 +66,7 @@ class PvgEngine(
     fun paramNames(): List<String> {
         if (nativeHandle == 0L) return emptyList()
         val arr = nativeGetParamNames(nativeHandle) ?: return emptyList()
-        return (0 until arr.size()).map { arr.get(it) }
+        return (0 until arr.size).map { arr[it] }
     }
 
     fun onSurfaceCreated(surface: Surface) {
@@ -84,6 +84,16 @@ class PvgEngine(
     fun onSurfaceDestroyed() {
         if (nativeHandle != 0L) {
             nativeOnSurfaceDestroyed(nativeHandle)
+        }
+    }
+
+    /** Latest parse/eval failure for the current source, or "" when healthy. */
+    fun getLastError(): String {
+        if (nativeHandle == 0L) return ""
+        return try {
+            nativeGetLastError(nativeHandle) ?: ""
+        } catch (_: Exception) {
+            ""
         }
     }
 
@@ -167,5 +177,8 @@ class PvgEngine(
 
         @JvmStatic
         private external fun nativeGetTelemetry(handle: Long): DoubleArray
+
+        @JvmStatic
+        private external fun nativeGetLastError(handle: Long): String?
     }
 }

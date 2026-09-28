@@ -1,10 +1,11 @@
+use crate::text::TextEngine;
 use pvg::ast::Color;
 use pvg::draw_list::{
     BlendMode, DrawCmd, DrawList, DrawPathCommand, DrawPattern, DrawStyle, LineCap, LineJoin,
-    Paint as PvgPaint,
+    Paint as PvgPaint, TextAlign,
 };
 use std::collections::HashMap;
-use std::f64::consts::PI;
+use std::f64::consts::{PI, TAU as TAU_F64};
 use tiny_skia::{
     BlendMode as SkBlend, FillRule, FilterQuality, LineCap as SkCap, LineJoin as SkJoin, Mask,
     Paint, PathBuilder, Pixmap, PixmapMut, PixmapPaint, Point, Rect, Stroke, Transform,
@@ -27,11 +28,21 @@ pub fn color_to_skia(col: &Color, opacity: f64) -> Option<Paint<'static>> {
     }
 }
 
-/// PVG 0.2 paint fallback for the CPU rasterizer: solid colors map directly;
-/// gradients resolve to their middle stop's color (deterministic flat fallback).
-/// Pattern fills resolve to neutral gray only when the name misses the
-/// per-frame tile map (unknown name, or nested inside a tile); known patterns
-/// tile for real (see `render_pattern_tiles` / `paint_pattern`).
+/// Flat fallback for `Pattern` paints that never reach the sampler: patterns
+/// referenced from inside a tile (cycle guard) or unknown names resolve to
+/// neutral gray. Gradients return `None` here (handled per-pixel via `grad_cfg`).
+fn solid_or_pattern_paint(paint: &PvgPaint, opacity: f64) -> Option<Paint<'static>> {
+    match paint {
+        PvgPaint::Color(c) => color_to_skia(c, opacity),
+        PvgPaint::Pattern(_) => color_to_skia(&Color::Rgba(136, 136, 136, 255), opacity),
+        _ => None,
+    }
+}
+
+/// Backwards-compatible paint helper: solid colors map directly, unknown
+/// patterns map to gray, gradients fall back to their middle stop's color.
+/// Prefer `solid_or_pattern_paint` + `grad_cfg`/`paint_sampled` for real 0.2 output.
+#[allow(dead_code)]
 pub fn paint_to_skia(paint: &PvgPaint, opacity: f64) -> Option<Paint<'static>> {
     match paint {
         PvgPaint::Color(c) => color_to_skia(c, opacity),
@@ -46,6 +57,140 @@ pub fn paint_to_skia(paint: &PvgPaint, opacity: f64) -> Option<Paint<'static>> {
             color_to_skia(mid, opacity)
         }
     }
+}
+
+/// Sorted, clamped, opacity-folded gradient stops as straight RGBA.
+///
+/// Fully transparent stops (`#rrggbbaa` with `aa == 00`) are MEANINGFUL
+/// (fade-outs) and must be kept (PVG 0.2 Section 9.4).
+fn sampled_stops(stops: &[pvg::draw_list::GradientStop], opacity: f64) -> Vec<(f64, u8, u8, u8, u8)> {
+    let mut sorted: Vec<&pvg::draw_list::GradientStop> = stops.iter().collect();
+    sorted.sort_by(|a, b| a.offset.partial_cmp(&b.offset).unwrap_or(std::cmp::Ordering::Equal));
+    let mut out = Vec::with_capacity(sorted.len());
+    for s in sorted {
+        let (r, g, b, a) = match &s.color {
+            Color::Rgba(r, g, b, a) => (*r, *g, *b, ((*a as f64) * opacity).clamp(0.0, 255.0).round() as u8),
+            Color::None => (0, 0, 0, 0),
+        };
+        out.push((s.offset.clamp(0.0, 1.0), r, g, b, a));
+    }
+    out
+}
+
+/// Gradient geometry in PVG user space (spec Section 9).
+#[derive(Clone)]
+enum GradKind {
+    Linear { start: (f64, f64), end: (f64, f64) },
+    Radial { focal: (f64, f64), center: (f64, f64), radius: f64 },
+    Angular { center: (f64, f64), start_angle: f64 },
+}
+
+#[derive(Clone)]
+struct GradCfg {
+    stops: Vec<(f64, u8, u8, u8, u8)>,
+    kind: GradKind,
+}
+
+fn grad_cfg(paint: &PvgPaint, opacity: f64) -> Option<GradCfg> {
+    match paint {
+        PvgPaint::Color(_) | PvgPaint::Pattern(_) => None,
+        PvgPaint::Linear { start, end, stops } => {
+            let stops = sampled_stops(stops, opacity);
+            if stops.is_empty() {
+                return None;
+            }
+            Some(GradCfg { stops, kind: GradKind::Linear { start: *start, end: *end } })
+        }
+        PvgPaint::Radial { center, radius, focal, stops } => {
+            let stops = sampled_stops(stops, opacity);
+            if stops.is_empty() {
+                return None;
+            }
+            Some(GradCfg {
+                stops,
+                kind: GradKind::Radial { focal: focal.unwrap_or(*center), center: *center, radius: *radius },
+            })
+        }
+        PvgPaint::Angular { center, start_angle, stops } => {
+            let stops = sampled_stops(stops, opacity);
+            if stops.is_empty() {
+                return None;
+            }
+            Some(GradCfg { stops, kind: GradKind::Angular { center: *center, start_angle: *start_angle } })
+        }
+    }
+}
+
+/// Gradient parameter `t` in [0, 1] for a user-space point.
+/// Degenerate linear (start == end) yields the last stop.
+fn grad_t(kind: &GradKind, u: (f64, f64)) -> f64 {
+    match *kind {
+        GradKind::Linear { start, end } => {
+            let dx = end.0 - start.0;
+            let dy = end.1 - start.1;
+            let len2 = dx * dx + dy * dy;
+            if len2 < 1e-12 {
+                return 1.0;
+            }
+            (((u.0 - start.0) * dx + (u.1 - start.1) * dy) / len2).clamp(0.0, 1.0)
+        }
+        GradKind::Radial { focal, center, radius } => {
+            if radius <= 1e-9 {
+                return 1.0;
+            }
+            let vx = center.0 - focal.0;
+            let vy = center.1 - focal.1;
+            let dx = u.0 - focal.0;
+            let dy = u.1 - focal.1;
+            if (vx * vx + vy * vy).sqrt() < 1e-9 {
+                return ((dx * dx + dy * dy).sqrt() / radius).clamp(0.0, 1.0);
+            }
+            let vv = vx * vx + vy * vy;
+            let rr = radius * radius;
+            let denom = vv - rr;
+            if denom.abs() < 1e-9 {
+                return ((dx * dx + dy * dy).sqrt() / radius).clamp(0.0, 1.0);
+            }
+            let dv = dx * vx + dy * vy;
+            let dd = dx * dx + dy * dy;
+            let disc = dv * dv - denom * dd;
+            if disc < 0.0 {
+                return 1.0;
+            }
+            ((dv - disc.sqrt()) / denom).clamp(0.0, 1.0)
+        }
+        GradKind::Angular { center, start_angle } => {
+            let mut t = ((u.1 - center.1).atan2(u.0 - center.0) - start_angle) / TAU_F64;
+            t -= t.floor();
+            t.clamp(0.0, 1.0)
+        }
+    }
+}
+
+/// Samples a stop list at fraction `t` (stops sorted by offset).
+fn sample_stops(stops: &[(f64, u8, u8, u8, u8)], t: f64) -> (u8, u8, u8, u8) {
+    if stops.is_empty() {
+        return (0, 0, 0, 0);
+    }
+    if t <= stops[0].0 {
+        let s = stops[0];
+        return (s.1, s.2, s.3, s.4);
+    }
+    if t >= stops[stops.len() - 1].0 {
+        let s = stops[stops.len() - 1];
+        return (s.1, s.2, s.3, s.4);
+    }
+    for w in stops.windows(2) {
+        let (o0, o1) = (w[0].0, w[1].0);
+        if t >= o0 && t <= o1 {
+            let span = (o1 - o0).max(1e-9);
+            let f = ((t - o0) / span) as f32;
+            let lerp = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * f).round() as u8;
+            return (lerp(w[0].1, w[1].1), lerp(w[0].2, w[1].2), lerp(w[0].3, w[1].3), lerp(w[0].4, w[1].4));
+        }
+    }
+    let s = stops[stops.len() - 1];
+    (s.1, s.2, s.3, s.4)
 }
 
 /// Palette character -> index (digits, then a-z/A-Z for 10+). `.`/space = skip.
@@ -131,12 +276,17 @@ fn needs_fx(style: &DrawStyle) -> bool {
 
 /// Cropped device-space layer rect `(ox, oy, w, h)` for an effect command:
 /// geometry bbox padded for stroke half-width, blur/glow/shadow radii and the
-/// shadow offset, then clamped to the target. Cropping makes blur, silhouette
+/// shadow offset, mapped through the FULL draw transform (scale AND letterbox
+/// offset), then clamped to the target. Cropping makes blur, silhouette
 /// and compositing proportional to the affected region instead of the canvas.
+///
+/// NOTE: mapping through `transform` (not `scale` alone) is required — the
+/// letterbox offset is non-zero on non-square targets, and dropping it shifts
+/// every FX layer up-left and clips its bottom/right tails.
 fn fx_layer_rect(
     cmd: &DrawCmd,
     style: &DrawStyle,
-    scale: f32,
+    transform: Transform,
     canvas_w: u32,
     canvas_h: u32,
 ) -> Option<(i32, i32, u32, u32)> {
@@ -155,10 +305,30 @@ fn fx_layer_rect(
         ox = sh.offset.0;
         oy = sh.offset.1;
     }
-    let x0 = ((x0 - pad).min(x0 + ox.min(0.0)) as f32 * scale).floor() as i32 - 1;
-    let y0 = ((y0 - pad).min(y0 + oy.min(0.0)) as f32 * scale).floor() as i32 - 1;
-    let x1 = ((x1 + pad).max(x1 + ox.max(0.0)) as f32 * scale).ceil() as i32 + 1;
-    let y1 = ((y1 + pad).max(y1 + oy.max(0.0)) as f32 * scale).ceil() as i32 + 1;
+    let ux0 = (x0 - pad).min(x0 + ox.min(0.0));
+    let uy0 = (y0 - pad).min(y0 + oy.min(0.0));
+    let ux1 = (x1 + pad).max(x1 + ox.max(0.0));
+    let uy1 = (y1 + pad).max(y1 + oy.max(0.0));
+    // Map all four corners (general under rotation, cheap anyway).
+    let mut pts = [
+        Point::from_xy(ux0 as f32, uy0 as f32),
+        Point::from_xy(ux1 as f32, uy0 as f32),
+        Point::from_xy(ux0 as f32, uy1 as f32),
+        Point::from_xy(ux1 as f32, uy1 as f32),
+    ];
+    transform.map_points(&mut pts);
+    let (mut lx0, mut ly0, mut lx1, mut ly1) =
+        (f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
+    for p in &pts {
+        lx0 = lx0.min(p.x);
+        ly0 = ly0.min(p.y);
+        lx1 = lx1.max(p.x);
+        ly1 = ly1.max(p.y);
+    }
+    let x0 = lx0.floor() as i32 - 1;
+    let y0 = ly0.floor() as i32 - 1;
+    let x1 = lx1.ceil() as i32 + 1;
+    let y1 = ly1.ceil() as i32 + 1;
     let x0c = x0.max(0).min(canvas_w as i32);
     let y0c = y0.max(0).min(canvas_h as i32);
     let x1c = x1.max(0).min(canvas_w as i32);
@@ -171,14 +341,26 @@ fn fx_layer_rect(
 
 /// 3-pass separable box blur approximating a gaussian, O(pixels) per pass.
 /// Operates on premultiplied data, the correct domain for filtering.
+///
+/// The second scanline buffer is a per-thread reusable scratch allocation:
+/// a blurred 512x512 layer otherwise pays six ~1MB `vec!` allocs per shape
+/// per frame.
+use std::cell::RefCell;
+thread_local! {
+    static BLUR_SCRATCH: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+}
+
 fn box_blur(pixmap: &mut PixmapMut, radius: u32) {
     if radius == 0 {
         return;
     }
-    for _ in 0..3 {
-        blur_horizontal(pixmap, radius);
-        blur_vertical(pixmap, radius);
-    }
+    BLUR_SCRATCH.with(|s| {
+        let mut scratch = s.borrow_mut();
+        for _ in 0..3 {
+            blur_horizontal(pixmap, radius, &mut scratch);
+            blur_vertical(pixmap, radius, &mut scratch);
+        }
+    });
 }
 
 /// Fixed-point reciprocal `2^32 / window` so the per-pixel average uses a
@@ -196,7 +378,7 @@ fn avg_channel(acc: u32, recip: u64) -> u8 {
 
 
 
-fn blur_horizontal(pixmap: &mut PixmapMut, radius: u32) {
+fn blur_horizontal(pixmap: &mut PixmapMut, radius: u32, scratch: &mut Vec<u8>) {
     let (w, h) = (pixmap.width() as usize, pixmap.height() as usize);
     if w == 0 || h == 0 {
         return;
@@ -204,36 +386,40 @@ fn blur_horizontal(pixmap: &mut PixmapMut, radius: u32) {
     let r = radius as usize;
     let window = 2 * r + 1;
     let recip = reciprocal(window);
-    let mut buf = vec![0u8; w * h * 4];
+    scratch.resize(w * h * 4, 0);
+    let buf = scratch.as_mut_slice();
     {
         let src = pixmap.as_ref().data();
         for y in 0..h {
+            let row = y * w * 4;
             // acc = sum over window [-r, +r] around x=0 (edges clamped).
             let mut acc = [0u32; 4];
             for i in 0..window {
                 let sx = i.saturating_sub(r).min(w - 1);
+                let base = row + sx * 4;
                 for c in 0..4 {
-                    acc[c] += src[(y * w + sx) * 4 + c] as u32;
+                    acc[c] += src[base + c] as u32;
                 }
             }
             for x in 0..w {
+                let dst_o = row + x * 4;
                 for c in 0..4 {
-                    buf[(y * w + x) * 4 + c] = avg_channel(acc[c], recip);
+                    buf[dst_o + c] = avg_channel(acc[c], recip);
                 }
                 // Slide window from x to x+1: drop x-r, take in x+r+1.
-                let leave = x.saturating_sub(r);
-                let enter = (x + r + 1).min(w - 1);
+                let leave = row + x.saturating_sub(r) * 4;
+                let enter = row + (x + r + 1).min(w - 1) * 4;
                 for c in 0..4 {
-                    acc[c] += src[(y * w + enter) * 4 + c] as u32;
-                    acc[c] -= src[(y * w + leave) * 4 + c] as u32;
+                    acc[c] += src[enter + c] as u32;
+                    acc[c] -= src[leave + c] as u32;
                 }
             }
         }
     }
-    pixmap.data_mut().copy_from_slice(&buf);
+    pixmap.data_mut().copy_from_slice(&buf[..w * h * 4]);
 }
 
-fn blur_vertical(pixmap: &mut PixmapMut, radius: u32) {
+fn blur_vertical(pixmap: &mut PixmapMut, radius: u32, scratch: &mut Vec<u8>) {
     let (w, h) = (pixmap.width() as usize, pixmap.height() as usize);
     if w == 0 || h == 0 {
         return;
@@ -241,7 +427,8 @@ fn blur_vertical(pixmap: &mut PixmapMut, radius: u32) {
     let r = radius as usize;
     let window = 2 * r + 1;
     let recip = reciprocal(window);
-    let mut buf = vec![0u8; w * h * 4];
+    scratch.resize(w * h * 4, 0);
+    let buf = scratch.as_mut_slice();
     {
         let src = pixmap.as_ref().data();
         for x in 0..w {
@@ -249,25 +436,27 @@ fn blur_vertical(pixmap: &mut PixmapMut, radius: u32) {
             let mut acc = [0u32; 4];
             for i in 0..window {
                 let sy = i.saturating_sub(r).min(h - 1);
+                let base = (sy * w + x) * 4;
                 for c in 0..4 {
-                    acc[c] += src[(sy * w + x) * 4 + c] as u32;
+                    acc[c] += src[base + c] as u32;
                 }
             }
             for y in 0..h {
+                let dst_o = (y * w + x) * 4;
                 for c in 0..4 {
-                    buf[(y * w + x) * 4 + c] = avg_channel(acc[c], recip);
+                    buf[dst_o + c] = avg_channel(acc[c], recip);
                 }
                 // Slide window from y to y+1: drop y-r, take in y+r+1.
-                let leave = y.saturating_sub(r);
-                let enter = (y + r + 1).min(h - 1);
+                let leave = ((y.saturating_sub(r)) * w + x) * 4;
+                let enter = (((y + r + 1).min(h - 1)) * w + x) * 4;
                 for c in 0..4 {
-                    acc[c] += src[(enter * w + x) * 4 + c] as u32;
-                    acc[c] -= src[(leave * w + x) * 4 + c] as u32;
+                    acc[c] += src[enter + c] as u32;
+                    acc[c] -= src[leave + c] as u32;
                 }
             }
         }
     }
-    pixmap.data_mut().copy_from_slice(&buf);
+    pixmap.data_mut().copy_from_slice(&buf[..w * h * 4]);
 }
 
 /// Builds a solid-color silhouette pixmap from a rendered layer's alpha:
@@ -330,7 +519,11 @@ type PatternTiles = HashMap<String, PatternTile>;
 /// Tiles render with an EMPTY tile map: a pattern referenced from inside a
 /// tile falls back to neutral gray, which terminates any A-references-A cycle
 /// by construction.
-fn render_pattern_tiles(patterns: &[DrawPattern], k: f32) -> PatternTiles {
+fn render_pattern_tiles(
+    patterns: &[DrawPattern],
+    k: f32,
+    text: &mut TextEngine,
+) -> PatternTiles {
     let mut out = PatternTiles::new();
     let k = if k > 0.0 && k.is_finite() { k } else { 1.0 };
     let empty = PatternTiles::new();
@@ -348,7 +541,7 @@ fn render_pattern_tiles(patterns: &[DrawPattern], k: f32) -> PatternTiles {
         };
         let xf = Transform::from_scale(k, k);
         for t in &pat.tiles {
-            render_cmd_masked(t, &mut pix.as_mut(), xf, None, k, &empty);
+            render_cmd_masked(t, &mut pix.as_mut(), xf, None, k, &empty, text);
         }
         out.insert(pat.name.clone(), PatternTile { pix, w_units: pat.width, h_units: pat.height });
     }
@@ -576,8 +769,92 @@ fn loop_rect(cmd: &DrawCmd, transform: Transform, w: u32, h: u32) -> (u32, u32, 
     (x0c, y0c, x1c, y1c)
 }
 
-/// Fill helper: real pattern tiling on a tile hit, otherwise the exact
-/// pre-existing flat paint path (solid / gradient fallback bit-identical).
+/// Unified per-pixel gradient fill/stroke (PVG 0.2 Section 9, ported from
+/// `pvg_win_gui::software::paint_sampled`).
+///
+/// Renders `path` coverage (white fill, or white stroke so dash/cap/join are
+/// honored) into a cropped temp, then evaluates the gradient in PVG user space
+/// per covered pixel: `user = draw_transform⁻¹(pixel)`. Exact for
+/// translated/cropped layers, any scale, and focal/conic geometries.
+#[allow(clippy::too_many_arguments)]
+fn paint_sampled(
+    dst: &mut PixmapMut,
+    cmd: &DrawCmd,
+    path: &tiny_skia::Path,
+    cfg: &GradCfg,
+    is_fill: bool,
+    style: &DrawStyle,
+    transform: Transform,
+    blend: SkBlend,
+    mask: Option<&Mask>,
+) {
+    let (w, h) = (dst.width(), dst.height());
+    let (rx0, ry0, rx1, ry1) = loop_rect(cmd, transform, w, h);
+    let (rw, rh) = (rx1 - rx0, ry1 - ry0);
+    if rw == 0 || rh == 0 {
+        return;
+    }
+    let lxf = transform.post_translate(-(rx0 as f32), -(ry0 as f32));
+    let mut coverage = match Pixmap::new(rw, rh) {
+        Some(p) => p,
+        None => return,
+    };
+    {
+        let mut white = Paint::default();
+        white.set_color_rgba8(255, 255, 255, 255);
+        white.anti_alias = true;
+        if is_fill {
+            coverage.fill_path(path, &white, FillRule::Winding, lxf, None);
+        } else {
+            let stroke = style_to_stroke(style);
+            coverage.stroke_path(path, &white, &stroke, lxf, None);
+        }
+    }
+    let inv = match lxf.invert() {
+        Some(v) => v,
+        None => return,
+    };
+    let mut layer = match Pixmap::new(rw, rh) {
+        Some(p) => p,
+        None => return,
+    };
+    {
+        let cov = coverage.data();
+        let out = layer.data_mut();
+        for y in 0..rh {
+            for x in 0..rw {
+                let ca = cov[(y as usize * rw as usize + x as usize) * 4 + 3] as f32 / 255.0;
+                if ca <= 0.0 {
+                    continue;
+                }
+                let mut pt = Point::from_xy(x as f32, y as f32);
+                inv.map_point(&mut pt);
+                let t = grad_t(&cfg.kind, (pt.x as f64, pt.y as f64));
+                let (r, g, b, a) = sample_stops(&cfg.stops, t);
+                let ae = a as f32 / 255.0 * ca;
+                if ae <= 0.0 {
+                    continue;
+                }
+                let idx = (y as usize * rw as usize + x as usize) * 4;
+                out[idx] = (r as f32 * ae).round() as u8;
+                out[idx + 1] = (g as f32 * ae).round() as u8;
+                out[idx + 2] = (b as f32 * ae).round() as u8;
+                out[idx + 3] = (ae * 255.0).round() as u8;
+            }
+        }
+    }
+    dst.draw_pixmap(
+        rx0 as i32,
+        ry0 as i32,
+        layer.as_ref(),
+        &PixmapPaint { opacity: 1.0, blend_mode: blend, quality: FilterQuality::Nearest },
+        Transform::identity(),
+        mask,
+    );
+}
+
+/// Fill helper: real pattern tiling on a tile hit, real per-pixel gradients
+/// (Section 9), otherwise solid color. Unknown patterns fall back to gray.
 fn fill_shape_path(
     dst: &mut PixmapMut,
     cmd: &DrawCmd,
@@ -588,19 +865,32 @@ fn fill_shape_path(
     tiles: &PatternTiles,
 ) {
     if let PvgPaint::Pattern(name) = &style.fill {
-        if let Some(tile) = tiles.get(name) {
-            paint_pattern(dst, cmd, path, tile, true, style, transform, style_to_blend(style), mask);
-            return;
+        match tiles.get(name) {
+            Some(tile) => {
+                paint_pattern(dst, cmd, path, tile, true, style, transform, style_to_blend(style), mask);
+                return;
+            }
+            None => {
+                if let Some(mut p) = solid_or_pattern_paint(&style.fill, style.opacity) {
+                    p.blend_mode = style_to_blend(style);
+                    dst.fill_path(path, &p, FillRule::Winding, transform, mask);
+                }
+                return;
+            }
         }
     }
-    if let Some(mut fill_paint) = paint_to_skia(&style.fill, style.opacity) {
+    if let Some(cfg) = grad_cfg(&style.fill, style.opacity) {
+        paint_sampled(dst, cmd, path, &cfg, true, style, transform, style_to_blend(style), mask);
+        return;
+    }
+    if let Some(mut fill_paint) = solid_or_pattern_paint(&style.fill, style.opacity) {
         fill_paint.blend_mode = style_to_blend(style);
         dst.fill_path(path, &fill_paint, FillRule::Winding, transform, mask);
     }
 }
 
 /// Stroke helper: same split as [`fill_shape_path`] for stroke paints.
-/// Zero-width strokes paint nothing (matches the pre-existing gate).
+/// Zero-width strokes paint nothing.
 fn stroke_shape_path(
     dst: &mut PixmapMut,
     cmd: &DrawCmd,
@@ -614,22 +904,26 @@ fn stroke_shape_path(
         return;
     }
     if let PvgPaint::Pattern(name) = &style.stroke {
-        if let Some(tile) = tiles.get(name) {
-            paint_pattern(
-                dst,
-                cmd,
-                path,
-                tile,
-                false,
-                style,
-                transform,
-                style_to_blend(style),
-                mask,
-            );
-            return;
+        match tiles.get(name) {
+            Some(tile) => {
+                paint_pattern(dst, cmd, path, tile, false, style, transform, style_to_blend(style), mask);
+                return;
+            }
+            None => {
+                if let Some(mut p) = solid_or_pattern_paint(&style.stroke, style.opacity) {
+                    p.blend_mode = style_to_blend(style);
+                    let stroke = style_to_stroke(style);
+                    dst.stroke_path(path, &p, &stroke, transform, mask);
+                }
+                return;
+            }
         }
     }
-    if let Some(mut stroke_paint) = paint_to_skia(&style.stroke, style.opacity) {
+    if let Some(cfg) = grad_cfg(&style.stroke, style.opacity) {
+        paint_sampled(dst, cmd, path, &cfg, false, style, transform, style_to_blend(style), mask);
+        return;
+    }
+    if let Some(mut stroke_paint) = solid_or_pattern_paint(&style.stroke, style.opacity) {
         stroke_paint.blend_mode = style_to_blend(style);
         let stroke = style_to_stroke(style);
         dst.stroke_path(path, &stroke_paint, &stroke, transform, mask);
@@ -745,31 +1039,347 @@ fn render_shape(
         paint_shape(dst, cmd, path, style, transform, mask, tiles);
         return;
     }
-    let (ox, oy, lw, lh) = match fx_layer_rect(cmd, style, scale, dst.width(), dst.height()) {
-        Some(r) => r,
+    let (layer, (ox, oy)) = match build_fx_layer(cmd, path, style, transform, scale, dst.width(), dst.height(), tiles) {
+        Some(v) => v,
         None => return,
     };
-    let mut layer = match Pixmap::new(lw, lh) {
-        Some(p) => p,
-        None => return,
-    };
-    let lxf = transform.post_translate(-(ox as f32), -(oy as f32));
-    {
-        let mut lpm = layer.as_mut();
-        render_fx_into(&mut lpm, cmd, path, style, lxf, scale, tiles);
-    }
+    composite_layer(dst, &layer, ox, oy, style_to_blend(style), mask);
+}
+
+/// Blits a finished pre-blend layer onto `dst` with the style blend mode.
+fn composite_layer(
+    dst: &mut PixmapMut,
+    layer: &Pixmap,
+    ox: i32,
+    oy: i32,
+    blend: SkBlend,
+    mask: Option<&Mask>,
+) {
     dst.draw_pixmap(
         ox,
         oy,
         layer.as_ref(),
-        &PixmapPaint {
-            opacity: 1.0,
-            blend_mode: style_to_blend(style),
-            quality: FilterQuality::Nearest,
-        },
+        &PixmapPaint { opacity: 1.0, blend_mode: blend, quality: FilterQuality::Nearest },
         Transform::identity(),
         mask,
     );
+}
+
+/// Builds the full-resolution pre-blend FX layer for one geometric command.
+///
+/// The effect stack (shape + shadow + glow + blur) renders at HALF device
+/// resolution and is bilinear-upscaled: all three filters are low-frequency,
+/// so the half-res layer is visually identical at ~1/4 the per-pixel cost
+/// (a `blur 45` layer drops from ~65ms to ~18ms at 512p). Gradient and
+/// pattern sampling inside the layer evaluate in resolution-independent PVG
+/// user space, so stops and tile wraps stay exact.
+#[allow(clippy::too_many_arguments)]
+fn build_fx_layer(
+    cmd: &DrawCmd,
+    path: &tiny_skia::Path,
+    style: &DrawStyle,
+    transform: Transform,
+    scale: f32,
+    canvas_w: u32,
+    canvas_h: u32,
+    tiles: &PatternTiles,
+) -> Option<(Pixmap, (i32, i32))> {
+    let (ox, oy, lw, lh) = fx_layer_rect(cmd, style, transform, canvas_w, canvas_h)?;
+    let hw = (lw / 2).max(1);
+    let hh = (lh / 2).max(1);
+    let mut half = Pixmap::new(hw, hh)?;
+    // half(p) = (transform(p) - origin) * 0.5, component-wise.
+    let hxf = Transform::from_row(
+        transform.sx * 0.5,
+        transform.ky * 0.5,
+        transform.kx * 0.5,
+        transform.sy * 0.5,
+        (transform.tx - ox as f32) * 0.5,
+        (transform.ty - oy as f32) * 0.5,
+    );
+    {
+        let mut hpm = half.as_mut();
+        render_fx_into(&mut hpm, cmd, path, style, hxf, scale * 0.5, tiles);
+    }
+    let mut full = Pixmap::new(lw, lh)?;
+    upscale_bilinear_into(&mut full, &half);
+    Some((full, (ox, oy)))
+}
+
+/// Bilinear upscale of premultiplied `src` into same-aspect `dst`.
+/// Both pixmaps are transparent-based layer buffers, so no blending here —
+/// the caller composites the finished layer with its blend mode.
+fn upscale_bilinear_into(dst: &mut Pixmap, src: &Pixmap) {
+    let (sw, sh) = (src.width(), src.height());
+    let (dw, dh) = (dst.width(), dst.height());
+    if sw == 0 || sh == 0 || dw == 0 || dh == 0 {
+        return;
+    }
+    let s = src.data();
+    let d = dst.data_mut();
+    let kx = sw as f32 / dw as f32;
+    let ky = sh as f32 / dh as f32;
+    for y in 0..dh {
+        let sy = ((y as f32 + 0.5) * ky - 0.5).clamp(0.0, sh as f32 - 1.0);
+        let y0 = sy as u32;
+        let y1 = (y0 + 1).min(sh - 1);
+        let fy = sy - y0 as f32;
+        for x in 0..dw {
+            let sx = ((x as f32 + 0.5) * kx - 0.5).clamp(0.0, sw as f32 - 1.0);
+            let x0 = sx as u32;
+            let x1 = (x0 + 1).min(sw - 1);
+            let fx = sx - x0 as f32;
+            let i00 = ((y0 * sw + x0) * 4) as usize;
+            let i10 = ((y0 * sw + x1) * 4) as usize;
+            let i01 = ((y1 * sw + x0) * 4) as usize;
+            let i11 = ((y1 * sw + x1) * 4) as usize;
+            let o = ((y * dw + x) * 4) as usize;
+            for c in 0..4 {
+                let top = s[i00 + c] as f32 + (s[i10 + c] as f32 - s[i00 + c] as f32) * fx;
+                let bot = s[i01 + c] as f32 + (s[i11 + c] as f32 - s[i01 + c] as f32) * fx;
+                d[o + c] = (top + (bot - top) * fy).round().clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Frame-persistent FX cache: static shapes render once, blit per frame
+// ---------------------------------------------------------------------------
+
+/// Cached pre-blend layer for one top-level draw command.
+struct FxSlot {
+    cmd: Option<DrawCmd>,
+    layer: Option<Pixmap>,
+    rect: (i32, i32, u32, u32),
+}
+
+/// Frame-persistent cache of static pre-blend layers.
+///
+/// Animated scenes re-evaluate every frame, but most shapes are static:
+/// their `DrawCmd` (world-space geometry + resolved style) is bit-identical
+/// across frames, so the expensive FX stack (blur/shadow/glow layers,
+/// gradient and pattern sampling) renders once and re-composites via a fast
+/// `draw_pixmap` blit. Time-varying commands miss the cache and render as
+/// usual — correctness is exact by construction (`DrawCmd: PartialEq`).
+#[derive(Default)]
+pub struct FxCache {
+    target: (u32, u32),
+    slots: Vec<FxSlot>,
+}
+
+/// Per-frame raster caches held by the engine across animation ticks:
+/// static FX layers plus the glyph coverage cache for text.
+#[derive(Default)]
+pub struct FrameCache {
+    pub fx: FxCache,
+    pub text: TextEngine,
+}
+
+impl FxCache {
+    /// Drops all entries (call when the surface size changes).
+    pub fn clear(&mut self) {
+        self.slots.clear();
+        self.target = (0, 0);
+    }
+
+    fn reset_for_frame(&mut self, target: (u32, u32), items: usize) {
+        if self.target != target || self.slots.len() != items {
+            self.slots.clear();
+            self.slots.resize_with(items, || FxSlot { cmd: None, layer: None, rect: (0, 0, 0, 0) });
+            self.target = target;
+        }
+    }
+}
+
+/// Style of geometric commands (fill/stroke owners). Text/Sprite/Clip have
+/// no single style.
+fn cmd_style(cmd: &DrawCmd) -> Option<&DrawStyle> {
+    match cmd {
+        DrawCmd::Circle { style, .. }
+        | DrawCmd::Ellipse { style, .. }
+        | DrawCmd::Rectangle { style, .. }
+        | DrawCmd::Line { style, .. }
+        | DrawCmd::Polygon { style, .. }
+        | DrawCmd::Path { style, .. }
+        | DrawCmd::Spline { style, .. } => Some(style),
+        _ => None,
+    }
+}
+
+/// True when a paint needs per-pixel sampling (gradient or pattern tile).
+fn paint_sampled_paint(paint: &PvgPaint) -> bool {
+    !matches!(paint, PvgPaint::Color(_))
+}
+
+/// True when every blend in the subtree is `Normal`, so baking the subtree
+/// into one layer and compositing with SourceOver is pixel-exact
+/// (SourceOver associativity over a transparent base).
+fn subtree_all_normal(cmd: &DrawCmd) -> bool {
+    match cmd {
+        DrawCmd::Clip { content, .. } => content.iter().all(subtree_all_normal),
+        DrawCmd::Text { .. } | DrawCmd::Sprite { .. } => true,
+        _ => cmd_style(cmd).map(|s| s.blend == BlendMode::Normal).unwrap_or(true),
+    }
+}
+
+/// True when the subtree contains anything worth baking: FX filters,
+/// sampled paints, or nested clips.
+fn subtree_has_cost(cmd: &DrawCmd) -> bool {
+    match cmd {
+        DrawCmd::Clip { content, .. } => content.iter().any(subtree_has_cost),
+        DrawCmd::Text { .. } => false,
+        DrawCmd::Sprite { .. } => false,
+        _ => match cmd_style(cmd) {
+            Some(s) => needs_fx(s) || paint_sampled_paint(&s.fill) || paint_sampled_paint(&s.stroke),
+            None => false,
+        },
+    }
+}
+
+/// Top-level commands eligible for [`FxCache`]: static-detectable via
+/// `DrawCmd` equality and expensive enough to bake (FX filters or sampled
+/// paints) — or clips containing such content.
+///
+/// Baking is pixel-exact for ANY blend mode on single-style shapes: the
+/// layer is rendered exactly as the direct path renders it (same inner
+/// paints, all backdrop-independent), and the style blend applies at
+/// composite time from the cached command. Clips need an all-`Normal`
+/// subtree since children bake into one layer composited once with
+/// SourceOver (exact by SourceOver associativity over transparency).
+fn cmd_cacheable(cmd: &DrawCmd) -> bool {
+    match cmd {
+        DrawCmd::Clip { .. } => subtree_all_normal(cmd) && subtree_has_cost(cmd),
+        _ => match cmd_style(cmd) {
+            Some(s) => needs_fx(s) || paint_sampled_paint(&s.fill) || paint_sampled_paint(&s.stroke),
+            None => false,
+        },
+    }
+}
+
+/// Builds the cacheable full-resolution pre-blend layer for one top-level
+/// command: FX shapes via [`build_fx_layer`], clips by rendering content
+/// through the inner mask into a cropped temp.
+#[allow(clippy::too_many_arguments)]
+fn build_cached_layer(
+    cmd: &DrawCmd,
+    transform: Transform,
+    scale: f32,
+    canvas_w: u32,
+    canvas_h: u32,
+    tiles: &PatternTiles,
+    text: &mut TextEngine,
+) -> Option<(Pixmap, (i32, i32, u32, u32))> {
+    match cmd {
+        DrawCmd::Clip { mask, content } => {
+            let (x0, y0, x1, y1) = geom_bbox(mask)?;
+            let mut pts = [
+                Point::from_xy(x0 as f32, y0 as f32),
+                Point::from_xy(x1 as f32, y0 as f32),
+                Point::from_xy(x0 as f32, y1 as f32),
+                Point::from_xy(x1 as f32, y1 as f32),
+            ];
+            transform.map_points(&mut pts);
+            let (mut lx0, mut ly0, mut lx1, mut ly1) =
+                (f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
+            for p in &pts {
+                lx0 = lx0.min(p.x);
+                ly0 = ly0.min(p.y);
+                lx1 = lx1.max(p.x);
+                ly1 = ly1.max(p.y);
+            }
+            let ox = (lx0.floor() as i32 - 2).max(0).min(canvas_w as i32);
+            let oy = (ly0.floor() as i32 - 2).max(0).min(canvas_h as i32);
+            let ex = (lx1.ceil() as i32 + 2).max(0).min(canvas_w as i32);
+            let ey = (ly1.ceil() as i32 + 2).max(0).min(canvas_h as i32);
+            if ex <= ox || ey <= oy {
+                return None;
+            }
+            let (lw, lh) = ((ex - ox) as u32, (ey - oy) as u32);
+            let mut layer = Pixmap::new(lw, lh)?;
+            let lxf = transform.post_translate(-(ox as f32), -(oy as f32));
+            let mask_path = cmd_to_path(mask)?;
+            let mut inner = Mask::new(lw, lh)?;
+            inner.fill_path(&mask_path, FillRule::Winding, true, lxf);
+            {
+                let mut lpm = layer.as_mut();
+                for item in content {
+                    render_cmd_masked(item, &mut lpm, lxf, Some(&inner), scale, tiles, text);
+                }
+            }
+            Some((layer, (ox, oy, lw, lh)))
+        }
+        _ => {
+            let style = cmd_style(cmd)?;
+            let path = cmd_to_path(cmd)?;
+            // Non-FX sampled shapes bake via a direct paint into a cropped
+            // temp; FX shapes reuse the half-res layer builder.
+            if !needs_fx(style) {
+                let (rx0, ry0, rx1, ry1) = loop_rect(cmd, transform, canvas_w, canvas_h);
+                let (lw, lh) = (rx1 - rx0, ry1 - ry0);
+                if lw == 0 || lh == 0 {
+                    return None;
+                }
+                let mut layer = Pixmap::new(lw, lh)?;
+                let lxf = transform.post_translate(-(rx0 as f32), -(ry0 as f32));
+                {
+                    let mut lpm = layer.as_mut();
+                    paint_shape(&mut lpm, cmd, &path, style, lxf, None, tiles);
+                }
+                Some((layer, (rx0 as i32, ry0 as i32, lw, lh)))
+            } else {
+                let (layer, (ox, oy)) =
+                    build_fx_layer(cmd, &path, style, transform, scale, canvas_w, canvas_h, tiles)?;
+                let (lw, lh) = (layer.width(), layer.height());
+                Some((layer, (ox, oy, lw, lh)))
+            }
+        }
+    }
+}
+
+/// Renders one cacheable top-level command through [`FxCache`].
+/// Returns true when handled (hit or freshly baked); false falls back to
+/// the direct render path.
+#[allow(clippy::too_many_arguments)]
+fn render_cached_top(
+    idx: usize,
+    cmd: &DrawCmd,
+    dst: &mut PixmapMut,
+    transform: Transform,
+    scale: f32,
+    tiles: &PatternTiles,
+    cache: &mut FrameCache,
+) -> bool {
+    // Disjoint field borrows: FX slots for hit-lookup, text engine for bakes.
+    let FrameCache { fx, text } = cache;
+    let slot = &mut fx.slots[idx];
+    if let (Some(prev), Some(layer)) = (&slot.cmd, &slot.layer) {
+        if prev == cmd {
+            let (ox, oy, _, _) = slot.rect;
+            let blend = match cmd {
+                DrawCmd::Clip { .. } => SkBlend::SourceOver,
+                _ => cmd_style(cmd).map(style_to_blend).unwrap_or(SkBlend::SourceOver),
+            };
+            composite_layer(dst, layer, ox, oy, blend, None);
+            return true;
+        }
+    }
+    match build_cached_layer(cmd, transform, scale, dst.width(), dst.height(), tiles, text) {
+        Some((layer, rect)) => {
+            let (ox, oy, _, _) = rect;
+            let blend = match cmd {
+                DrawCmd::Clip { .. } => SkBlend::SourceOver,
+                _ => cmd_style(cmd).map(style_to_blend).unwrap_or(SkBlend::SourceOver),
+            };
+            composite_layer(dst, &layer, ox, oy, blend, None);
+            let slot = &mut fx.slots[idx];
+            slot.cmd = Some(cmd.clone());
+            slot.layer = Some(layer);
+            slot.rect = rect;
+            true
+        }
+        None => false,
+    }
 }
 
 /// Builds a tiny-skia path for the geometry of any draw command.
@@ -912,9 +1522,126 @@ fn cmd_to_path(cmd: &DrawCmd) -> Option<tiny_skia::Path> {
     }
 }
 
+/// Flat color for a text fill paint. Gradients resolve to their middle
+/// stop's color (deterministic fallback); patterns resolve to neutral gray.
+fn text_solid_color(paint: &PvgPaint) -> Color {
+    match paint {
+        PvgPaint::Color(c) => c.clone(),
+        PvgPaint::Pattern(_) => Color::Rgba(136, 136, 136, 255),
+        PvgPaint::Linear { stops, .. }
+        | PvgPaint::Radial { stops, .. }
+        | PvgPaint::Angular { stops, .. } => stops
+            .get(stops.len() / 2)
+            .map(|s| s.color.clone())
+            .unwrap_or(Color::TRANSPARENT),
+    }
+}
+
+/// Renders one `text` primitive: white ab_glyph coverage recolored to the
+/// fill (with opacity), optional Section 10 `blur`/`shadow`/`glow` stack,
+/// then composited once with the style blend mode and clip mask.
+///
+/// `pos` maps through the draw transform (letterbox offset included);
+/// glyph size scales with the transform's uniform scale, so text stays
+/// crisp at any buffer resolution.
+#[allow(clippy::too_many_arguments)]
+fn render_text(
+    dst: &mut PixmapMut,
+    pos: (f64, f64),
+    content: &str,
+    size: f64,
+    family: &str,
+    align: TextAlign,
+    style: &DrawStyle,
+    transform: Transform,
+    mask: Option<&Mask>,
+    scale: f32,
+    text: &mut TextEngine,
+) {
+    if content.is_empty() || !(size > 0.0) {
+        return;
+    }
+    let mut dev = Point::from_xy(pos.0 as f32, pos.1 as f32);
+    transform.map_point(&mut dev);
+    let unit = transform.sx.abs().max(transform.sy.abs());
+    let k = if unit > 0.0 && unit.is_finite() {
+        unit
+    } else {
+        scale
+    };
+    let mut layout = match text.layout(content, size, family, align, (dev.x, dev.y), k) {
+        Some(l) => l,
+        None => return,
+    };
+    let fill = text_solid_color(&style.fill);
+    let sharp = match silhouette(&layout.pix.as_mut(), &fill, style.opacity) {
+        Some(p) => p,
+        None => return,
+    };
+    let mut layer = sharp.clone();
+    // Section 10 stack (same order as `render_fx_into`: shadow under the
+    // sharp text, additive glow under it, blur replacing it).
+    if let Some(sh) = &style.shadow {
+        if let Some(mut sh_px) = silhouette(&layer.as_mut(), &sh.color, style.opacity) {
+            let r = ((sh.radius as f32 * scale).round().max(0.0)) as u32;
+            box_blur(&mut sh_px.as_mut(), r);
+            let dx = (sh.offset.0 as f32 * scale).round() as i32;
+            let dy = (sh.offset.1 as f32 * scale).round() as i32;
+            layer.as_mut().draw_pixmap(
+                dx,
+                dy,
+                sh_px.as_ref(),
+                &PixmapPaint {
+                    opacity: 1.0,
+                    blend_mode: SkBlend::SourceOver,
+                    quality: FilterQuality::Nearest,
+                },
+                Transform::identity(),
+                None,
+            );
+        }
+        layer.as_mut().draw_pixmap(
+            0,
+            0,
+            sharp.as_ref(),
+            &PixmapPaint {
+                opacity: 1.0,
+                blend_mode: SkBlend::SourceOver,
+                quality: FilterQuality::Nearest,
+            },
+            Transform::identity(),
+            None,
+        );
+    }
+    if let Some(gl) = &style.glow {
+        if let Some(mut gl_px) = silhouette(&layer.as_mut(), &gl.color, style.opacity) {
+            let r = ((gl.radius as f32 * scale).round().max(0.0)) as u32;
+            box_blur(&mut gl_px.as_mut(), r);
+            layer.as_mut().draw_pixmap(
+                0,
+                0,
+                gl_px.as_ref(),
+                &PixmapPaint {
+                    opacity: 1.0,
+                    blend_mode: SkBlend::Plus,
+                    quality: FilterQuality::Nearest,
+                },
+                Transform::identity(),
+                None,
+            );
+        }
+    }
+    if style.blur > 1e-9 {
+        let r = ((style.blur as f32 * scale).round().max(0.0)) as u32;
+        box_blur(&mut layer.as_mut(), r);
+    }
+    composite_layer(dst, &layer, layout.ox, layout.oy, style_to_blend(style), mask);
+}
+
 /// Renders one command through an optional clip mask (for `clip` content,
 /// including nested clips). Pattern paints sample the per-frame `tiles` map;
 /// unknown names fall back to flat gray via `paint_to_skia`.
+#[allow(clippy::too_many_arguments)]
 fn render_cmd_masked(
     cmd: &DrawCmd,
     pixmap: &mut PixmapMut,
@@ -922,9 +1649,13 @@ fn render_cmd_masked(
     mask: Option<&Mask>,
     scale: f32,
     tiles: &PatternTiles,
+    text: &mut TextEngine,
 ) {
-    // Text has no rasterizer (pre-existing 0.1 limitation).
-    if matches!(cmd, DrawCmd::Text { .. }) {
+    if let DrawCmd::Text { pos, content, size, font_family, align, style } = cmd {
+        render_text(
+            pixmap, *pos, content, *size, font_family, *align, style, transform, mask, scale,
+            text,
+        );
         return;
     }
     if let DrawCmd::Clip { mask: inner_mask, content } = cmd {
@@ -936,7 +1667,7 @@ fn render_cmd_masked(
                 // is a documented follow-up).
                 let _ = mask;
                 for inner in content {
-                    render_cmd_masked(inner, pixmap, transform, Some(&nested), scale, tiles);
+                    render_cmd_masked(inner, pixmap, transform, Some(&nested), scale, tiles, text);
                 }
             }
         }
@@ -989,12 +1720,16 @@ fn render_cmd_masked(
     }
 }
 
-/// High-performance in-place vector rasterizer with single-pass clearing and aspect-ratio alignment
+/// High-performance in-place vector rasterizer with single-pass clearing and aspect-ratio alignment.
+///
+/// `cache` persists static pre-blend layers across frames (see [`FxCache`]);
+/// pass a fresh `FxCache::default()` for one-shot renders.
 pub fn rasterize_draw_list_into_pixmap_mut(
     draw_list: &DrawList,
     pixmap: &mut PixmapMut,
     target_width: u32,
     target_height: u32,
+    cache: &mut FrameCache,
 ) {
     if draw_list.canvas_width <= 0.0 || draw_list.canvas_height <= 0.0 {
         pixmap.fill(tiny_skia::Color::from_rgba8(8, 9, 13, 255));
@@ -1037,8 +1772,16 @@ pub fn rasterize_draw_list_into_pixmap_mut(
     // 3. Render visual primitives (pattern tiles pre-rendered once per frame
     // at device scale; shapes sample them per-pixel, unknown names fall back
     // to flat gray).
-    let tiles = render_pattern_tiles(&draw_list.patterns, scale);
-    for cmd in &draw_list.items {
+    let tiles = render_pattern_tiles(&draw_list.patterns, scale, &mut cache.text);
+    cache
+        .fx
+        .reset_for_frame((target_width, target_height), draw_list.items.len());
+    for (idx, cmd) in draw_list.items.iter().enumerate() {
+        // Static expensive shapes (FX filters, sampled paints, rich clips)
+        // bake once and blit per frame; animated commands miss and render.
+        if cmd_cacheable(cmd) && render_cached_top(idx, cmd, pixmap, transform, scale, &tiles, cache) {
+            continue;
+        }
         match cmd {
             DrawCmd::Circle { center, radius, style } => {
                 let mut pb = PathBuilder::new();
@@ -1123,7 +1866,21 @@ pub fn rasterize_draw_list_into_pixmap_mut(
                 }
             }
 
-            DrawCmd::Text { .. } => {}
+            DrawCmd::Text { pos, content, size, font_family, align, style } => {
+                render_text(
+                    pixmap,
+                    *pos,
+                    content,
+                    *size,
+                    font_family,
+                    *align,
+                    style,
+                    transform,
+                    None,
+                    scale,
+                    &mut cache.text,
+                );
+            }
 
             DrawCmd::Sprite { pos, palette, rows, scale, style } => {
                 for (ry, row) in rows.iter().enumerate() {
@@ -1164,7 +1921,15 @@ pub fn rasterize_draw_list_into_pixmap_mut(
                     if let Some(mut clip_mask) = Mask::new(pixmap.width(), pixmap.height()) {
                         clip_mask.fill_path(&mask_path, FillRule::Winding, true, transform);
                         for inner in content {
-                            render_cmd_masked(inner, pixmap, transform, Some(&clip_mask), scale, &tiles);
+                            render_cmd_masked(
+                                inner,
+                                pixmap,
+                                transform,
+                                Some(&clip_mask),
+                                scale,
+                                &tiles,
+                                &mut cache.text,
+                            );
                         }
                     }
                 }
@@ -1229,8 +1994,7 @@ pub fn rasterize_draw_list_into_pixmap_mut(
                 }
 
                 if let Some(path) = pb.finish() {
-                    fill_shape_path(pixmap, cmd, &path, style, transform, None, &tiles);
-                    stroke_shape_path(pixmap, cmd, &path, style, transform, None, &tiles);
+                    render_shape(pixmap, cmd, &path, style, transform, None, scale, &tiles);
                 }
             }
         }
@@ -1287,7 +2051,7 @@ mod tests {
         let mut buf = vec![0u8; (tw * th * 4) as usize];
         {
             let mut pm = PixmapMut::from_bytes(&mut buf, tw, th).unwrap();
-            rasterize_draw_list_into_pixmap_mut(&dl, &mut pm, tw, th);
+            rasterize_draw_list_into_pixmap_mut(&dl, &mut pm, tw, th, &mut FrameCache::default());
         }
         // Canvas (32, 0.5) sits on the tile's horizontal line -> near-white.
         let (lx, ly) = dev_pt(64.0, 64.0, tw, th, 32.0, 0.5);
@@ -1314,7 +2078,7 @@ mod tests {
         let mut buf = vec![0u8; (size * size * 4) as usize];
         {
             let mut pm = PixmapMut::from_bytes(&mut buf, size, size).unwrap();
-            rasterize_draw_list_into_pixmap_mut(&dl, &mut pm, size, size);
+            rasterize_draw_list_into_pixmap_mut(&dl, &mut pm, size, size, &mut FrameCache::default());
         }
         (buf, size)
     }
@@ -1436,6 +2200,106 @@ mod tests {
         assert_eq!(a.0, b.0, "blur 0 must not alter the rasterization");
     }
 
+    /// Counts near-white pixels in a canvas-space rect (mapped to device px).
+    fn bright_in(
+        buf: &[u8],
+        canvas_w: f64,
+        canvas_h: f64,
+        tw: u32,
+        th: u32,
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+    ) -> u32 {
+        let (ax, ay) = dev_pt(canvas_w, canvas_h, tw, th, x0, y0);
+        let (bx, by) = dev_pt(canvas_w, canvas_h, tw, th, x1, y1);
+        let mut n = 0u32;
+        for y in ay..by.min(th) {
+            for x in ax..bx.min(tw) {
+                let (r, g, b, _) = px_at(buf, tw, x, y);
+                if r > 100 && g > 100 && b > 100 {
+                    n += 1;
+                }
+            }
+        }
+        n
+    }
+
+    fn render_text_pixels(src: &str, tw: u32, th: u32) -> Option<Vec<u8>> {
+        // Skip vacuously where no system font exists (minimal CI images).
+        let mut probe = TextEngine::default();
+        if probe
+            .layout("X", 16.0, "mono", TextAlign::Left, (10.0, 10.0), 1.0)
+            .is_none()
+        {
+            return None;
+        }
+        let dl = pvg::compile(src).expect("source must compile");
+        let mut buf = vec![0u8; (tw * th * 4) as usize];
+        {
+            let mut pm = PixmapMut::from_bytes(&mut buf, tw, th).unwrap();
+            rasterize_draw_list_into_pixmap_mut(&dl, &mut pm, tw, th, &mut FrameCache::default());
+        }
+        Some(buf)
+    }
+
+    /// PVG 0.2 Section 6.6: `text` must rasterize system-font glyphs at the
+    /// anchor position (hanging top baseline), not vanish.
+    #[test]
+    fn text_renders_at_anchor() {
+        let src = "PVG 0.2\ncanvas 200 100\n  background #000000\ntext\n  pos [20, 30]\n  content \"HELLO\"\n  size 16\n  font \"mono\"\n  align \"left\"\n  fill #ffffff\n";
+        let (tw, th) = (200u32, 100u32);
+        let Some(buf) = render_text_pixels(src, tw, th) else {
+            return;
+        };
+        let lit = bright_in(&buf, 200.0, 100.0, tw, th, 18.0, 28.0, 110.0, 52.0);
+        assert!(lit > 50, "text band must contain glyph pixels, got {lit}");
+        let away = bright_in(&buf, 200.0, 100.0, tw, th, 130.0, 60.0, 190.0, 90.0);
+        assert_eq!(away, 0, "background must stay clean, got {away}");
+    }
+
+    /// `align` must move the glyph block: left-anchored text lives near x,
+    /// right-anchored text ends at x.
+    #[test]
+    fn text_align_moves_block() {
+        let l = "PVG 0.2\ncanvas 200 100\n  background #000000\ntext\n  pos [20, 30]\n  content \"HELLO\"\n  size 16\n  font \"mono\"\n  align \"left\"\n  fill #ffffff\n";
+        let r = "PVG 0.2\ncanvas 200 100\n  background #000000\ntext\n  pos [180, 30]\n  content \"HELLO\"\n  size 16\n  font \"mono\"\n  align \"right\"\n  fill #ffffff\n";
+        let (tw, th) = (200u32, 100u32);
+        let (Some(lb), Some(rb)) = (render_text_pixels(l, tw, th), render_text_pixels(r, tw, th))
+        else {
+            return;
+        };
+        let l_near = bright_in(&lb, 200.0, 100.0, tw, th, 15.0, 28.0, 80.0, 52.0);
+        let l_far = bright_in(&lb, 200.0, 100.0, tw, th, 125.0, 28.0, 185.0, 52.0);
+        assert!(l_near > 50 && l_far == 0, "left align: near={l_near} far={l_far}");
+        let r_far = bright_in(&rb, 200.0, 100.0, tw, th, 125.0, 28.0, 185.0, 52.0);
+        let r_near = bright_in(&rb, 200.0, 100.0, tw, th, 15.0, 28.0, 80.0, 52.0);
+        assert!(r_far > 50 && r_near == 0, "right align: far={r_far} near={r_near}");
+    }
+
+    /// Empty content draws nothing; unknown families fall back to a face.
+    #[test]
+    fn text_empty_and_fallback_family() {
+        let empty = "PVG 0.2\ncanvas 200 100\n  background #000000\ntext\n  pos [20, 30]\n  content \"\"\n  size 16\n  font \"mono\"\n  align \"left\"\n  fill #ffffff\n";
+        let weird = "PVG 0.2\ncanvas 200 100\n  background #000000\ntext\n  pos [20, 30]\n  content \"HI\"\n  size 16\n  font \"fictional-face\"\n  align \"left\"\n  fill #ffffff\n";
+        let (tw, th) = (200u32, 100u32);
+        if render_text_pixels(empty, tw, th).is_none() {
+            return;
+        }
+        let eb = render_text_pixels(empty, tw, th).unwrap();
+        assert_eq!(
+            bright_in(&eb, 200.0, 100.0, tw, th, 0.0, 0.0, 200.0, 100.0),
+            0,
+            "empty content must draw nothing"
+        );
+        let wb = render_text_pixels(weird, tw, th).unwrap();
+        assert!(
+            bright_in(&wb, 200.0, 100.0, tw, th, 18.0, 28.0, 80.0, 52.0) > 10,
+            "unknown family must fall back to a real face"
+        );
+    }
+
     /// Host uniforms (`param`, Section 18.1) must drive the Android evaluator exactly
     /// like the core `Scene` API that the JNI layer wraps.
     #[test]
@@ -1459,5 +2323,31 @@ mod tests {
         } else {
             panic!("expected rect");
         }
+    }
+
+    /// PVG 0.2 Section 9: linear gradients must interpolate along the axis,
+    /// not collapse to the middle-stop fallback.
+    #[test]
+    fn linear_gradient_runs_along_axis() {
+        let src = "PVG 0.2\ncanvas 64 64\n  background #000000\nrectangle\n  pos [0, 0]\n  size [64, 64]\n  fill linear [0, 0] [64, 0]\n    stop 0.0 #000000\n    stop 1.0 #ffffff\n";
+        let (buf, size) = render_pixels(src, 120);
+        let (r0, _, _, _) = probe(&buf, size, 8.0, 32.0);
+        let (r1, _, _, _) = probe(&buf, size, 56.0, 32.0);
+        assert!(r0 < 80, "left must be dark, got {}", r0);
+        assert!(r1 > 170, "right must be bright, got {}", r1);
+        assert!(r1 > r0 + 60, "gradient must vary ({} -> {})", r0, r1);
+    }
+
+    /// PVG 0.2 Section 9: radial gradients must be bright at the center and
+    /// dark at the rim (focal == center case).
+    #[test]
+    fn radial_gradient_interpolates_stops() {
+        let src = "PVG 0.2\ncanvas 64 64\n  background #000000\ncircle\n  center [32, 32]\n  radius 28\n  fill radial [32, 32] 28\n    stop 0.0 #00ffff\n    stop 0.6 #0033aa\n    stop 1.0 #07090e\n";
+        let (buf, size) = render_pixels(src, 120);
+        let (r, g, b, a) = probe(&buf, size, 32.0, 32.0);
+        assert_eq!(a, 255);
+        assert!(g > 200 && b > 200, "core must be bright cyan, got {},{},{}", r, g, b);
+        let (r2, g2, b2, _) = probe(&buf, size, 32.0, 56.0);
+        assert!(r2 < 60 && g2 < 80, "rim must be dark, got {},{},{}", r2, g2, b2);
     }
 }

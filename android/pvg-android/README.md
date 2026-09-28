@@ -48,7 +48,7 @@ Add the dependency to your application's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("io.github.prathameshza:pvg:0.1.0")
+    implementation("io.github.prathameshza:pvg:0.2.0")
 }
 ```
 
@@ -56,9 +56,13 @@ Or in Groovy (`build.gradle`):
 
 ```groovy
 dependencies {
-    implementation 'io.github.prathameshza:pvg:0.1.0'
+    implementation 'io.github.prathameshza:pvg:0.2.0'
 }
 ```
+
+> PVG 0.2 readers accept both `PVG 0.1` and `PVG 0.2` headers. Every valid 0.1
+> document evaluates identically under 0.2 (new properties default to 0.1
+> behavior). Declare `PVG 0.2` when you use the features below.
 
 ---
 
@@ -110,7 +114,7 @@ import com.pvg.android.PvgView
 @Composable
 fun PulsingCircleSample() {
     val pvgCode = """
-        PVG 0.1
+        PVG 0.2
         canvas 400 400
           background #080a0f
 
@@ -119,13 +123,35 @@ fun PulsingCircleSample() {
         circle
           center [200, 200]
           radius pulse
-          fill #00ffcc
+          fill radial [200, 200] 80
+            stop 0.0 #00ffcc
+            stop 1.0 #003333
           stroke #ffffff
           width 2.0
+          glow 8 #00ffcc80
     """.trimIndent()
 
     PvgView(
         source = pvgCode,
+        modifier = Modifier.size(300.dp)
+    )
+}
+
+// PVG 0.2 host uniforms (§18.1): numeric `param`s driven from Kotlin.
+@Composable
+fun ShieldBarSample() {
+    PvgView(
+        source = """
+            PVG 0.2
+            canvas 512 128
+              background #06080d
+            param hull_hp: 0.65
+            rectangle
+              pos [16, 48]
+              size [480 * hull_hp, 24]
+              fill hull_hp < 0.3 ? #ff3344 : #00e676
+        """.trimIndent(),
+        params = mapOf("hull_hp" to 0.42),
         modifier = Modifier.size(300.dp)
     )
 }
@@ -150,7 +176,7 @@ import com.pvg.android.rememberPvgController
 @Composable
 fun InteractiveRadarScreen() {
     val radarSource = """
-        PVG 0.1
+        PVG 0.2
         canvas 600 600
           background #080a0f
 
@@ -173,13 +199,17 @@ fun InteractiveRadarScreen() {
             to   [cx + 230 * cos(a), cy + 230 * sin(a)]
             stroke #00ffcc
             width 2
+            cap "round"
             opacity (1.0 - trail / 20) * 0.45
+            blend "add"
 
         line
           from [cx, cy]
           to   [cx + 230 * cos(sweep), cy + 230 * sin(sweep)]
           stroke #ffffff
           width 2.5
+          cap "round"
+          glow 6 #00ffcc80
     """.trimIndent()
 
     val controller = rememberPvgController(
@@ -249,16 +279,20 @@ class MainActivity : AppCompatActivity() {
         val pvgView = findViewById<PvgSurfaceView>(R.id.pvgSurfaceView)
 
         val pvgCode = """
-            PVG 0.1
+            PVG 0.2
             canvas 400 400
               background #111116
 
             circle
               center [200, 200]
               radius 80
-              fill #ff3355
+              fill radial [200, 200] 80
+                stop 0.0 #ff7788
+                stop 1.0 #660011
               stroke #ffffff
               width 3
+              cap "round"
+              join "round"
         """.trimIndent()
 
         pvgView.setSource(pvgCode, isPlaying = true)
@@ -296,17 +330,41 @@ fun PvgView(
     controller: PvgController? = null,
     isPlaying: Boolean = true,
     speed: Double = 1.0,
-    time: Double = 0.0
+    time: Double = 0.0,
+    params: Map<String, Double> = emptyMap()
 )
 ```
 
 Parameters:
-- `source`: PVG document source text string (Mandatory).
+- `source`: PVG document source text string (Mandatory, `PVG 0.1` or `PVG 0.2`).
 - `modifier`: Modifier applied to the underlying viewport layout.
 - `controller`: Optional external `PvgController` instance.
 - `isPlaying`: Controls real-time animation playback (default: `true`).
 - `speed`: Playback speed multiplier (default: `1.0`).
 - `time`: Manual timeline scrub position in seconds (default: `0.0`).
+- `params`: Host uniforms overriding numeric `param` defaults (§18.1).
+
+PVG 0.2 rendering supported on Android:
+`cap` / `join` / `miter` / `dash`, `linear` / `radial` (+focal) / `angular`
+gradients with transparent stops, `blur` / `shadow` / `glow`, `clip` masks,
+`blend` (`normal` / `add` / `multiply` / `screen` / `overlay`), numeric `param`
+uniforms, `noise2d` / `noise3d`, `sprite`, `pattern` tiling, `spline`, and
+path-internal `for` / `while` / `if`.
+
+Text is rendered on-device with real system fonts: `ab_glyph` (pure-Rust
+TrueType rasterizer) reads `/system/fonts/DroidSansMono.ttf` (`mono`),
+`DroidSans.ttf` (`sans`), and `NotoSerif-Regular.ttf` (`serif`) with a
+per-glyph device-pixel cache, so animated labels cost almost nothing after
+warmup. Supported: `pos` top anchor, `left`/`center`/`right` alignment,
+`size`, `fill` (solid; gradients fall back to the middle stop),
+`opacity`, `blur`/`shadow`/`glow`, and `blend`. Not supported: text stroke
+(fill-only), text-as-clip-mask, and non-system font families.
+
+Known limitations:
+- `align "inside"` / `"outside"` (stroke positioning) renders as `"center"`
+  (tiny-skia has no offset-stroke mode).
+- `param` values are numeric (`Double`) only; string params must be baked in.
+- Nested `clip` blocks intersect approximately (inner mask wins).
 
 ---
 
@@ -327,13 +385,17 @@ Methods and Properties:
 - `isPlaying`: Whether the animation timeline is running.
 - `speed`: Current playback speed multiplier.
 - `currentTime`: Current timeline position in seconds.
-- `load(pvgCode)`: Dynamically updates and re-evaluates a new PVG document.
+- `params`: Active numeric host-uniform overrides (§18.1).
+- `load(pvgCode)`: Dynamically updates and re-evaluates a new PVG document (clears `params`).
 - `play()`: Starts real-time timeline playback.
 - `pause()`: Pauses timeline playback.
 - `toggle()`: Toggles between play and pause.
 - `reset()`: Resets timeline clock back to `0.0s`.
 - `seekTo(timeSeconds)`: Seeks directly to an arbitrary timestamp in seconds.
 - `setPlaybackSpeed(speed)`: Updates timeline speed multiplier (e.g. `0.5`, `1.0`, `2.0`).
+- `setParam(name, value)`: Overrides a numeric `param` for subsequent frames.
+- `clearParam(name)`: Clears an override so the document default applies again.
+- `paramNames()`: Declared `param` names in the loaded document.
 - `getTelemetry()`: Reads latest per-frame performance metrics.
 - `close()`: Releases native render thread and C/Rust memory arena.
 
@@ -369,6 +431,7 @@ Methods:
 - `play()` / `pause()`: Controls timeline playback.
 - `seekTo(timeSeconds)`: Seeks timeline to a timestamp in seconds.
 - `setPlaybackSpeed(speed)`: Adjusts playback speed.
+- `setParam(name, value)` / `clearParam(name)` / `paramNames()`: Numeric host uniforms (§18.1).
 - `getTelemetry()`: Retrieves latest telemetry metrics.
 
 ---

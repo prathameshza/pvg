@@ -60,8 +60,31 @@ class PvgSurfaceView @JvmOverloads constructor(
         engine?.setSpeed(speed)
     }
 
+    /**
+     * Sets a host uniform (`param`, PVG 0.2 §18.1) declared by the document.
+     * Numeric params only; string params must be baked into the source.
+     */
+    fun setParam(name: String, value: Double) {
+        engine?.setParam(name, value)
+    }
+
+    /** Clears a host uniform override so the document default applies again. */
+    fun clearParam(name: String) {
+        engine?.clearParam(name)
+    }
+
+    /** Names of the `param` declarations in the loaded document. */
+    fun paramNames(): List<String> {
+        return engine?.paramNames() ?: emptyList()
+    }
+
     fun getTelemetry(): PvgTelemetry {
         return engine?.getTelemetry() ?: PvgTelemetry()
+    }
+
+    /** Latest native parse/eval failure for the current source, or "" when healthy. */
+    fun getLastError(): String {
+        return engine?.getLastError() ?: ""
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {

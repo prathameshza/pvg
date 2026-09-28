@@ -30,14 +30,19 @@ class PvgController(
     var currentTime by mutableDoubleStateOf(0.0)
         private set
 
-    /** Host uniform overrides applied on top of the document's `param` defaults. */
-    val params = mutableStateOf<Map<String, Double>>(emptyMap())
+    /** Latest native parse/eval failure ("" = healthy). Refresh via [refreshError]. */
+    var lastError by mutableStateOf("")
+        private set
+
+    /** Host uniform overrides applied on top of the document's `param` defaults (PVG 0.2 §18.1). */
+    var params by mutableStateOf<Map<String, Double>>(emptyMap())
         private set
 
     internal val engine = PvgEngine(initialSource, initialPlaying, initialSpeed)
 
     fun load(pvgCode: String) {
         source = pvgCode
+        params = emptyMap()
         engine.setSource(pvgCode)
     }
 
@@ -66,13 +71,13 @@ class PvgController(
      * default for every subsequent frame.
      */
     fun setParam(name: String, value: Double) {
-        params[name] = value
+        params = params + (name to value)
         engine.setParam(name, value)
     }
 
     /** Clears a host uniform override so the document default applies again. */
     fun clearParam(name: String) {
-        params.remove(name)
+        params = params - name
         engine.clearParam(name)
     }
 
@@ -89,6 +94,11 @@ class PvgController(
     }
 
     fun getTelemetry(): PvgTelemetry = engine.getTelemetry()
+
+    /** Polls the native error string into [lastError] (call after load/apply and periodically). */
+    fun refreshError() {
+        lastError = engine.getLastError()
+    }
 
     override fun close() {
         engine.close()

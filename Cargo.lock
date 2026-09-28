@@ -2621,6 +2621,7 @@ version = "0.2.0"
 name = "pvg_android"
 version = "0.2.0"
 dependencies = [
+ "ab_glyph",
  "jni 0.21.1",
  "pvg",
  "tiny-skia",

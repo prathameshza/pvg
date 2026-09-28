@@ -1,6 +1,10 @@
 mod ffi;
 mod rasterizer;
 mod sys_monitor;
+pub mod text;
+
+pub use rasterizer::{FrameCache, FxCache};
+pub use text::TextEngine;
 
 use ffi::*;
 use jni::objects::{JClass, JObject, JString};
@@ -32,6 +36,27 @@ pub fn set_logging_enabled(enabled: bool) {
     LOGGING_ENABLED.store(enabled, Ordering::Relaxed);
 }
 
+/// Profiling hook: rasterize a draw list into an existing pixmap.
+/// Exposed for host-side benchmarks of the Android raster path.
+/// Reuse one [`FrameCache`] across frames to profile steady-state
+/// (warm-cache) animation performance, exactly like the engine does.
+#[doc(hidden)]
+pub fn rasterize_for_profile(
+    draw_list: &DrawList,
+    pixmap: &mut PixmapMut,
+    target_width: u32,
+    target_height: u32,
+    cache: &mut FrameCache,
+) {
+    rasterizer::rasterize_draw_list_into_pixmap_mut(
+        draw_list,
+        pixmap,
+        target_width,
+        target_height,
+        cache,
+    )
+}
+
 struct PvgEngineState {
     code: String,
     cached_doc: Option<Document>,
@@ -50,9 +75,19 @@ struct PvgEngineState {
     last_fps: f64,
     primitive_count: usize,
 
+    /// Latest parse/eval failure, surfaced to the Kotlin UI so broken
+    /// sources (e.g. pasted code with tabs) explain themselves instead of
+    /// rendering nothing. Empty when the current source is healthy.
+    last_error: String,
+
     /// Host uniform overrides for declared `param` declarations (Section 18.1).
     /// Applied on every evaluate; values win over the document defaults.
     params: HashMap<String, f64>,
+
+    /// Frame-persistent raster caches (static FX layers + glyph coverage).
+    /// Survives across frames so animation ticks only pay for time-varying
+    /// shapes and previously unseen characters.
+    frame_cache: FrameCache,
 }
 
 unsafe impl Send for PvgEngineState {}
@@ -63,6 +98,12 @@ pub struct PvgEngine {
     running: Arc<AtomicBool>,
     needs_render: Arc<AtomicBool>,
     thread_handle: Option<JoinHandle<()>>,
+    /// Serializes raw `ANativeWindow` use (lock/raster/post on the render
+    /// thread) against lifecycle release (UI thread surface callbacks).
+    /// A dedicated leaf mutex: acquiring it never blocks engine state ops
+    /// (`set_source`, sliders, …), which don't touch the window. Lock order
+    /// everywhere is surface → state, so no deadlock is possible.
+    surface_lock: Arc<Mutex<()>>,
 }
 
 impl PvgEngine {
@@ -74,6 +115,7 @@ impl PvgEngine {
 
         let mut parse_us = 0.0;
         let t0 = Instant::now();
+        let mut init_error = String::new();
         let cached_doc = match parse_pvg(&source) {
             Ok(doc) => {
                 parse_us = t0.elapsed().as_secs_f64() * 1_000_000.0;
@@ -81,6 +123,7 @@ impl PvgEngine {
             }
             Err(e) => {
                 log_warn!("PVG AST Parse Error: {}", e);
+                init_error = format!("Parse error: {e}");
                 None
             }
         };
@@ -103,14 +146,18 @@ impl PvgEngine {
             last_fps: 60.0,
             primitive_count: 0,
             params: HashMap::new(),
+            frame_cache: FrameCache::default(),
+            last_error: init_error,
         }));
 
         let running = Arc::new(AtomicBool::new(true));
         let needs_render = Arc::new(AtomicBool::new(true));
+        let surface_lock = Arc::new(Mutex::new(()));
 
         let thread_state = Arc::clone(&state);
         let thread_running = Arc::clone(&running);
         let thread_needs_render = Arc::clone(&needs_render);
+        let thread_surface = Arc::clone(&surface_lock);
 
         // Dedicated native thread: 0% Main UI thread & 0% HWUI RenderThread overhead
         let thread_handle = thread::spawn(move || {
@@ -152,7 +199,8 @@ impl PvgEngine {
                 }
 
                 if should_render {
-                    let (eval_us, raster_us, lock_us, post_us) = Self::render_frame_direct(&thread_state, current_time);
+                    let (eval_us, raster_us, lock_us, post_us) =
+                        Self::render_frame_direct(&thread_state, &thread_surface, current_time);
                     acc_eval_us += eval_us;
                     acc_raster_us += raster_us;
                     acc_lock_us += lock_us;
@@ -209,11 +257,22 @@ impl PvgEngine {
             running,
             needs_render,
             thread_handle: Some(thread_handle),
+            surface_lock,
         }
     }
 
-    /// Renders directly into ANativeWindow buffer using PixmapMut zero-copy mapping
-    fn render_frame_direct(state_arc: &Arc<Mutex<PvgEngineState>>, time: f64) -> (f64, f64, f64, f64) {
+    /// Renders directly into ANativeWindow buffer using PixmapMut zero-copy mapping.
+    ///
+    /// Holds the surface mutex across the whole lock/raster/post sequence so
+    /// a concurrent `surfaceDestroyed` release cannot free the window
+    /// mid-frame (which aborted the process with a RefBase "Double owned?"
+    /// SIGABRT when the SurfaceView was torn down, e.g. tab switches).
+    fn render_frame_direct(
+        state_arc: &Arc<Mutex<PvgEngineState>>,
+        surface_lock: &Arc<Mutex<()>>,
+        time: f64,
+    ) -> (f64, f64, f64, f64) {
+        let _surface_guard = surface_lock.lock().unwrap();
         let (window, doc_opt, params) = {
             let s = state_arc.lock().unwrap();
             (
@@ -221,6 +280,14 @@ impl PvgEngine {
                 s.cached_doc.clone(),
                 s.params.clone(),
             )
+        };
+        // Frame cache moves out for the raster (no state lock held while
+        // rasterizing) and moves back in afterwards.
+        let mut frame_cache = {
+            match state_arc.lock() {
+                Ok(mut s) => std::mem::take(&mut s.frame_cache),
+                Err(_) => FrameCache::default(),
+            }
         };
 
         if window.is_null() {
@@ -240,7 +307,16 @@ impl PvgEngine {
         }
         let draw_list: DrawList = match evaluator.evaluate_document(&doc) {
             Ok(dl) => dl,
-            Err(_) => return (0.0, 0.0, 0.0, 0.0),
+            Err(e) => {
+                // Never leave stale telemetry behind a broken frame: the UI
+                // would otherwise keep showing the previous scene's counts.
+                if let Ok(mut s) = state_arc.lock() {
+                    s.last_eval_us = eval_t0.elapsed().as_secs_f64() * 1_000_000.0;
+                    s.primitive_count = 0;
+                    s.last_error = format!("Eval error: {e}");
+                }
+                return (0.0, 0.0, 0.0, 0.0);
+            }
         };
         let eval_us = eval_t0.elapsed().as_secs_f64() * 1_000_000.0;
         let primitive_count = draw_list.items.len();
@@ -263,22 +339,47 @@ impl PvgEngine {
 
             if lock_res == 0 {
                 if !buffer.bits.is_null() && buffer.width > 0 && buffer.height > 0 && buffer.stride > 0 {
-                    let total_bytes = (buffer.stride * buffer.height * 4) as usize;
-                    let raw_slice = std::slice::from_raw_parts_mut(buffer.bits as *mut u8, total_bytes);
-
-                    let pixmap_width = buffer.stride as u32;
-                    let pixmap_height = buffer.height as u32;
-
-                    // Phase 3: Direct In-Place Rasterization
-                    if let Some(mut pixmap_mut) = PixmapMut::from_bytes(raw_slice, pixmap_width, pixmap_height) {
-                        let raster_t0 = Instant::now();
-                        rasterize_draw_list_into_pixmap_mut(
-                            &draw_list,
-                            &mut pixmap_mut,
-                            buffer.width as u32,
-                            buffer.height as u32,
+                    // The surface may have resized between frames (rotation,
+                    // tab switches): posting a stale-size buffer is rejected
+                    // by BLASTBufferQueue, so resync and skip this frame.
+                    let dims_ok = {
+                        if let Ok(s) = state_arc.lock() {
+                            buffer.width == s.surface_width && buffer.height == s.surface_height
+                        } else {
+                            false
+                        }
+                    };
+                    if !dims_ok {
+                        if let Ok(mut s) = state_arc.lock() {
+                            s.surface_width = buffer.width;
+                            s.surface_height = buffer.height;
+                            s.frame_cache.fx.clear();
+                        }
+                    } else {
+                        let total_bytes =
+                            (buffer.stride * buffer.height * 4) as usize;
+                        let raw_slice = std::slice::from_raw_parts_mut(
+                            buffer.bits as *mut u8,
+                            total_bytes,
                         );
-                        raster_elapsed = raster_t0.elapsed().as_secs_f64() * 1_000_000.0;
+
+                        let pixmap_width = buffer.stride as u32;
+                        let pixmap_height = buffer.height as u32;
+
+                        // Phase 3: Direct In-Place Rasterization
+                        if let Some(mut pixmap_mut) =
+                            PixmapMut::from_bytes(raw_slice, pixmap_width, pixmap_height)
+                        {
+                            let raster_t0 = Instant::now();
+                            rasterize_draw_list_into_pixmap_mut(
+                                &draw_list,
+                                &mut pixmap_mut,
+                                buffer.width as u32,
+                                buffer.height as u32,
+                                &mut frame_cache,
+                            );
+                            raster_elapsed = raster_t0.elapsed().as_secs_f64() * 1_000_000.0;
+                        }
                     }
                 }
 
@@ -296,6 +397,8 @@ impl PvgEngine {
             s.last_eval_us = eval_us;
             s.last_raster_us = raster_us;
             s.primitive_count = primitive_count;
+            s.frame_cache = frame_cache;
+            s.last_error.clear();
         }
 
         (eval_us, raster_us, lock_us, post_us)
@@ -308,16 +411,27 @@ impl PvgEngine {
             || source.contains("* t");
 
         let t0 = Instant::now();
-        let cached_doc = parse_pvg(&source).ok();
+        let parsed = parse_pvg(&source);
         let parse_us = t0.elapsed().as_secs_f64() * 1_000_000.0;
 
         log_info!("🔄 [SOURCE UPDATE] Re-parsed AST in {:.2} µs (Animated: {})", parse_us, is_animated);
 
         if let Ok(mut s) = self.state.lock() {
+            match parsed {
+                Ok(doc) => {
+                    s.cached_doc = Some(doc);
+                    s.last_error.clear();
+                }
+                Err(e) => {
+                    s.cached_doc = None;
+                    s.primitive_count = 0;
+                    s.last_error = format!("Parse error: {e}");
+                }
+            }
             s.code = source;
-            s.cached_doc = cached_doc;
             s.is_animated = is_animated;
             s.last_parse_us = parse_us;
+            s.frame_cache.fx.clear();
         }
         self.needs_render.store(true, Ordering::Relaxed);
     }
@@ -371,6 +485,7 @@ impl PvgEngine {
 
     pub fn on_surface_created(&self, window: *mut ANativeWindow) {
         log_info!("🖼️ [SURFACE CREATED] ANativeWindow handle = {:?}", window);
+        let _guard = self.surface_lock.lock().unwrap();
         if let Ok(mut s) = self.state.lock() {
             if !s.window.is_null() && s.window != window {
                 unsafe { ANativeWindow_release(s.window); }
@@ -382,6 +497,7 @@ impl PvgEngine {
 
     pub fn on_surface_changed(&self, width: i32, height: i32) {
         log_info!("📐 [SURFACE CHANGED] Dimensions: {}x{}", width, height);
+        let _guard = self.surface_lock.lock().unwrap();
         if let Ok(mut s) = self.state.lock() {
             s.surface_width = width;
             s.surface_height = height;
@@ -391,6 +507,7 @@ impl PvgEngine {
 
     pub fn on_surface_destroyed(&self) {
         log_info!("🗑️ [SURFACE DESTROYED] Releasing ANativeWindow handle");
+        let _guard = self.surface_lock.lock().unwrap();
         if let Ok(mut s) = self.state.lock() {
             if !s.window.is_null() {
                 unsafe {
@@ -406,6 +523,15 @@ impl PvgEngine {
             (s.last_parse_us, s.last_eval_us, s.last_raster_us, s.last_fps, s.primitive_count)
         } else {
             (0.0, 0.0, 0.0, 0.0, 0)
+        }
+    }
+
+    /// Latest parse/eval failure for the current source, or empty string.
+    pub fn get_last_error(&self) -> String {
+        if let Ok(s) = self.state.lock() {
+            s.last_error.clone()
+        } else {
+            String::new()
         }
     }
 }
@@ -630,6 +756,25 @@ pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeOnSurfaceDestroyed(
     if handle != 0 {
         let engine = unsafe { &*(handle as *const PvgEngine) };
         engine.on_surface_destroyed();
+    }
+}
+
+/// Returns the latest parse/eval error for the current source (empty = healthy).
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeGetLastError(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jni::sys::jstring {
+    let msg = if handle != 0 {
+        let engine = unsafe { &*(handle as *const PvgEngine) };
+        engine.get_last_error()
+    } else {
+        String::new()
+    };
+    match env.new_string(msg) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
     }
 }
 
