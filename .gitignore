@@ -7,6 +7,10 @@
 *.pdb
 *.dll
 
+# Generated native libraries (rebuilt via build_pvg_android.py, never commit)
+*.so
+**/jniLibs/
+
 # Android build artifacts
 android/pvg-android/build/
 npm/node_modules
