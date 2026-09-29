@@ -26,7 +26,8 @@ class PvgSurfaceView @JvmOverloads constructor(
     private var engine: PvgEngine? = null
 
     init {
-        holder.setFormat(PixelFormat.RGBA_8888)
+        // Opaque buffer (no alpha) so SurfaceFlinger can skip blending.
+        holder.setFormat(PixelFormat.RGBX_8888)
         holder.addCallback(this)
         setZOrderMediaOverlay(true)
     }
@@ -36,20 +37,24 @@ class PvgSurfaceView @JvmOverloads constructor(
             engine = PvgEngine(pvgCode, isPlaying, speed)
             if (holder.surface.isValid) {
                 engine?.onSurfaceCreated(holder.surface)
+                if (isPlaying) engine?.startVsync()
             }
         } else {
             engine?.setSource(pvgCode)
             engine?.setPlaying(isPlaying)
             engine?.setSpeed(speed)
+            if (isPlaying) engine?.startVsync() else engine?.stopVsync()
         }
     }
 
     fun play() {
         engine?.setPlaying(true)
+        engine?.startVsync()
     }
 
     fun pause() {
         engine?.setPlaying(false)
+        engine?.stopVsync()
     }
 
     fun seekTo(time: Double) {
@@ -90,6 +95,7 @@ class PvgSurfaceView @JvmOverloads constructor(
     override fun surfaceCreated(holder: SurfaceHolder) {
         if (holder.surface.isValid) {
             engine?.onSurfaceCreated(holder.surface)
+            engine?.startVsync()
         }
     }
 
@@ -98,6 +104,7 @@ class PvgSurfaceView @JvmOverloads constructor(
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
+        engine?.stopVsync()
         engine?.onSurfaceDestroyed()
     }
 

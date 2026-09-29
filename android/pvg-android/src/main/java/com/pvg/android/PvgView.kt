@@ -59,13 +59,21 @@ fun PvgView(
         modifier = modifier.fillMaxSize(),
         factory = { context: Context ->
             SurfaceView(context).apply {
-                holder.setFormat(PixelFormat.RGBA_8888)
+                // Opaque buffer (no alpha): AOSP sets SurfaceControl.OPAQUE
+                // for alpha-less formats, letting SurfaceFlinger skip the
+                // per-frame blend. The rasterizer always paints fully
+                // opaque pixels, so nothing visual changes.
+                holder.setFormat(PixelFormat.RGBX_8888)
                 setZOrderMediaOverlay(true)
 
                 holder.addCallback(object : SurfaceHolder.Callback {
                     override fun surfaceCreated(holder: SurfaceHolder) {
                         if (holder.surface.isValid) {
                             activeController.engine.onSurfaceCreated(holder.surface)
+                            // Display-locked ticks only while animating.
+                            if (activeController.isPlaying) {
+                                activeController.engine.startVsync()
+                            }
                         }
                     }
 
@@ -74,6 +82,7 @@ fun PvgView(
                     }
 
                     override fun surfaceDestroyed(holder: SurfaceHolder) {
+                        activeController.engine.stopVsync()
                         activeController.engine.onSurfaceDestroyed()
                     }
                 })

@@ -536,7 +536,7 @@ fun TelemetryHud(controller: PvgController) {
             val usedMemMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
             Log.i(
                 "PVG_KOTLIN",
-                "📱 [KOTLIN UI 1s LOG] Engine: ${t.fps.toInt()} FPS | Shapes: ${t.primitiveCount} | Eval: ${String.format("%.1f", t.evalUs)}µs | Raster: ${String.format("%.2f", t.rasterUs / 1000.0)}ms | JVM Heap: ${usedMemMb}MB"
+                "📱 [KOTLIN UI 1s LOG] Engine: ${t.fps.toInt()} FPS | Shapes: ${t.primitiveCount} | Eval: ${String.format("%.1f", t.evalUs)}µs | Raster: ${String.format("%.2f", t.rasterUs / 1000.0)}ms | Lock: ${String.format("%.2f", t.lockUs / 1000.0)}ms | JVM Heap: ${usedMemMb}MB"
             )
             delay(1000L)
         }
@@ -575,6 +575,12 @@ fun TelemetryHud(controller: PvgController) {
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     color = Color(0xFF00D2FF)
+                )
+                Text(
+                    "Lock ${String.format("%.2f", telemetry.lockUs / 1000.0)} • Post ${String.format("%.2f", telemetry.postUs / 1000.0)} ms",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = Color(0xFF8F96B0)
                 )
                 Text(
                     "Shapes: ${telemetry.primitiveCount}",

@@ -13,5 +13,9 @@ data class PvgTelemetry(
     /** Current real-time frame rate. */
     val fps: Double = 60.0,
     /** Number of rendered 2D vector primitives in the active scene. */
-    val primitiveCount: Int = 0
+    val primitiveCount: Int = 0,
+    /** Time spent blocked in ANativeWindow_lock (buffer-queue stall) in microseconds. */
+    val lockUs: Double = 0.0,
+    /** Time spent in ANativeWindow_unlockAndPost in microseconds. */
+    val postUs: Double = 0.0
 )

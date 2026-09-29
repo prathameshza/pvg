@@ -6,6 +6,7 @@ use pvg::draw_list::{
 };
 use std::collections::HashMap;
 use std::f64::consts::{PI, TAU as TAU_F64};
+use std::sync::OnceLock;
 use tiny_skia::{
     BlendMode as SkBlend, FillRule, FilterQuality, LineCap as SkCap, LineJoin as SkJoin, Mask,
     Paint, PathBuilder, Pixmap, PixmapMut, PixmapPaint, Point, Rect, Stroke, Transform,
@@ -363,6 +364,139 @@ fn box_blur(pixmap: &mut PixmapMut, radius: u32) {
     });
 }
 
+/// Render-thread pool width for data-parallel pixel loops (Android docs for
+/// software rendering: do the minimum work per frame, and spread CPU raster
+/// work across cores — a single software thread leaves 7/8 of a phone SoC
+/// idle while the frame budget burns).
+///
+/// Implemented with `std::thread::scope`: workers borrow stack buffers, so no
+/// `'static` bounds, no thread-pool crate, no persistent threads. Spawning
+/// costs ~100µs per region, so narrow regions stay serial (see `par_chunks`).
+static WORKERS: OnceLock<usize> = OnceLock::new();
+
+fn worker_threads() -> usize {
+    *WORKERS.get_or_init(|| {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .clamp(1, 8)
+    })
+}
+
+/// Row/column chunk count for a `total`-element dimension, or 0 when the
+/// serial path is cheaper (single core, or too few rows to matter).
+/// Chunks scale with the workload (~64 rows per thread minimum).
+fn par_chunks(total: usize) -> usize {
+    let t = worker_threads();
+    if t < 2 || total < 128 {
+        0
+    } else {
+        (total / 64).clamp(2, t.min(total))
+    }
+}
+
+/// One unit of pool work. `SendPtr` payloads are `'static`-compatible (raw
+/// pointers carry no lifetime), so jobs can own all their inputs.
+type Job = Box<dyn FnOnce() + Send + 'static>;
+
+/// Fixed worker pool: `std::thread::scope` births ~100µs/thread on Windows
+/// (~30µs on Android) and a big FX fans out to ~60 spawns/frame — pure
+/// birth tax with zero work attached. Pool workers persist for the process
+/// lifetime; dispatching a job is a channel send (~1µs).
+struct Pool {
+    tx: std::sync::mpsc::Sender<Job>,
+    // Workers run until process exit; handles intentionally never joined.
+    _workers: Vec<std::thread::JoinHandle<()>>,
+}
+
+static POOL: OnceLock<Pool> = OnceLock::new();
+
+fn pool() -> &'static Pool {
+    POOL.get_or_init(|| Pool::new(worker_threads()))
+}
+
+impl Pool {
+    fn new(n: usize) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel::<Job>();
+        let rx = std::sync::Arc::new(std::sync::Mutex::new(rx));
+        let mut workers = Vec::with_capacity(n.max(1));
+        for _ in 0..n.max(1) {
+            let rx = std::sync::Arc::clone(&rx);
+            workers.push(std::thread::spawn(move || loop {
+                match rx.lock().unwrap().recv() {
+                    Ok(job) => job(),
+                    Err(_) => break,
+                }
+            }));
+        }
+        Self { tx, _workers: workers }
+    }
+
+    /// Fans range `[0, total)` over pool workers as `f(ctx, lo, hi)` chunks
+    /// and blocks until all finish. Falls back to a direct serial call when
+    /// threading doesn't pay.
+    fn par_rows<C>(&self, total: usize, ctx: C, f: fn(C, usize, usize))
+    where
+        C: Clone + Send + Sync + 'static,
+    {
+        let chunks = par_chunks(total);
+        if chunks == 0 {
+            f(ctx, 0, total);
+            return;
+        }
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let rows_per = (total + chunks - 1) / chunks;
+        let mut n = 0u32;
+        for c in 0..chunks {
+            let lo = c * rows_per;
+            let hi = (lo + rows_per).min(total);
+            if lo >= hi {
+                break;
+            }
+            let tx = done_tx.clone();
+            let cctx = ctx.clone();
+            let job: Job = Box::new(move || {
+                f(cctx, lo, hi);
+                let _ = tx.send(());
+            });
+            if self.tx.send(job).is_err() {
+                // Pool gone (process teardown): finish inline.
+                f(ctx.clone(), lo, hi);
+                let _ = done_tx.clone().send(());
+            }
+            n += 1;
+        }
+        drop(done_tx);
+        for _ in 0..n {
+            let _ = done_rx.recv();
+        }
+    }
+}
+
+/// Raw buffer pointer shared across scoped threads. Sound because every user
+/// partitions it into disjoint row/column ranges before spawning.
+///
+/// NOTE: users must read the pointer through [`SendPtr::as_const`] /
+/// [`SendPtr::as_mut`]. Projecting the `.0` field directly inside a closure
+/// makes Rust 2021 disjoint capture grab the bare `*mut T` (which is
+/// `!Send`) instead of the wrapper.
+#[derive(Clone, Copy)]
+struct SendPtr<T>(*mut T);
+// SAFETY: only shared inside `std::thread::scope` with disjoint ranges.
+unsafe impl<T> Send for SendPtr<T> {}
+unsafe impl<T> Sync for SendPtr<T> {}
+
+impl<T> SendPtr<T> {
+    #[inline]
+    fn as_const(self) -> *const T {
+        self.0
+    }
+    #[inline]
+    fn as_mut(self) -> *mut T {
+        self.0
+    }
+}
+
 /// Fixed-point reciprocal `2^32 / window` so the per-pixel average uses a
 /// multiply instead of an integer division (div is ~20-40 cycles; this blur
 /// runs 6 passes over the filtered layer).
@@ -378,85 +512,157 @@ fn avg_channel(acc: u32, recip: u64) -> u8 {
 
 
 
-fn blur_horizontal(pixmap: &mut PixmapMut, radius: u32, scratch: &mut Vec<u8>) {
-    let (w, h) = (pixmap.width() as usize, pixmap.height() as usize);
-    if w == 0 || h == 0 {
-        return;
-    }
-    let r = radius as usize;
+/// One output row of the horizontal sliding-window pass.
+#[inline]
+fn blur_h_row(src: &[u8], dst: &mut [u8], w: usize, y: usize, r: usize, recip: u64) {
     let window = 2 * r + 1;
-    let recip = reciprocal(window);
-    scratch.resize(w * h * 4, 0);
-    let buf = scratch.as_mut_slice();
-    {
-        let src = pixmap.as_ref().data();
-        for y in 0..h {
-            let row = y * w * 4;
-            // acc = sum over window [-r, +r] around x=0 (edges clamped).
-            let mut acc = [0u32; 4];
-            for i in 0..window {
-                let sx = i.saturating_sub(r).min(w - 1);
-                let base = row + sx * 4;
-                for c in 0..4 {
-                    acc[c] += src[base + c] as u32;
-                }
-            }
-            for x in 0..w {
-                let dst_o = row + x * 4;
-                for c in 0..4 {
-                    buf[dst_o + c] = avg_channel(acc[c], recip);
-                }
-                // Slide window from x to x+1: drop x-r, take in x+r+1.
-                let leave = row + x.saturating_sub(r) * 4;
-                let enter = row + (x + r + 1).min(w - 1) * 4;
-                for c in 0..4 {
-                    acc[c] += src[enter + c] as u32;
-                    acc[c] -= src[leave + c] as u32;
-                }
-            }
+    let row = y * w * 4;
+    // acc = sum over window [-r, +r] around x=0 (edges clamped).
+    let mut acc = [0u32; 4];
+    for i in 0..window {
+        let sx = i.saturating_sub(r).min(w - 1);
+        let base = row + sx * 4;
+        for c in 0..4 {
+            acc[c] += src[base + c] as u32;
         }
     }
-    pixmap.data_mut().copy_from_slice(&buf[..w * h * 4]);
+    for x in 0..w {
+        let dst_o = row + x * 4;
+        for c in 0..4 {
+            dst[dst_o + c] = avg_channel(acc[c], recip);
+        }
+        // Slide window from x to x+1: drop x-r, take in x+r+1.
+        let leave = row + x.saturating_sub(r) * 4;
+        let enter = row + (x + r + 1).min(w - 1) * 4;
+        for c in 0..4 {
+            acc[c] += src[enter + c] as u32;
+            acc[c] -= src[leave + c] as u32;
+        }
+    }
+}
+
+/// One output column of the vertical sliding-window pass.
+#[inline]
+fn blur_v_col(src: &[u8], dst: &mut [u8], w: usize, h: usize, x: usize, r: usize, recip: u64) {
+    let window = 2 * r + 1;
+    // acc = sum over window [-r, +r] around y=0 (edges clamped).
+    let mut acc = [0u32; 4];
+    for i in 0..window {
+        let sy = i.saturating_sub(r).min(h - 1);
+        let base = (sy * w + x) * 4;
+        for c in 0..4 {
+            acc[c] += src[base + c] as u32;
+        }
+    }
+    for y in 0..h {
+        let dst_o = (y * w + x) * 4;
+        for c in 0..4 {
+            dst[dst_o + c] = avg_channel(acc[c], recip);
+        }
+        // Slide window from y to y+1: drop y-r, take in y+r+1.
+        let leave = ((y.saturating_sub(r)) * w + x) * 4;
+        let enter = (((y + r + 1).min(h - 1)) * w + x) * 4;
+        for c in 0..4 {
+            acc[c] += src[enter + c] as u32;
+            acc[c] -= src[leave + c] as u32;
+        }
+    }
+}
+
+/// Pool chunk context for one blur pass. Slices are reconstructed per chunk
+/// from these pointers; chunks own disjoint rows (H) or columns (V).
+#[derive(Clone, Copy)]
+struct BlurCtx {
+    src: SendPtr<u8>,
+    dst: SendPtr<u8>,
+    len: usize,
+    w: usize,
+    h: usize,
+    r: usize,
+    recip: u64,
+}
+
+fn blur_h_chunk(ctx: BlurCtx, y0: usize, y1: usize) {
+    // SAFETY: chunk owns rows [y0, y1), disjoint across pool jobs.
+    let src = unsafe { std::slice::from_raw_parts(ctx.src.as_const(), ctx.len) };
+    let dst = unsafe { std::slice::from_raw_parts_mut(ctx.dst.as_mut(), ctx.len) };
+    for y in y0..y1 {
+        blur_h_row(src, dst, ctx.w, y, ctx.r, ctx.recip);
+    }
+}
+
+fn blur_v_chunk(ctx: BlurCtx, x0: usize, x1: usize) {
+    // SAFETY: chunk owns columns [x0, x1), disjoint across pool jobs.
+    let src = unsafe { std::slice::from_raw_parts(ctx.src.as_const(), ctx.len) };
+    let dst = unsafe { std::slice::from_raw_parts_mut(ctx.dst.as_mut(), ctx.len) };
+    for x in x0..x1 {
+        blur_v_col(src, dst, ctx.w, ctx.h, x, ctx.r, ctx.recip);
+    }
+}
+
+fn blur_ctx(pixmap: &PixmapMut, scratch: &mut Vec<u8>, radius: usize) -> Option<BlurCtx> {
+    let (w, h) = (pixmap.width() as usize, pixmap.height() as usize);
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let len = w * h * 4;
+    scratch.resize(len, 0);
+    Some(BlurCtx {
+        src: SendPtr(pixmap.as_ref().data().as_ptr() as *mut u8),
+        dst: SendPtr(scratch.as_mut_ptr()),
+        len,
+        w,
+        h,
+        r: radius,
+        recip: reciprocal(2 * radius + 1),
+    })
+}
+
+fn blur_horizontal(pixmap: &mut PixmapMut, radius: u32, scratch: &mut Vec<u8>) {
+    let r = radius as usize;
+    let Some(ctx) = blur_ctx(pixmap, scratch, r) else {
+        return;
+    };
+    pool().par_rows(ctx.h, ctx, blur_h_chunk);
+    let buf = scratch.as_slice();
+    pixmap.data_mut().copy_from_slice(&buf[..ctx.len]);
 }
 
 fn blur_vertical(pixmap: &mut PixmapMut, radius: u32, scratch: &mut Vec<u8>) {
-    let (w, h) = (pixmap.width() as usize, pixmap.height() as usize);
-    if w == 0 || h == 0 {
-        return;
-    }
     let r = radius as usize;
-    let window = 2 * r + 1;
-    let recip = reciprocal(window);
-    scratch.resize(w * h * 4, 0);
-    let buf = scratch.as_mut_slice();
-    {
-        let src = pixmap.as_ref().data();
-        for x in 0..w {
-            // acc = sum over window [-r, +r] around y=0 (edges clamped).
-            let mut acc = [0u32; 4];
-            for i in 0..window {
-                let sy = i.saturating_sub(r).min(h - 1);
-                let base = (sy * w + x) * 4;
-                for c in 0..4 {
-                    acc[c] += src[base + c] as u32;
-                }
-            }
-            for y in 0..h {
-                let dst_o = (y * w + x) * 4;
-                for c in 0..4 {
-                    buf[dst_o + c] = avg_channel(acc[c], recip);
-                }
-                // Slide window from y to y+1: drop y-r, take in y+r+1.
-                let leave = ((y.saturating_sub(r)) * w + x) * 4;
-                let enter = (((y + r + 1).min(h - 1)) * w + x) * 4;
-                for c in 0..4 {
-                    acc[c] += src[enter + c] as u32;
-                    acc[c] -= src[leave + c] as u32;
-                }
-            }
+    let Some(ctx) = blur_ctx(pixmap, scratch, r) else {
+        return;
+    };
+    pool().par_rows(ctx.w, ctx, blur_v_chunk);
+    let buf = scratch.as_slice();
+    pixmap.data_mut().copy_from_slice(&buf[..ctx.len]);
+}
+
+/// One pixel range of the silhouette pass: solid-color premultiplied copy of
+/// the source alpha (`out_a = src_a * color_a * opacity`).
+#[inline]
+fn silhouette_range(
+    s: &[u8],
+    d: &mut [u8],
+    i0: usize,
+    i1: usize,
+    cr: u8,
+    cg: u8,
+    cb: u8,
+    ca: u8,
+) {
+    let fa = ca as u32;
+    for i in i0..i1 {
+        let sa = s[i * 4 + 3] as u32;
+        if sa == 0 {
+            continue;
         }
+        let a = sa * fa / 255;
+        d[i * 4] = (cr as u32 * a / 255) as u8;
+        d[i * 4 + 1] = (cg as u32 * a / 255) as u8;
+        d[i * 4 + 2] = (cb as u32 * a / 255) as u8;
+        d[i * 4 + 3] = a as u8;
     }
-    pixmap.data_mut().copy_from_slice(&buf[..w * h * 4]);
 }
 
 /// Builds a solid-color silhouette pixmap from a rendered layer's alpha:
@@ -479,22 +685,42 @@ fn silhouette(src: &PixmapMut, color: &Color, opacity: f64) -> Option<Pixmap> {
     }
     let mut out = Pixmap::new(w, h)?;
     {
-        let s = src.as_ref().data();
-        let d = out.data_mut();
-        let fa = ca as u32;
-        for i in 0..(w as usize * h as usize) {
-            let sa = s[i * 4 + 3] as u32;
-            if sa == 0 {
-                continue;
-            }
-            let a = sa * fa / 255;
-            d[i * 4] = (cr as u32 * a / 255) as u8;
-            d[i * 4 + 1] = (cg as u32 * a / 255) as u8;
-            d[i * 4 + 2] = (cb as u32 * a / 255) as u8;
-            d[i * 4 + 3] = a as u8;
-        }
+        let n = w as usize * h as usize;
+        let ctx = SilCtx {
+            src: SendPtr(src.as_ref().data().as_ptr() as *mut u8),
+            dst: SendPtr(out.data_mut().as_mut_ptr()),
+            len: n * 4,
+            rw: w as usize,
+            cr,
+            cg,
+            cb,
+            ca,
+        };
+        pool().par_rows(h as usize, ctx, sil_chunk);
     }
     Some(out)
+}
+
+/// Pool chunk context for the silhouette pass.
+#[derive(Clone, Copy)]
+struct SilCtx {
+    src: SendPtr<u8>,
+    dst: SendPtr<u8>,
+    len: usize,
+    rw: usize,
+    cr: u8,
+    cg: u8,
+    cb: u8,
+    ca: u8,
+}
+
+fn sil_chunk(ctx: SilCtx, y0: usize, y1: usize) {
+    // SAFETY: chunk owns rows [y0, y1), disjoint across pool jobs.
+    let s = unsafe { std::slice::from_raw_parts(ctx.src.as_const(), ctx.len) };
+    let d = unsafe { std::slice::from_raw_parts_mut(ctx.dst.as_mut(), ctx.len) };
+    for y in y0..y1 {
+        silhouette_range(s, d, y * ctx.rw, (y + 1) * ctx.rw, ctx.cr, ctx.cg, ctx.cb, ctx.ca);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -546,6 +772,144 @@ fn render_pattern_tiles(
         out.insert(pat.name.clone(), PatternTile { pix, w_units: pat.width, h_units: pat.height });
     }
     out
+}
+
+/// One output row of pattern tile-wrap sampling. The inverse draw transform
+/// is inlined as six floats (cheaper than `map_point` dispatch per pixel and
+/// trivially shareable across scoped threads).
+#[allow(clippy::too_many_arguments)]
+#[inline]
+fn pattern_sample_row(
+    cov: &[u8],
+    tdata: &[u8],
+    out: &mut [u8],
+    rw: usize,
+    y: usize,
+    isx: f32,
+    ikx: f32,
+    itx: f32,
+    iky: f32,
+    isy: f32,
+    ity: f32,
+    tw_px: u32,
+    th_px: u32,
+    w_units: f64,
+    h_units: f64,
+    op: f32,
+) {
+    for x in 0..rw {
+        let ca = cov[(y * rw + x) * 4 + 3] as f32 / 255.0;
+        if ca <= 0.0 {
+            continue;
+        }
+        let ux = x as f32 * isx + y as f32 * ikx + itx;
+        let uy = x as f32 * iky + y as f32 * isy + ity;
+        // Canvas space -> tile texel (wrap; rem_euclid is negative-safe).
+        let fx = ((ux as f64).rem_euclid(w_units) / w_units * tw_px as f64) as u32;
+        let fy = ((uy as f64).rem_euclid(h_units) / h_units * th_px as f64) as u32;
+        let ti = ((fy.min(th_px - 1) * tw_px + fx.min(tw_px - 1)) as usize) * 4;
+        let ta = tdata[ti + 3] as f32 / 255.0;
+        let ae = ta * ca * op;
+        if ae <= 0.0 {
+            continue;
+        }
+        let idx = (y * rw + x) * 4;
+        // Tile data is premultiplied: scale by coverage x opacity.
+        out[idx] = (tdata[ti] as f32 * ca * op).round() as u8;
+        out[idx + 1] = (tdata[ti + 1] as f32 * ca * op).round() as u8;
+        out[idx + 2] = (tdata[ti + 2] as f32 * ca * op).round() as u8;
+        out[idx + 3] = (ae * 255.0).round() as u8;
+    }
+}
+
+/// One output row of gradient sampling (same inlined-inverse convention).
+#[inline]
+fn gradient_sample_row(
+    cov: &[u8],
+    out: &mut [u8],
+    cfg: &GradCfg,
+    rw: usize,
+    y: usize,
+    isx: f32,
+    ikx: f32,
+    itx: f32,
+    iky: f32,
+    isy: f32,
+    ity: f32,
+) {
+    for x in 0..rw {
+        let ca = cov[(y * rw + x) * 4 + 3] as f32 / 255.0;
+        if ca <= 0.0 {
+            continue;
+        }
+        let ux = x as f32 * isx + y as f32 * ikx + itx;
+        let uy = x as f32 * iky + y as f32 * isy + ity;
+        let t = grad_t(&cfg.kind, (ux as f64, uy as f64));
+        let (r, g, b, a) = sample_stops(&cfg.stops, t);
+        let ae = a as f32 / 255.0 * ca;
+        if ae <= 0.0 {
+            continue;
+        }
+        let idx = (y * rw + x) * 4;
+        out[idx] = (r as f32 * ae).round() as u8;
+        out[idx + 1] = (g as f32 * ae).round() as u8;
+        out[idx + 2] = (b as f32 * ae).round() as u8;
+        out[idx + 3] = (ae * 255.0).round() as u8;
+    }
+}
+
+/// Pool chunk context for pattern tile-wrap sampling.
+#[derive(Clone, Copy)]
+struct PatCtx {
+    cov: SendPtr<u8>,
+    tdata: SendPtr<u8>,
+    out: SendPtr<u8>,
+    len: usize,
+    tlen: usize,
+    rw: usize,
+    inv: [f32; 6],
+    tw_px: u32,
+    th_px: u32,
+    w_units: f64,
+    h_units: f64,
+    op: f32,
+}
+
+fn pattern_chunk(ctx: PatCtx, y0: usize, y1: usize) {
+    // SAFETY: chunk owns rows [y0, y1), disjoint across pool jobs.
+    let cov = unsafe { std::slice::from_raw_parts(ctx.cov.as_const(), ctx.len) };
+    let tdata = unsafe { std::slice::from_raw_parts(ctx.tdata.as_const(), ctx.tlen) };
+    let out = unsafe { std::slice::from_raw_parts_mut(ctx.out.as_mut(), ctx.len) };
+    let [isx, ikx, itx, iky, isy, ity] = ctx.inv;
+    for y in y0..y1 {
+        pattern_sample_row(
+            cov, tdata, out, ctx.rw, y, isx, ikx, itx, iky, isy, ity, ctx.tw_px,
+            ctx.th_px, ctx.w_units, ctx.h_units, ctx.op,
+        );
+    }
+}
+
+/// Pool chunk context for gradient sampling. Stops ride an `Arc` so the job
+/// is `'static` (pool jobs can't borrow the stack); `SendPtr` fields are
+/// only touched on disjoint rows, as documented on [`SendPtr`].
+#[derive(Clone)]
+struct GradCtx {
+    cov: SendPtr<u8>,
+    out: SendPtr<u8>,
+    len: usize,
+    rw: usize,
+    inv: [f32; 6],
+    cfg: std::sync::Arc<GradCfg>,
+}
+
+fn gradient_chunk(ctx: GradCtx, y0: usize, y1: usize) {
+    // SAFETY: chunk owns rows [y0, y1), disjoint across pool jobs.
+    let cov = unsafe { std::slice::from_raw_parts(ctx.cov.as_const(), ctx.len) };
+    let out = unsafe { std::slice::from_raw_parts_mut(ctx.out.as_mut(), ctx.len) };
+    let [isx, ikx, itx, iky, isy, ity] = ctx.inv;
+    for y in y0..y1 {
+        gradient_sample_row(cov, out, &ctx.cfg, ctx.rw, y, isx, ikx, itx, iky, isy, ity);
+    }
 }
 
 /// Pattern fill/stroke via per-pixel tile-wrap sampling.
@@ -604,36 +968,21 @@ fn paint_pattern(
         None => return,
     };
     {
-        let cov = coverage.data();
-        let tdata = tile.pix.data();
-        let out = layer.data_mut();
-        for y in 0..rh {
-            for x in 0..rw {
-                let ca = cov[(y as usize * rw as usize + x as usize) * 4 + 3] as f32 / 255.0;
-                if ca <= 0.0 {
-                    continue;
-                }
-                let mut pt = Point::from_xy(x as f32, y as f32);
-                inv.map_point(&mut pt);
-                // Canvas space -> tile texel (wrap; rem_euclid is negative-safe).
-                let fx =
-                    ((pt.x as f64).rem_euclid(tile.w_units) / tile.w_units * tw_px as f64) as u32;
-                let fy =
-                    ((pt.y as f64).rem_euclid(tile.h_units) / tile.h_units * th_px as f64) as u32;
-                let ti = ((fy.min(th_px - 1) * tw_px + fx.min(tw_px - 1)) as usize) * 4;
-                let ta = tdata[ti + 3] as f32 / 255.0;
-                let ae = ta * ca * op;
-                if ae <= 0.0 {
-                    continue;
-                }
-                let idx = (y as usize * rw as usize + x as usize) * 4;
-                // Tile data is premultiplied: scale by coverage x opacity.
-                out[idx] = (tdata[ti] as f32 * ca * op).round() as u8;
-                out[idx + 1] = (tdata[ti + 1] as f32 * ca * op).round() as u8;
-                out[idx + 2] = (tdata[ti + 2] as f32 * ca * op).round() as u8;
-                out[idx + 3] = (ae * 255.0).round() as u8;
-            }
-        }
+        let ctx = PatCtx {
+            cov: SendPtr(coverage.data().as_ptr() as *mut u8),
+            tdata: SendPtr(tile.pix.data().as_ptr() as *mut u8),
+            out: SendPtr(layer.data_mut().as_mut_ptr()),
+            len: rw as usize * rh as usize * 4,
+            tlen: tw_px as usize * th_px as usize * 4,
+            rw: rw as usize,
+            inv: [inv.sx, inv.kx, inv.tx, inv.ky, inv.sy, inv.ty],
+            tw_px,
+            th_px,
+            w_units: tile.w_units,
+            h_units: tile.h_units,
+            op,
+        };
+        pool().par_rows(rh as usize, ctx, pattern_chunk);
     }
     dst.draw_pixmap(
         rx0 as i32,
@@ -781,7 +1130,7 @@ fn paint_sampled(
     dst: &mut PixmapMut,
     cmd: &DrawCmd,
     path: &tiny_skia::Path,
-    cfg: &GradCfg,
+    cfg: GradCfg,
     is_fill: bool,
     style: &DrawStyle,
     transform: Transform,
@@ -819,29 +1168,16 @@ fn paint_sampled(
         None => return,
     };
     {
-        let cov = coverage.data();
-        let out = layer.data_mut();
-        for y in 0..rh {
-            for x in 0..rw {
-                let ca = cov[(y as usize * rw as usize + x as usize) * 4 + 3] as f32 / 255.0;
-                if ca <= 0.0 {
-                    continue;
-                }
-                let mut pt = Point::from_xy(x as f32, y as f32);
-                inv.map_point(&mut pt);
-                let t = grad_t(&cfg.kind, (pt.x as f64, pt.y as f64));
-                let (r, g, b, a) = sample_stops(&cfg.stops, t);
-                let ae = a as f32 / 255.0 * ca;
-                if ae <= 0.0 {
-                    continue;
-                }
-                let idx = (y as usize * rw as usize + x as usize) * 4;
-                out[idx] = (r as f32 * ae).round() as u8;
-                out[idx + 1] = (g as f32 * ae).round() as u8;
-                out[idx + 2] = (b as f32 * ae).round() as u8;
-                out[idx + 3] = (ae * 255.0).round() as u8;
-            }
-        }
+        // Stops ride an Arc so pool jobs own their inputs (`'static`).
+        let ctx = GradCtx {
+            cov: SendPtr(coverage.data().as_ptr() as *mut u8),
+            out: SendPtr(layer.data_mut().as_mut_ptr()),
+            len: rw as usize * rh as usize * 4,
+            rw: rw as usize,
+            inv: [inv.sx, inv.kx, inv.tx, inv.ky, inv.sy, inv.ty],
+            cfg: std::sync::Arc::new(cfg),
+        };
+        pool().par_rows(rh as usize, ctx, gradient_chunk);
     }
     dst.draw_pixmap(
         rx0 as i32,
@@ -880,7 +1216,7 @@ fn fill_shape_path(
         }
     }
     if let Some(cfg) = grad_cfg(&style.fill, style.opacity) {
-        paint_sampled(dst, cmd, path, &cfg, true, style, transform, style_to_blend(style), mask);
+        paint_sampled(dst, cmd, path, cfg, true, style, transform, style_to_blend(style), mask);
         return;
     }
     if let Some(mut fill_paint) = solid_or_pattern_paint(&style.fill, style.opacity) {
@@ -920,7 +1256,7 @@ fn stroke_shape_path(
         }
     }
     if let Some(cfg) = grad_cfg(&style.stroke, style.opacity) {
-        paint_sampled(dst, cmd, path, &cfg, false, style, transform, style_to_blend(style), mask);
+        paint_sampled(dst, cmd, path, cfg, false, style, transform, style_to_blend(style), mask);
         return;
     }
     if let Some(mut stroke_paint) = solid_or_pattern_paint(&style.stroke, style.opacity) {
@@ -1024,6 +1360,13 @@ fn render_fx_into(
 /// draw transform is the caller's `transform` shifted by the crop origin, so
 /// the device-scale convention (letterbox offset + preview scale) is preserved
 /// exactly for both the canvas and tile/pattern render paths.
+///
+/// Crispness contract: `blur` replaces the shape (reduced full-stack bake is
+/// exact — the output is all blur). But `shadow`/`glow` keep a SHARP shape
+/// on top, so they take the halo path: reduced halo layers underneath plus a
+/// full-resolution repaint. Baking the sharp shape at reduced res (as an
+/// earlier revision did) visibly softens dashes, plate edges and text-like
+/// geometry on real panels.
 #[allow(clippy::too_many_arguments)]
 fn render_shape(
     dst: &mut PixmapMut,
@@ -1039,11 +1382,152 @@ fn render_shape(
         paint_shape(dst, cmd, path, style, transform, mask, tiles);
         return;
     }
-    let (layer, (ox, oy)) = match build_fx_layer(cmd, path, style, transform, scale, dst.width(), dst.height(), tiles) {
+    if style.blur <= 1e-9 {
+        // Shadow/glow only: halos underneath (reduced), sharp shape on top
+        // (full resolution).
+        if let Some(halos) = build_halos(cmd, path, style, transform, scale, dst.width(), dst.height()) {
+            for h in &halos {
+                composite_scaled(dst, &h.pix, h.ox, h.oy, h.down, h.blend, mask);
+            }
+        }
+        paint_shape(dst, cmd, path, style, transform, mask, tiles);
+        return;
+    }
+    let (layer, (ox, oy), down) = match build_fx_layer(cmd, path, style, transform, scale, dst.width(), dst.height(), tiles) {
         Some(v) => v,
         None => return,
     };
-    composite_layer(dst, &layer, ox, oy, style_to_blend(style), mask);
+    composite_scaled(dst, &layer, ox, oy, down, style_to_blend(style), mask);
+}
+
+/// One baked drop-shadow / glow halo: a tinted, blurred silhouette at
+/// reduced resolution, composited under a full-res sharp repaint.
+struct HaloLayer {
+    pix: Pixmap,
+    /// Device-space origin (shadow offset already applied).
+    ox: i32,
+    oy: i32,
+    down: f32,
+    /// Shadow → `SourceOver`, glow → additive `Plus`.
+    blend: SkBlend,
+}
+
+/// Scalar alpha of a paint for halo coverage. Solid colors contribute their
+/// real alpha (so `fill none` contributes nothing); patterns and gradients
+/// count as opaque — an accepted approximation for per-pixel translucent
+/// gradient stops, exact for all solid art.
+fn paint_alpha(paint: &PvgPaint) -> u8 {
+    match paint {
+        PvgPaint::Color(c) => match c {
+            Color::Rgba(_, _, _, a) => *a,
+            Color::None => 0,
+        },
+        PvgPaint::Pattern(_) => 255,
+        _ => 255,
+    }
+}
+
+/// Builds the reduced halo layers for a shadow/glow-only style (no `blur`).
+/// The SHARP shape is deliberately NOT included — callers repaint it at full
+/// resolution on top, which is what keeps edges crisp. Returns the shadow
+/// halo first, then glow (composite order). Only the silhouette alpha is
+/// sampled, so gradient/pattern paints cost nothing here.
+fn build_halos(
+    cmd: &DrawCmd,
+    path: &tiny_skia::Path,
+    style: &DrawStyle,
+    transform: Transform,
+    scale: f32,
+    canvas_w: u32,
+    canvas_h: u32,
+) -> Option<Vec<HaloLayer>> {
+    let mut hr = 0.0f32;
+    if let Some(sh) = &style.shadow {
+        hr = hr.max(sh.radius as f32);
+    }
+    if let Some(gl) = &style.glow {
+        hr = hr.max(gl.radius as f32);
+    }
+    if !(hr > 0.0) {
+        return None;
+    }
+    // Halo content is pure blur: aggressive tiers are safe (layer-space
+    // radius stays ≥ 3px, bilinear-smoothed at composite).
+    let r_dev = hr * scale;
+    let down: f32 = if r_dev > 48.0 {
+        0.125
+    } else if r_dev > 12.0 {
+        0.25
+    } else {
+        0.5
+    };
+    let (ox, oy, lw, lh) = fx_layer_rect(cmd, style, transform, canvas_w, canvas_h)?;
+    let hw = ((lw as f32 * down).round() as u32).max(1);
+    let hh = ((lh as f32 * down).round() as u32).max(1);
+    let mut cov = Pixmap::new(hw, hh)?;
+    // half(p) = (transform(p) - origin) * down, component-wise.
+    let hxf = Transform::from_row(
+        transform.sx * down,
+        transform.ky * down,
+        transform.kx * down,
+        transform.sy * down,
+        (transform.tx - ox as f32) * down,
+        (transform.ty - oy as f32) * down,
+    );
+    {
+        // White coverage with the shape's alpha: silhouette() below only
+        // reads alpha, so color work is skipped entirely.
+        let mut cpm = cov.as_mut();
+        let stroke_only = matches!(cmd, DrawCmd::Line { .. } | DrawCmd::Spline { .. });
+        if !stroke_only {
+            let mut white = Paint::default();
+            let a = paint_alpha(&style.fill);
+            white.set_color_rgba8(255, 255, 255, a);
+            white.anti_alias = true;
+            cpm.fill_path(path, &white, FillRule::Winding, hxf, None);
+        }
+        if style.width > 0.0 {
+            let mut white = Paint::default();
+            let a = paint_alpha(&style.stroke);
+            white.set_color_rgba8(255, 255, 255, a);
+            white.anti_alias = true;
+            let stroke = style_to_stroke(style);
+            cpm.stroke_path(path, &white, &stroke, hxf, None);
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(sh) = &style.shadow {
+        if let Some(mut px) = silhouette(&cov.as_mut(), &sh.color, style.opacity) {
+            let r = ((sh.radius as f32 * scale * down).round().max(0.0)) as u32;
+            box_blur(&mut px.as_mut(), r);
+            let dx = (sh.offset.0 as f32 * scale).round() as i32;
+            let dy = (sh.offset.1 as f32 * scale).round() as i32;
+            out.push(HaloLayer {
+                pix: px,
+                ox: ox + dx,
+                oy: oy + dy,
+                down,
+                blend: SkBlend::SourceOver,
+            });
+        }
+    }
+    if let Some(gl) = &style.glow {
+        if let Some(mut px) = silhouette(&cov.as_mut(), &gl.color, style.opacity) {
+            let r = ((gl.radius as f32 * scale * down).round().max(0.0)) as u32;
+            box_blur(&mut px.as_mut(), r);
+            out.push(HaloLayer {
+                pix: px,
+                ox,
+                oy,
+                down,
+                blend: SkBlend::Plus,
+            });
+        }
+    }
+    if out.is_empty() {
+        return None;
+    }
+    Some(out)
 }
 
 /// Blits a finished pre-blend layer onto `dst` with the style blend mode.
@@ -1065,14 +1549,55 @@ fn composite_layer(
     );
 }
 
-/// Builds the full-resolution pre-blend FX layer for one geometric command.
+/// Composites a REDUCED-resolution FX layer (`down` = layer_px / device_px)
+/// in one step: tiny-skia scales it up during the blit, so no full-res temp
+/// is ever allocated and no manual upscale loop runs. The layer content is
+/// low-frequency blur/glow by construction, so the scaled blit is visually
+/// identical to a full-res build at a fraction of the cost (the old manual
+/// bilinear upscale alone cost 12ms on a fullscreen `blur 45` layer).
+fn composite_scaled(
+    dst: &mut PixmapMut,
+    half: &Pixmap,
+    ox: i32,
+    oy: i32,
+    down: f32,
+    blend: SkBlend,
+    mask: Option<&Mask>,
+) {
+    if (down - 1.0).abs() < 1e-6 {
+        composite_layer(dst, half, ox, oy, blend, mask);
+        return;
+    }
+    let k = 1.0 / down;
+    // dst = half * k + origin.
+    let xf = Transform::from_scale(k, k).post_translate(ox as f32, oy as f32);
+    dst.draw_pixmap(
+        0,
+        0,
+        half.as_ref(),
+        &PixmapPaint { opacity: 1.0, blend_mode: blend, quality: FilterQuality::Bilinear },
+        xf,
+        mask,
+    );
+}
+
+/// Builds the pre-blend FX layer for one geometric command.
 ///
-/// The effect stack (shape + shadow + glow + blur) renders at HALF device
-/// resolution and is bilinear-upscaled: all three filters are low-frequency,
-/// so the half-res layer is visually identical at ~1/4 the per-pixel cost
-/// (a `blur 45` layer drops from ~65ms to ~18ms at 512p). Gradient and
-/// pattern sampling inside the layer evaluate in resolution-independent PVG
-/// user space, so stops and tile wraps stay exact.
+/// Device-measured policy (emulator + physical SoCs): the effect stack
+/// renders REDUCED and [`composite_scaled`] stretches it back during the
+/// blit — no full-res temp, no manual upscale loop. Tiers follow the filter
+/// radius so the kernel stays sampled (layer-space radius ≈ 8–12px):
+/// monster blurs go 1/8, large ones 1/4, small crisp glows stay 1/2 so
+/// sharp shape edges don't soften. (Full-res FX was tried and measured
+/// SLOWER on device: 27ms vs 15ms on the Tactical HUD — the blur's memory
+/// traffic dominates, and the upscale it avoids is cheaper than the
+/// full-res passes.)
+///
+/// Gradient and pattern sampling inside the layer evaluate in
+/// resolution-independent PVG user space, so stops and tile wraps stay exact.
+///
+/// Returns the (possibly reduced) pixmap, its device-space origin, and the
+/// `down` factor (`layer_px = device_px * down`).
 #[allow(clippy::too_many_arguments)]
 fn build_fx_layer(
     cmd: &DrawCmd,
@@ -1083,75 +1608,58 @@ fn build_fx_layer(
     canvas_w: u32,
     canvas_h: u32,
     tiles: &PatternTiles,
-) -> Option<(Pixmap, (i32, i32))> {
+) -> Option<(Pixmap, (i32, i32), f32)> {
     let (ox, oy, lw, lh) = fx_layer_rect(cmd, style, transform, canvas_w, canvas_h)?;
-    let hw = (lw / 2).max(1);
-    let hh = (lh / 2).max(1);
+    // Largest filter radius in device px — drives the downscale choice.
+    let mut filt_r = style.blur as f32 * scale;
+    if let Some(gl) = &style.glow {
+        filt_r = filt_r.max(gl.radius as f32 * scale);
+    }
+    if let Some(sh) = &style.shadow {
+        filt_r = filt_r.max(sh.radius as f32 * scale);
+    }
+    let area = lw as u64 * lh as u64;
+    let down: f32 = if filt_r > 60.0 {
+        0.125
+    } else if filt_r > 24.0 || area > 320 * 320 {
+        0.25
+    } else {
+        0.5
+    };
+    let hw = ((lw as f32 * down).round() as u32).max(1);
+    let hh = ((lh as f32 * down).round() as u32).max(1);
     let mut half = Pixmap::new(hw, hh)?;
-    // half(p) = (transform(p) - origin) * 0.5, component-wise.
+    // half(p) = (transform(p) - origin) * down, component-wise.
     let hxf = Transform::from_row(
-        transform.sx * 0.5,
-        transform.ky * 0.5,
-        transform.kx * 0.5,
-        transform.sy * 0.5,
-        (transform.tx - ox as f32) * 0.5,
-        (transform.ty - oy as f32) * 0.5,
+        transform.sx * down,
+        transform.ky * down,
+        transform.kx * down,
+        transform.sy * down,
+        (transform.tx - ox as f32) * down,
+        (transform.ty - oy as f32) * down,
     );
     {
         let mut hpm = half.as_mut();
-        render_fx_into(&mut hpm, cmd, path, style, hxf, scale * 0.5, tiles);
+        render_fx_into(&mut hpm, cmd, path, style, hxf, scale * down, tiles);
     }
-    let mut full = Pixmap::new(lw, lh)?;
-    upscale_bilinear_into(&mut full, &half);
-    Some((full, (ox, oy)))
-}
-
-/// Bilinear upscale of premultiplied `src` into same-aspect `dst`.
-/// Both pixmaps are transparent-based layer buffers, so no blending here —
-/// the caller composites the finished layer with its blend mode.
-fn upscale_bilinear_into(dst: &mut Pixmap, src: &Pixmap) {
-    let (sw, sh) = (src.width(), src.height());
-    let (dw, dh) = (dst.width(), dst.height());
-    if sw == 0 || sh == 0 || dw == 0 || dh == 0 {
-        return;
-    }
-    let s = src.data();
-    let d = dst.data_mut();
-    let kx = sw as f32 / dw as f32;
-    let ky = sh as f32 / dh as f32;
-    for y in 0..dh {
-        let sy = ((y as f32 + 0.5) * ky - 0.5).clamp(0.0, sh as f32 - 1.0);
-        let y0 = sy as u32;
-        let y1 = (y0 + 1).min(sh - 1);
-        let fy = sy - y0 as f32;
-        for x in 0..dw {
-            let sx = ((x as f32 + 0.5) * kx - 0.5).clamp(0.0, sw as f32 - 1.0);
-            let x0 = sx as u32;
-            let x1 = (x0 + 1).min(sw - 1);
-            let fx = sx - x0 as f32;
-            let i00 = ((y0 * sw + x0) * 4) as usize;
-            let i10 = ((y0 * sw + x1) * 4) as usize;
-            let i01 = ((y1 * sw + x0) * 4) as usize;
-            let i11 = ((y1 * sw + x1) * 4) as usize;
-            let o = ((y * dw + x) * 4) as usize;
-            for c in 0..4 {
-                let top = s[i00 + c] as f32 + (s[i10 + c] as f32 - s[i00 + c] as f32) * fx;
-                let bot = s[i01 + c] as f32 + (s[i11 + c] as f32 - s[i01 + c] as f32) * fx;
-                d[o + c] = (top + (bot - top) * fy).round().clamp(0.0, 255.0) as u8;
-            }
-        }
-    }
+    Some((half, (ox, oy), down))
 }
 
 // ---------------------------------------------------------------------------
 // Frame-persistent FX cache: static shapes render once, blit per frame
 // ---------------------------------------------------------------------------
 
-/// Cached pre-blend layer for one top-level draw command.
+/// Cached pre-blend layer for one top-level draw command. Blur/sampled/clip
+/// layers are stored REDUCED or full-res (`down`) and blitted in one step;
+/// shadow/glow-only shapes instead cache their [`HaloLayer`]s while the
+/// sharp shape repaints full-res every frame (crisp edges, cheap vector
+/// paint — see [`render_shape`]).
 struct FxSlot {
     cmd: Option<DrawCmd>,
     layer: Option<Pixmap>,
     rect: (i32, i32, u32, u32),
+    down: f32,
+    halos: Vec<HaloLayer>,
 }
 
 /// Frame-persistent cache of static pre-blend layers.
@@ -1168,12 +1676,75 @@ pub struct FxCache {
     slots: Vec<FxSlot>,
 }
 
+/// Baked full-frame image of a scene's leading static run — the software
+/// equivalent of Android's display-list / `LAYER_TYPE_HARDWARE` concept
+/// (record once, re-issue per frame), applied to our CPU rasterizer.
+///
+/// Animation usually touches a few top-level commands (rotating prisms, sweep
+/// lines) while the heavy stack beneath (big blurs, shadows, gradients,
+/// clips) is bit-identical frame to frame. Baking that prefix once replaces
+/// per-frame full-buffer fills plus N static blits with a single `memcpy`,
+/// with zero pixel loss: validity requires the target size, canvas,
+/// background, patterns AND every prefix command to compare equal. Anything
+/// time-varying ends the prefix and renders normally.
+#[derive(Clone, Default)]
+pub struct StaticBg {
+    target: (u32, u32),
+    canvas_bits: (u64, u64),
+    background: Option<Color>,
+    patterns: Vec<DrawPattern>,
+    prefix: Vec<DrawCmd>,
+    pix: Option<Pixmap>,
+}
+
 /// Per-frame raster caches held by the engine across animation ticks:
-/// static FX layers plus the glyph coverage cache for text.
+/// static FX layers, the baked static-scene prefix, the previous frame's
+/// items for static-run classification, plus the glyph cache.
 #[derive(Default)]
 pub struct FrameCache {
     pub fx: FxCache,
     pub text: TextEngine,
+    pub static_bg: StaticBg,
+    prev_items: Vec<DrawCmd>,
+}
+
+/// Bakes `prefix` (plus the base fills) into a full-frame pixmap.
+/// Pixel-identical to the direct path: same fills, same per-command renderer.
+#[allow(clippy::too_many_arguments)]
+fn bake_static_bg(
+    prefix: &[DrawCmd],
+    draw_list: &DrawList,
+    transform: Transform,
+    scale: f32,
+    tiles: &PatternTiles,
+    text: &mut TextEngine,
+    dst_w: u32,
+    dst_h: u32,
+    offset_x: f32,
+    offset_y: f32,
+    scaled_w: f32,
+    scaled_h: f32,
+) -> Option<Pixmap> {
+    let mut bg = Pixmap::new(dst_w, dst_h)?;
+    {
+        let mut bpm = bg.as_mut();
+        bpm.fill(tiny_skia::Color::from_rgba8(8, 9, 13, 255));
+        if let Some(canvas_rect) = Rect::from_xywh(offset_x, offset_y, scaled_w, scaled_h) {
+            if let Some(ref col) = draw_list.background {
+                if let Some(bg_paint) = color_to_skia(col, 1.0) {
+                    bpm.fill_rect(canvas_rect, &bg_paint, Transform::identity(), None);
+                }
+            } else {
+                let mut black_paint = Paint::default();
+                black_paint.set_color_rgba8(0, 0, 0, 255);
+                bpm.fill_rect(canvas_rect, &black_paint, Transform::identity(), None);
+            }
+        }
+        for cmd in prefix {
+            render_cmd_masked(cmd, &mut bpm, transform, None, scale, tiles, text);
+        }
+    }
+    Some(bg)
 }
 
 impl FxCache {
@@ -1186,7 +1757,13 @@ impl FxCache {
     fn reset_for_frame(&mut self, target: (u32, u32), items: usize) {
         if self.target != target || self.slots.len() != items {
             self.slots.clear();
-            self.slots.resize_with(items, || FxSlot { cmd: None, layer: None, rect: (0, 0, 0, 0) });
+            self.slots.resize_with(items, || FxSlot {
+                cmd: None,
+                layer: None,
+                rect: (0, 0, 0, 0),
+                down: 1.0,
+                halos: Vec::new(),
+            });
             self.target = target;
         }
     }
@@ -1257,9 +1834,9 @@ fn cmd_cacheable(cmd: &DrawCmd) -> bool {
     }
 }
 
-/// Builds the cacheable full-resolution pre-blend layer for one top-level
-/// command: FX shapes via [`build_fx_layer`], clips by rendering content
-/// through the inner mask into a cropped temp.
+/// Builds the cacheable pre-blend layer for one top-level command: FX shapes
+/// via [`build_fx_layer`] (reduced, with its `down` factor), clips and
+/// sampled paints as full-res cropped temps (`down == 1`).
 #[allow(clippy::too_many_arguments)]
 fn build_cached_layer(
     cmd: &DrawCmd,
@@ -1269,7 +1846,7 @@ fn build_cached_layer(
     canvas_h: u32,
     tiles: &PatternTiles,
     text: &mut TextEngine,
-) -> Option<(Pixmap, (i32, i32, u32, u32))> {
+) -> Option<(Pixmap, (i32, i32, u32, u32), f32)> {
     match cmd {
         DrawCmd::Clip { mask, content } => {
             let (x0, y0, x1, y1) = geom_bbox(mask)?;
@@ -1307,13 +1884,15 @@ fn build_cached_layer(
                     render_cmd_masked(item, &mut lpm, lxf, Some(&inner), scale, tiles, text);
                 }
             }
-            Some((layer, (ox, oy, lw, lh)))
+            Some((layer, (ox, oy, lw, lh), 1.0))
         }
         _ => {
             let style = cmd_style(cmd)?;
             let path = cmd_to_path(cmd)?;
             // Non-FX sampled shapes bake via a direct paint into a cropped
-            // temp; FX shapes reuse the half-res layer builder.
+            // temp; blur-case FX reuses the reduced-res layer builder.
+            // Shadow/glow-only shapes return None here — they bake as halo
+            // layers plus a per-frame sharp repaint in `render_cached_top`.
             if !needs_fx(style) {
                 let (rx0, ry0, rx1, ry1) = loop_rect(cmd, transform, canvas_w, canvas_h);
                 let (lw, lh) = (rx1 - rx0, ry1 - ry0);
@@ -1326,12 +1905,14 @@ fn build_cached_layer(
                     let mut lpm = layer.as_mut();
                     paint_shape(&mut lpm, cmd, &path, style, lxf, None, tiles);
                 }
-                Some((layer, (rx0 as i32, ry0 as i32, lw, lh)))
-            } else {
-                let (layer, (ox, oy)) =
+                Some((layer, (rx0 as i32, ry0 as i32, lw, lh), 1.0))
+            } else if style.blur > 1e-9 {
+                let (layer, (ox, oy), down) =
                     build_fx_layer(cmd, &path, style, transform, scale, canvas_w, canvas_h, tiles)?;
                 let (lw, lh) = (layer.width(), layer.height());
-                Some((layer, (ox, oy, lw, lh)))
+                Some((layer, (ox, oy, lw, lh), down))
+            } else {
+                None
             }
         }
     }
@@ -1350,32 +1931,68 @@ fn render_cached_top(
     tiles: &PatternTiles,
     cache: &mut FrameCache,
 ) -> bool {
+    // Shadow/glow-only styles (no `blur`) bake as halo layers + a per-frame
+    // full-res sharp repaint (see `render_shape`); everything else with a
+    // cacheable cost bakes as one blittable layer.
+    let halo_only = cmd_style(cmd)
+        .map(|s| s.blur <= 1e-9 && (s.shadow.is_some() || s.glow.is_some()))
+        .unwrap_or(false);
     // Disjoint field borrows: FX slots for hit-lookup, text engine for bakes.
-    let FrameCache { fx, text } = cache;
+    let FrameCache { fx, text, .. } = cache;
     let slot = &mut fx.slots[idx];
-    if let (Some(prev), Some(layer)) = (&slot.cmd, &slot.layer) {
-        if prev == cmd {
+    if slot.cmd.as_ref() == Some(cmd) {
+        if halo_only {
+            if !slot.halos.is_empty() {
+                for h in &slot.halos {
+                    composite_scaled(dst, &h.pix, h.ox, h.oy, h.down, h.blend, None);
+                }
+                if let (Some(style), Some(path)) = (cmd_style(cmd), cmd_to_path(cmd)) {
+                    paint_shape(dst, cmd, &path, style, transform, None, tiles);
+                }
+                return true;
+            }
+        } else if let Some(layer) = &slot.layer {
             let (ox, oy, _, _) = slot.rect;
             let blend = match cmd {
                 DrawCmd::Clip { .. } => SkBlend::SourceOver,
                 _ => cmd_style(cmd).map(style_to_blend).unwrap_or(SkBlend::SourceOver),
             };
-            composite_layer(dst, layer, ox, oy, blend, None);
+            composite_scaled(dst, layer, ox, oy, slot.down, blend, None);
             return true;
         }
     }
+    if halo_only {
+        if let (Some(style), Some(path)) = (cmd_style(cmd), cmd_to_path(cmd)) {
+            if let Some(halos) =
+                build_halos(cmd, &path, style, transform, scale, dst.width(), dst.height())
+            {
+                for h in &halos {
+                    composite_scaled(dst, &h.pix, h.ox, h.oy, h.down, h.blend, None);
+                }
+                paint_shape(dst, cmd, &path, style, transform, None, tiles);
+                let slot = &mut fx.slots[idx];
+                slot.cmd = Some(cmd.clone());
+                slot.layer = None;
+                slot.halos = halos;
+                return true;
+            }
+        }
+        return false;
+    }
     match build_cached_layer(cmd, transform, scale, dst.width(), dst.height(), tiles, text) {
-        Some((layer, rect)) => {
+        Some((layer, rect, down)) => {
             let (ox, oy, _, _) = rect;
             let blend = match cmd {
                 DrawCmd::Clip { .. } => SkBlend::SourceOver,
                 _ => cmd_style(cmd).map(style_to_blend).unwrap_or(SkBlend::SourceOver),
             };
-            composite_layer(dst, &layer, ox, oy, blend, None);
+            composite_scaled(dst, &layer, ox, oy, down, blend, None);
             let slot = &mut fx.slots[idx];
             slot.cmd = Some(cmd.clone());
             slot.layer = Some(layer);
             slot.rect = rect;
+            slot.down = down;
+            slot.halos = Vec::new();
             true
         }
         None => false,
@@ -1720,6 +2337,31 @@ fn render_cmd_masked(
     }
 }
 
+/// Single-pass background fill shared by the direct path and the bake fallback.
+fn base_fills(
+    pixmap: &mut PixmapMut,
+    draw_list: &DrawList,
+    offset_x: f32,
+    offset_y: f32,
+    scaled_w: f32,
+    scaled_h: f32,
+) {
+    let container_bg = tiny_skia::Color::from_rgba8(8, 9, 13, 255);
+    pixmap.fill(container_bg);
+
+    if let Some(canvas_rect) = Rect::from_xywh(offset_x, offset_y, scaled_w, scaled_h) {
+        if let Some(ref bg) = draw_list.background {
+            if let Some(bg_paint) = color_to_skia(bg, 1.0) {
+                pixmap.fill_rect(canvas_rect, &bg_paint, Transform::identity(), None);
+            }
+        } else {
+            let mut black_paint = Paint::default();
+            black_paint.set_color_rgba8(0, 0, 0, 255);
+            pixmap.fill_rect(canvas_rect, &black_paint, Transform::identity(), None);
+        }
+    }
+}
+
 /// High-performance in-place vector rasterizer with single-pass clearing and aspect-ratio alignment.
 ///
 /// `cache` persists static pre-blend layers across frames (see [`FxCache`]);
@@ -1753,30 +2395,101 @@ pub fn rasterize_draw_list_into_pixmap_mut(
 
     let transform = Transform::from_row(scale, 0.0, 0.0, scale, offset_x, offset_y);
 
-    // 2. Single-pass background fill
-    let container_bg = tiny_skia::Color::from_rgba8(8, 9, 13, 255);
-    pixmap.fill(container_bg);
-
-    if let Some(canvas_rect) = Rect::from_xywh(offset_x, offset_y, scaled_w, scaled_h) {
-        if let Some(ref bg) = draw_list.background {
-            if let Some(bg_paint) = color_to_skia(bg, 1.0) {
-                pixmap.fill_rect(canvas_rect, &bg_paint, Transform::identity(), None);
-            }
-        } else {
-            let mut black_paint = Paint::default();
-            black_paint.set_color_rgba8(0, 0, 0, 255);
-            pixmap.fill_rect(canvas_rect, &black_paint, Transform::identity(), None);
-        }
-    }
-
-    // 3. Render visual primitives (pattern tiles pre-rendered once per frame
-    // at device scale; shapes sample them per-pixel, unknown names fall back
-    // to flat gray).
+    // 2/3. Static-prefix fast path (pattern tiles pre-rendered once per
+    // frame at device scale; shapes sample them per-pixel, unknown names
+    // fall back to flat gray).
     let tiles = render_pattern_tiles(&draw_list.patterns, scale, &mut cache.text);
     cache
         .fx
         .reset_for_frame((target_width, target_height), draw_list.items.len());
-    for (idx, cmd) in draw_list.items.iter().enumerate() {
+
+    // Leading run of provably-static items: bit-identical to the previous
+    // frame's items (`DrawCmd: PartialEq`). This covers EVERY command type —
+    // solid shapes, static text, static sprites — not just FX/gradient ones.
+    // Anything time-varying (rotating groups, noise paths, live counters)
+    // ends the run and renders through the normal path below.
+    let mut prefix_end = 0;
+    while prefix_end < draw_list.items.len()
+        && prefix_end < cache.prev_items.len()
+        && draw_list.items[prefix_end] == cache.prev_items[prefix_end]
+    {
+        prefix_end += 1;
+    }
+
+    // Items before `start` are already on screen (baked blit / memcpy).
+    let mut start = 0;
+    if prefix_end > 0 {
+        let (dst_w, dst_h) = (pixmap.width(), pixmap.height());
+        let usable = {
+            let b = &cache.static_bg;
+            b.pix.is_some()
+                && b.target == (dst_w, dst_h)
+                && b.canvas_bits
+                    == (
+                        draw_list.canvas_width.to_bits(),
+                        draw_list.canvas_height.to_bits(),
+                    )
+                && b.background == draw_list.background
+                && b.patterns == draw_list.patterns
+                && b.prefix == draw_list.items[..prefix_end]
+        };
+        if usable {
+            // Steady state: one memcpy replaces fills + all static work.
+            let bg = cache.static_bg.pix.as_ref().unwrap();
+            pixmap.data_mut().copy_from_slice(bg.data());
+            start = prefix_end;
+        } else if let Some(pix) = {
+            let FrameCache { text, .. } = &mut *cache;
+            bake_static_bg(
+                &draw_list.items[..prefix_end],
+                draw_list,
+                transform,
+                scale,
+                &tiles,
+                text,
+                dst_w,
+                dst_h,
+                offset_x,
+                offset_y,
+                scaled_w,
+                scaled_h,
+            )
+        } {
+            // Bake frame: blit the fresh bake now, reuse it henceforth.
+            pixmap.draw_pixmap(
+                0,
+                0,
+                pix.as_ref(),
+                &PixmapPaint {
+                    opacity: 1.0,
+                    blend_mode: SkBlend::SourceOver,
+                    quality: FilterQuality::Nearest,
+                },
+                Transform::identity(),
+                None,
+            );
+            cache.static_bg = StaticBg {
+                target: (dst_w, dst_h),
+                canvas_bits: (
+                    draw_list.canvas_width.to_bits(),
+                    draw_list.canvas_height.to_bits(),
+                ),
+                background: draw_list.background.clone(),
+                patterns: draw_list.patterns.clone(),
+                prefix: draw_list.items[..prefix_end].to_vec(),
+                pix: Some(pix),
+            };
+            start = prefix_end;
+        } else {
+            // Bake failed (OOM): fall through to the full direct render.
+            base_fills(pixmap, draw_list, offset_x, offset_y, scaled_w, scaled_h);
+        }
+    } else {
+        // Cold / fully-dynamic frame: classic single-pass background fill.
+        base_fills(pixmap, draw_list, offset_x, offset_y, scaled_w, scaled_h);
+    }
+
+    for (idx, cmd) in draw_list.items.iter().enumerate().skip(start) {
         // Static expensive shapes (FX filters, sampled paints, rich clips)
         // bake once and blit per frame; animated commands miss and render.
         if cmd_cacheable(cmd) && render_cached_top(idx, cmd, pixmap, transform, scale, &tiles, cache) {
@@ -2000,6 +2713,10 @@ pub fn rasterize_draw_list_into_pixmap_mut(
         }
     }
 
+    // Snapshot for next frame's static-run classification (a few KB of
+    // clones — negligible next to a megapixel raster).
+    cache.prev_items = draw_list.items.clone();
+
     // 4. Draw clean canvas border outline
     if let Some(canvas_rect) = Rect::from_xywh(offset_x, offset_y, scaled_w, scaled_h) {
         let mut border_paint = Paint::default();
@@ -2157,6 +2874,42 @@ mod tests {
         let (_, _, _, white_r) = probe(&shadowed.0, size, 26.0, 26.0);
         assert!(white_r > 200, "the sharp shape must still be drawn on top");
         let _ = shape_a;
+    }
+
+    /// Shadow/glow-only FX must keep the sharp shape pixel-crisp: the region
+    /// far from an offset shadow must be byte-identical to the unshadowed
+    /// render (an earlier revision baked the sharp shape at reduced res and
+    /// smeared these pixels on real panels).
+    #[test]
+    fn fx_keeps_sharp_edges_crisp() {
+        let size = 120u32;
+        let plain = render_pixels(
+            "PVG 0.2\ncanvas 64 64\n  background #000000\nrectangle\n  pos [16, 16]\n  size [32, 20]\n  radius 4\n  fill #ffffff\n",
+            size,
+        );
+        let shadowed = render_pixels(
+            "PVG 0.2\ncanvas 64 64\n  background #000000\nrectangle\n  pos [16, 16]\n  size [32, 20]\n  radius 4\n  fill #ffffff\n  shadow [12, 12] 1 #ff0000\n",
+            size,
+        );
+        // Left half (canvas x in [18, 26]) is far from the +12,+12 shadow
+        // (blur r=1 bleeds ~1px): must match the plain render exactly, at
+        // full white.
+        for cx in [18.0, 22.0, 26.0] {
+            let (pr, pg, pb, _) = probe(&plain.0, size, cx, 26.0);
+            let (sr, sg, sb, _) = probe(&shadowed.0, size, cx, 26.0);
+            assert!(
+                pr > 200 && pg > 200 && pb > 200,
+                "plain interior must be white at {cx}, got {pr},{pg},{pb}"
+            );
+            assert_eq!(
+                (sr, sg, sb),
+                (pr, pg, pb),
+                "shadow must not touch the far edge at {cx}"
+            );
+        }
+        // ...while the offset shadow itself is still painted red.
+        let (sr, sg, sb, _) = probe(&shadowed.0, size, 40.0, 40.0);
+        assert!(sr > 60 && sr > sg && sr > sb, "shadow color lost");
     }
 
     /// PVG 0.2 Section 10 `glow r color`: an additive blurred halo under the shape.
@@ -2349,5 +3102,40 @@ mod tests {
         assert!(g > 200 && b > 200, "core must be bright cyan, got {},{},{}", r, g, b);
         let (r2, g2, b2, _) = probe(&buf, size, 32.0, 56.0);
         assert!(r2 < 60 && g2 < 80, "rim must be dark, got {},{},{}", r2, g2, b2);
+    }
+
+    fn render_at(src: &str, t: f64, size: u32, cache: &mut FrameCache) -> Vec<u8> {
+        let dl = pvg::compile_at_time(src, t).expect("source must compile");
+        let mut buf = vec![0u8; (size * size * 4) as usize];
+        {
+            let mut pm = PixmapMut::from_bytes(&mut buf, size, size).unwrap();
+            rasterize_draw_list_into_pixmap_mut(&dl, &mut pm, size, size, cache);
+        }
+        buf
+    }
+
+    /// Static-prefix scene cache: a warmed cache (bake + memcpy path) must
+    /// produce byte-identical frames to a fresh one-shot render, while
+    /// time-varying shapes still animate (no frozen backdrop).
+    #[test]
+    fn static_prefix_cache_is_exact() {
+        let size = 120u32;
+        // Static blurred additive glow + static text/sprite + one time-varying
+        // dot, mirroring the shield-core structure (heavy statics below,
+        // dynamics above). Static text and sprites must join the baked
+        // prefix exactly like static geometry.
+        let src = "PVG 0.2\ncanvas 64 64\n  background #000000\ncircle\n  center [32, 32]\n  radius 20\n  fill #00aaff\n  blur 6\n  blend \"add\"\n  opacity 0.5\ntext\n  pos [8, 8]\n  content \"STATIC\"\n  size 12\n  font \"mono\"\n  align \"left\"\n  fill #ffffff\nsprite\n  pos [48, 48]\n  scale 1\n  palette [#00000000, #ff0000]\n  data \"11\"\n  data \"11\"\ncircle\n  center [32 + 10 * sin(time * 2.0), 32]\n  radius 6\n  fill #ffffff\n";
+        let fresh = render_at(src, 1.0, size, &mut FrameCache::default());
+        let mut cache = FrameCache::default();
+        let _ = render_at(src, 0.0, size, &mut cache);
+        let _ = render_at(src, 0.5, size, &mut cache);
+        let cached = render_at(src, 1.0, size, &mut cache);
+        assert_eq!(
+            fresh, cached,
+            "baked-prefix frame must match the one-shot render exactly"
+        );
+        // Animation must not freeze behind the cached backdrop.
+        let later = render_at(src, 2.0, size, &mut cache);
+        assert_ne!(cached, later, "time-varying shapes must keep animating");
     }
 }

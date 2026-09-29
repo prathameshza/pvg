@@ -140,12 +140,40 @@ pub struct TextLayout {
     pub oy: i32,
 }
 
-/// Persistent CPU text engine: three system faces + a glyph coverage cache.
-/// Lives in the frame cache across frames; safe to hold for the app lifetime.
+/// Position-independent rasterized block shared by [`TextEngine::layout`]
+/// hits: the anchor is applied at composite time, so identical strings share
+/// one block no matter where they are drawn.
+#[derive(Clone)]
+struct CachedLayout {
+    pix: Pixmap,
+    bw: u32,
+}
+
+/// Cache key for a laid-out block. Deliberately excludes the anchor position
+/// (applied later) so static labels hit every frame.
+#[derive(Hash, PartialEq, Eq)]
+struct LayoutKey {
+    content: String,
+    px_bits: u32,
+    role: u8,
+    align: u8,
+    scale_bits: u32,
+}
+
+/// Cap on cached blocks. Static labels (a handful per scene) stay cached
+/// forever; rapidly-changing counters (RPM, clocks) miss and render
+/// uncached — and when the table is full, new strings render uncached rather
+/// than evicting the stable set (no thrash, bounded memory).
+const MAX_LAYOUTS: usize = 24;
+
+/// Persistent CPU text engine: three system faces, a glyph coverage cache,
+/// and a laid-out block cache. Lives in the frame cache across frames; safe
+/// to hold for the app lifetime.
 pub struct TextEngine {
     faces: [Option<FontVec>; 3],
     faces_tried: [bool; 3],
     glyphs: HashMap<(u8, char, u32), GlyphBitmap>,
+    layouts: HashMap<LayoutKey, CachedLayout>,
 }
 
 impl Default for TextEngine {
@@ -154,6 +182,7 @@ impl Default for TextEngine {
             faces: [None, None, None],
             faces_tried: [false; 3],
             glyphs: HashMap::new(),
+            layouts: HashMap::new(),
         }
     }
 }
@@ -213,6 +242,28 @@ impl TextEngine {
         }
         let px = (size_user as f32 * scale).clamp(1.0, 256.0);
         let role = self.resolve_role(family)?;
+        // Fast path: static labels (and repeated counter values) reuse the
+        // rasterized block; only the anchor is recomputed.
+        let key = LayoutKey {
+            content: text.clone(),
+            px_bits: px.to_bits(),
+            role,
+            align: align_tag(align),
+            scale_bits: scale.to_bits(),
+        };
+        if let Some(hit) = self.layouts.get(&key) {
+            let (pix, bw) = (hit.pix.clone(), hit.bw);
+            let base_x = match align {
+                TextAlign::Left => dev_pos.0,
+                TextAlign::Center => dev_pos.0 - bw as f32 * 0.5,
+                TextAlign::Right => dev_pos.0 - bw as f32,
+            };
+            return Some(TextLayout {
+                pix,
+                ox: base_x.round() as i32,
+                oy: dev_pos.1.round() as i32,
+            });
+        }
         // Disjoint field borrows: faces (read) + glyph cache (write).
         let faces = &self.faces;
         let cache = &mut self.glyphs;
@@ -311,10 +362,24 @@ impl TextEngine {
                 }
             }
         }
+        // Remember the block for identical strings (bounded: rapid counters
+        // render uncached rather than evicting the stable label set).
+        if self.layouts.len() < MAX_LAYOUTS {
+            self.layouts.insert(key, CachedLayout { pix: pix.clone(), bw });
+        }
         Some(TextLayout {
             pix,
             ox: base_x.round() as i32,
             oy: dev_pos.1.round() as i32,
         })
+    }
+}
+
+#[inline]
+fn align_tag(align: TextAlign) -> u8 {
+    match align {
+        TextAlign::Left => 0,
+        TextAlign::Center => 1,
+        TextAlign::Right => 2,
     }
 }

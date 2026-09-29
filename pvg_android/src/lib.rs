@@ -59,7 +59,7 @@ pub fn rasterize_for_profile(
 
 struct PvgEngineState {
     code: String,
-    cached_doc: Option<Document>,
+    cached_doc: Option<Arc<Document>>,
     time: f64,
     speed: f64,
     is_playing: bool,
@@ -72,6 +72,8 @@ struct PvgEngineState {
     last_parse_us: f64,
     last_eval_us: f64,
     last_raster_us: f64,
+    last_lock_us: f64,
+    last_post_us: f64,
     last_fps: f64,
     primitive_count: usize,
 
@@ -83,6 +85,11 @@ struct PvgEngineState {
     /// Host uniform overrides for declared `param` declarations (Section 18.1).
     /// Applied on every evaluate; values win over the document defaults.
     params: HashMap<String, f64>,
+
+    /// Last display timestamp seen from Choreographer (`System.nanoTime`
+    /// clock, -1 = none yet). Time deltas come from these exact vsync
+    /// timestamps, never from the render thread's wall clock.
+    vsync_last_nanos: i64,
 
     /// Frame-persistent raster caches (static FX layers + glyph coverage).
     /// Survives across frames so animation ticks only pay for time-varying
@@ -97,6 +104,10 @@ pub struct PvgEngine {
     state: Arc<Mutex<PvgEngineState>>,
     running: Arc<AtomicBool>,
     needs_render: Arc<AtomicBool>,
+    /// Set by [`PvgEngine::on_vsync`] on every display tick; consumed by the
+    /// render thread. Separate from `needs_render` (oneshot dirty flag) so
+    /// time is advanced exactly once per tick, never per wakeup.
+    vsync_tick: Arc<AtomicBool>,
     thread_handle: Option<JoinHandle<()>>,
     /// Serializes raw `ANativeWindow` use (lock/raster/post on the render
     /// thread) against lifecycle release (UI thread surface callbacks).
@@ -119,7 +130,7 @@ impl PvgEngine {
         let cached_doc = match parse_pvg(&source) {
             Ok(doc) => {
                 parse_us = t0.elapsed().as_secs_f64() * 1_000_000.0;
-                Some(doc)
+                Some(Arc::new(doc))
             }
             Err(e) => {
                 log_warn!("PVG AST Parse Error: {}", e);
@@ -143,28 +154,42 @@ impl PvgEngine {
             last_parse_us: parse_us,
             last_eval_us: 0.0,
             last_raster_us: 0.0,
+            last_lock_us: 0.0,
+            last_post_us: 0.0,
             last_fps: 60.0,
             primitive_count: 0,
             params: HashMap::new(),
+            vsync_last_nanos: -1,
             frame_cache: FrameCache::default(),
             last_error: init_error,
         }));
 
         let running = Arc::new(AtomicBool::new(true));
         let needs_render = Arc::new(AtomicBool::new(true));
+        let vsync_tick = Arc::new(AtomicBool::new(false));
         let surface_lock = Arc::new(Mutex::new(()));
 
         let thread_state = Arc::clone(&state);
         let thread_running = Arc::clone(&running);
         let thread_needs_render = Arc::clone(&needs_render);
+        let thread_vsync = Arc::clone(&vsync_tick);
         let thread_surface = Arc::clone(&surface_lock);
 
-        // Dedicated native thread: 0% Main UI thread & 0% HWUI RenderThread overhead
+        // Dedicated native thread: 0% Main UI thread & 0% HWUI RenderThread overhead.
+        //
+        // Vsync-driven (not a sleep loop): the UI thread's Choreographer tick
+        // calls `on_vsync`, which advances scene time from the exact display
+        // timestamp and unparks this thread. A free-running
+        // `sleep(16.6ms)` loop can never hold 60 FPS — timer slack overshoots
+        // ~1ms per frame and its phase drifts against SurfaceFlinger, so
+        // `ANativeWindow_lock` periodically stalls on a full buffer queue
+        // (the old loop measured 56 FPS with only 2.25ms of raster work).
         let thread_handle = thread::spawn(move || {
-            let target_frame_budget = Duration::from_micros(16_666); // 60 FPS target
-            let mut last_tick = Instant::now();
-            let mut frame_count = 0;
+            let mut rendered_count = 0u32;
             let mut log_timer = Instant::now();
+            let mut last_frame_instant = Instant::now();
+            let mut last_tick_instant = Instant::now();
+            let mut stale_warned = false;
 
             let mut acc_eval_us = 0.0;
             let mut acc_raster_us = 0.0;
@@ -173,45 +198,99 @@ impl PvgEngine {
 
             let mut sys_monitor = SystemMonitor::new();
 
-            while thread_running.load(Ordering::Relaxed) {
-                let start_frame = Instant::now();
-                let dt = start_frame.duration_since(last_tick).as_secs_f64().clamp(0.001, 0.033);
-                last_tick = start_frame;
+            loop {
+                // Park until the next display tick, a oneshot request, or the
+                // liveness timeout. Park/unpark permits coalesce: a tick that
+                // arrives just before we park still wakes us — no lost frames.
+                thread::park_timeout(Duration::from_millis(100));
+                if !thread_running.load(Ordering::Relaxed) {
+                    break;
+                }
+                let now = Instant::now();
 
-                frame_count += 1;
+                let tick = thread_vsync.swap(false, Ordering::Relaxed);
+                let dirty = thread_needs_render.swap(false, Ordering::Relaxed);
+                if tick {
+                    last_tick_instant = now;
+                }
 
-                let should_render;
-                let current_time;
-                let is_active;
-
-                {
-                    if let Ok(mut s) = thread_state.lock() {
-                        let has_window = !s.window.is_null();
-                        is_active = s.is_playing && s.is_animated && has_window;
-                        if is_active {
-                            s.time += dt * s.speed;
+                // Decide work under one lock: tick (time pre-advanced by
+                // on_vsync), oneshot dirty render, or stale fallback when the
+                // display ticks go silent (never wired, or died).
+                enum Work {
+                    Frame,
+                    Idle,
+                }
+                let (work, current_time) = {
+                    match thread_state.lock() {
+                        Ok(mut s) => {
+                            let has_window = !s.window.is_null();
+                            let active = s.is_playing && s.is_animated && has_window;
+                            // Ticks observed within the last 250ms: the
+                            // display clock is healthy.
+                            let ticks_live = s.vsync_last_nanos >= 0
+                                && now.duration_since(last_tick_instant).as_millis() <= 250;
+                            if tick && active {
+                                // Display tick: time was pre-advanced by
+                                // on_vsync from the exact panel timestamp.
+                                stale_warned = false;
+                                (Work::Frame, s.time)
+                            } else if dirty && has_window && (!active || !ticks_live) {
+                                // Oneshot while paused/static, or ticks dead:
+                                // render now.
+                                (Work::Frame, s.time)
+                            } else if dirty && active {
+                                // Ticks are healthy: DROP the oneshot. The
+                                // next tick (≤1 frame away) renders the latest
+                                // state anyway; posting mid-cycle instead
+                                // piles up the buffer queue and stalls the
+                                // next lock (missed vsync → visible judder).
+                                // This is what makes slider drags stall-free.
+                                (Work::Idle, s.time)
+                            } else if active
+                                && now.duration_since(last_frame_instant).as_millis() > 250
+                            {
+                                // Choreographer silent: free-run on the wall
+                                // clock so the scene stays alive (degraded but
+                                // never frozen).
+                                if !stale_warned {
+                                    log_warn!(
+                                        "VSYNC STALE: no Choreographer tick for 250ms while playing — free-running fallback"
+                                    );
+                                    stale_warned = true;
+                                }
+                                let dt = now
+                                    .duration_since(last_frame_instant)
+                                    .as_secs_f64()
+                                    .clamp(0.001, 0.25);
+                                s.time += dt * s.speed;
+                                (Work::Frame, s.time)
+                            } else {
+                                (Work::Idle, s.time)
+                            }
                         }
-                        current_time = s.time;
-                        should_render = (is_active || thread_needs_render.swap(false, Ordering::Relaxed)) && has_window;
-                    } else {
-                        break;
+                        Err(_) => break,
                     }
+                };
+
+                if matches!(work, Work::Idle) {
+                    continue;
                 }
 
-                if should_render {
-                    let (eval_us, raster_us, lock_us, post_us) =
-                        Self::render_frame_direct(&thread_state, &thread_surface, current_time);
-                    acc_eval_us += eval_us;
-                    acc_raster_us += raster_us;
-                    acc_lock_us += lock_us;
-                    acc_post_us += post_us;
-                }
+                let (eval_us, raster_us, lock_us, post_us) =
+                    Self::render_frame_direct(&thread_state, &thread_surface, current_time);
+                acc_eval_us += eval_us;
+                acc_raster_us += raster_us;
+                acc_lock_us += lock_us;
+                acc_post_us += post_us;
+                last_frame_instant = Instant::now();
+                rendered_count += 1;
 
-                // 1-second interval diagnostics summary
+                // 1-second interval diagnostics summary (true posted FPS).
                 let elapsed_log = log_timer.elapsed().as_secs_f64();
                 if elapsed_log >= 1.0 {
-                    let fps = (frame_count as f64) / elapsed_log;
-                    let n = (frame_count as f64).max(1.0);
+                    let fps = (rendered_count as f64) / elapsed_log;
+                    let n = (rendered_count as f64).max(1.0);
                     let avg_eval = acc_eval_us / n;
                     let avg_raster = (acc_raster_us / n) / 1000.0;
                     let avg_lock = acc_lock_us / n;
@@ -230,24 +309,12 @@ impl PvgEngine {
                         s.last_fps = fps;
                     }
 
-                    frame_count = 0;
+                    rendered_count = 0;
                     acc_eval_us = 0.0;
                     acc_raster_us = 0.0;
                     acc_lock_us = 0.0;
                     acc_post_us = 0.0;
                     log_timer = Instant::now();
-                }
-
-                if !is_active {
-                    thread::sleep(Duration::from_millis(30));
-                    continue;
-                }
-
-                let frame_elapsed = start_frame.elapsed();
-                if frame_elapsed < target_frame_budget {
-                    thread::sleep(target_frame_budget - frame_elapsed);
-                } else {
-                    thread::sleep(Duration::from_millis(2));
                 }
             }
         });
@@ -256,8 +323,50 @@ impl PvgEngine {
             state,
             running,
             needs_render,
+            vsync_tick,
             thread_handle: Some(thread_handle),
             surface_lock,
+        }
+    }
+
+    /// Display vsync tick from the UI thread's Choreographer (`frame_nanos`
+    /// on the `System.nanoTime` clock). Advances scene time from the exact
+    /// display timestamp and wakes the render thread — output locks to the
+    /// panel's 60/90/120Hz instead of a drifting sleep loop.
+    pub fn on_vsync(&self, frame_nanos: i64) {
+        if let Ok(mut s) = self.state.lock() {
+            // Ungated one-shot: proves from logcat whether display ticks are
+            // actually flowing (a silent Choreographer is otherwise invisible).
+            if s.vsync_last_nanos < 0 {
+                log_warn!(
+                    "VSYNC LIVE: first Choreographer tick received — display-locked pacing engaged"
+                );
+            }
+            let dt = if s.vsync_last_nanos >= 0 {
+                let delta = frame_nanos - s.vsync_last_nanos;
+                if delta > 0 && delta < 1_000_000_000 {
+                    delta as f64 / 1_000_000_000.0
+                } else {
+                    1.0 / 60.0
+                }
+            } else {
+                1.0 / 60.0
+            };
+            s.vsync_last_nanos = frame_nanos;
+            if s.is_playing && s.is_animated && !s.window.is_null() {
+                s.time += dt * s.speed;
+            }
+        }
+        self.vsync_tick.store(true, Ordering::Relaxed);
+        self.wake();
+    }
+
+    /// Unparks the render thread. Every state setter calls this so oneshot
+    /// requests (seek/source/param while paused) render without waiting for
+    /// the liveness timeout.
+    fn wake(&self) {
+        if let Some(h) = self.thread_handle.as_ref() {
+            h.thread().unpark();
         }
     }
 
@@ -273,6 +382,8 @@ impl PvgEngine {
         time: f64,
     ) -> (f64, f64, f64, f64) {
         let _surface_guard = surface_lock.lock().unwrap();
+        // `cached_doc` is an `Arc`: this clone is an atomic refcount bump,
+        // not a deep AST copy — evaluation runs lock-free off the clone.
         let (window, doc_opt, params) = {
             let s = state_arc.lock().unwrap();
             (
@@ -396,6 +507,8 @@ impl PvgEngine {
         if let Ok(mut s) = state_arc.lock() {
             s.last_eval_us = eval_us;
             s.last_raster_us = raster_us;
+            s.last_lock_us = lock_us;
+            s.last_post_us = post_us;
             s.primitive_count = primitive_count;
             s.frame_cache = frame_cache;
             s.last_error.clear();
@@ -419,7 +532,7 @@ impl PvgEngine {
         if let Ok(mut s) = self.state.lock() {
             match parsed {
                 Ok(doc) => {
-                    s.cached_doc = Some(doc);
+                    s.cached_doc = Some(Arc::new(doc));
                     s.last_error.clear();
                 }
                 Err(e) => {
@@ -434,6 +547,7 @@ impl PvgEngine {
             s.frame_cache.fx.clear();
         }
         self.needs_render.store(true, Ordering::Relaxed);
+        self.wake();
     }
 
     pub fn set_playing(&self, playing: bool) {
@@ -442,6 +556,7 @@ impl PvgEngine {
             s.is_playing = playing;
         }
         self.needs_render.store(true, Ordering::Relaxed);
+        self.wake();
     }
 
     pub fn set_time(&self, time: f64) {
@@ -449,6 +564,7 @@ impl PvgEngine {
             s.time = time;
         }
         self.needs_render.store(true, Ordering::Relaxed);
+        self.wake();
     }
 
     pub fn set_speed(&self, speed: f64) {
@@ -456,6 +572,7 @@ impl PvgEngine {
         if let Ok(mut s) = self.state.lock() {
             s.speed = speed;
         }
+        self.wake();
     }
 
     /// Sets a host uniform (`param`, Section 18.1) for the next evaluated frame.
@@ -464,6 +581,7 @@ impl PvgEngine {
             s.params.insert(name.clone(), value);
         }
         self.needs_render.store(true, Ordering::Relaxed);
+        self.wake();
     }
 
     /// Removes a host uniform override so the document default applies again.
@@ -472,6 +590,7 @@ impl PvgEngine {
             s.params.remove(name);
         }
         self.needs_render.store(true, Ordering::Relaxed);
+        self.wake();
     }
 
     /// Declared host uniform names for the current source.
@@ -492,17 +611,28 @@ impl PvgEngine {
             }
             s.window = window;
         }
+        // Tell SurfaceFlinger our cadence (best-effort, API 30+); skips
+        // silently on older releases.
+        #[cfg(target_os = "android")]
+        unsafe {
+            ffi::frame_rate::set_frame_rate_60(window as *mut std::ffi::c_void);
+        }
         self.needs_render.store(true, Ordering::Relaxed);
+        self.wake();
     }
 
     pub fn on_surface_changed(&self, width: i32, height: i32) {
         log_info!("📐 [SURFACE CHANGED] Dimensions: {}x{}", width, height);
         let _guard = self.surface_lock.lock().unwrap();
         if let Ok(mut s) = self.state.lock() {
+            // Full native resolution: no downscale. The rasterizer earns 60
+            // FPS at full pixel count via threading + static-scene caching
+            // instead of a smaller buffer.
             s.surface_width = width;
             s.surface_height = height;
         }
         self.needs_render.store(true, Ordering::Relaxed);
+        self.wake();
     }
 
     pub fn on_surface_destroyed(&self) {
@@ -518,11 +648,19 @@ impl PvgEngine {
         }
     }
 
-    pub fn get_telemetry(&self) -> (f64, f64, f64, f64, usize) {
+    pub fn get_telemetry(&self) -> (f64, f64, f64, f64, usize, f64, f64) {
         if let Ok(s) = self.state.lock() {
-            (s.last_parse_us, s.last_eval_us, s.last_raster_us, s.last_fps, s.primitive_count)
+            (
+                s.last_parse_us,
+                s.last_eval_us,
+                s.last_raster_us,
+                s.last_fps,
+                s.primitive_count,
+                s.last_lock_us,
+                s.last_post_us,
+            )
         } else {
-            (0.0, 0.0, 0.0, 0.0, 0)
+            (0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0)
         }
     }
 
@@ -540,7 +678,9 @@ impl Drop for PvgEngine {
     fn drop(&mut self) {
         log_info!("🛑 [ENGINE DROP] Terminating native render worker thread");
         self.running.store(false, Ordering::Relaxed);
+        // The thread parks indefinitely between ticks — unpark or join blocks.
         if let Some(handle) = self.thread_handle.take() {
+            handle.thread().unpark();
             let _ = handle.join();
         }
         self.on_surface_destroyed();
@@ -558,6 +698,23 @@ pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeSetLoggingEnabled(
     enabled: jboolean,
 ) {
     set_logging_enabled(enabled == JNI_TRUE);
+}
+
+/// Display vsync tick from `Choreographer.FrameCallback.doFrame`
+/// (`frameTimeNanos`). Must be called on the UI thread's Choreographer —
+/// that is what phase-locks output to the panel instead of a drifting
+/// sleep loop.
+#[no_mangle]
+pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeOnVsync(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    frame_nanos: jlong,
+) {
+    if handle != 0 {
+        let engine = unsafe { &*(handle as *const PvgEngine) };
+        engine.on_vsync(frame_nanos as i64);
+    }
 }
 
 #[no_mangle]
@@ -784,15 +941,15 @@ pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeGetTelemetry(
     _class: JClass,
     handle: jlong,
 ) -> jdoubleArray {
-    let (parse_us, eval_us, raster_us, fps, shapes) = if handle != 0 {
+    let (parse_us, eval_us, raster_us, fps, shapes, lock_us, post_us) = if handle != 0 {
         let engine = unsafe { &*(handle as *const PvgEngine) };
         engine.get_telemetry()
     } else {
-        (0.0, 0.0, 0.0, 0.0, 0)
+        (0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0)
     };
 
-    let arr = env.new_double_array(5).unwrap();
-    let data = [parse_us, eval_us, raster_us, fps, shapes as f64];
+    let arr = env.new_double_array(7).unwrap();
+    let data = [parse_us, eval_us, raster_us, fps, shapes as f64, lock_us, post_us];
     env.set_double_array_region(&arr, 0, &data).unwrap();
     arr.into_raw()
 }

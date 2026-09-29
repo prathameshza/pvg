@@ -44,16 +44,20 @@ class PvgController(
         source = pvgCode
         params = emptyMap()
         engine.setSource(pvgCode)
+        // A new document may have (un)animated state; keep ticks aligned.
+        if (isPlaying) engine.startVsync() else engine.stopVsync()
     }
 
     fun play() {
         isPlaying = true
         engine.setPlaying(true)
+        engine.startVsync()
     }
 
     fun pause() {
         isPlaying = false
         engine.setPlaying(false)
+        engine.stopVsync()
     }
 
     fun toggle() {
