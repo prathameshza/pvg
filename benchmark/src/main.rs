@@ -219,7 +219,7 @@ fn run_timeline_fps_benchmark(tc: &TestCase, total_frames: usize) -> Result<(), 
 
 fn print_header() {
     println!("\n╔═══════════════════════════════════════════════════════════════════════════════════════════════════╗");
-    println!("║                 PVG 0.1 NATIVE RUST HIGH-PRECISION BENCHMARK SUITE                                ║");
+    println!("║                 PVG 0.2 NATIVE RUST HIGH-PRECISION BENCHMARK SUITE                                ║");
     println!("║    Deterministic Procedural Vector Graphics • Microsecond CPU Latency • < 50 KB Memory Footprint  ║");
     println!("╚═══════════════════════════════════════════════════════════════════════════════════════════════════╝\n");
 }
@@ -303,7 +303,7 @@ fn print_detailed_result(r: &BenchmarkResult) {
 }
 
 fn print_markdown_table(results: &[BenchmarkResult]) {
-    println!("\n### PVG 0.1 Benchmark Execution Results\n");
+    println!("\n### PVG 0.2 Benchmark Execution Results\n");
     println!("| Benchmark Case | Category | Shapes | Latency (Mean) | Latency (P95) | Peak Heap | Total Alloc Churn | Throughput (ops/s) | Spec (<50KB / <0.2ms) |");
     println!("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |");
     for r in results {
@@ -354,7 +354,7 @@ fn print_json(results: &[BenchmarkResult]) {
 }
 
 fn print_usage() {
-    println!("\nPVG 0.1 Benchmark Suite CLI");
+    println!("\nPVG 0.2 Benchmark Suite CLI");
     println!("Usage:");
     println!("  cargo run --bin pvg_benchmark -- [options]\n");
     println!("Options:");

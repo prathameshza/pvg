@@ -2806,11 +2806,6 @@ mod tests {
         px_at(buf, size, x, y)
     }
 
-    /// Sums the red channel as a coarse energy probe.
-    fn red_energy(buf: &[u8]) -> u64 {
-        buf.chunks(4).map(|p| p[0] as u64).sum()
-    }
-
     /// PVG 0.2 Section 10 `blur`: the filtered shape must spread energy past the sharp
     /// silhouette edge onto the (black) canvas background, and must redistribute
     /// rather than create energy.

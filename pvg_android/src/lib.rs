@@ -919,7 +919,7 @@ pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeOnSurfaceDestroyed(
 /// Returns the latest parse/eval error for the current source (empty = healthy).
 #[no_mangle]
 pub extern "system" fn Java_com_pvg_android_PvgEngine_nativeGetLastError(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     handle: jlong,
 ) -> jni::sys::jstring {

@@ -89,7 +89,6 @@ struct GlyphBitmap {
     /// baseline — `dy` is typically negative).
     dx: i32,
     dy: i32,
-    advance: f32,
     /// Row-major coverage bytes (0–255).
     cover: Vec<u8>,
 }
@@ -106,9 +105,7 @@ fn rasterize_glyph(
         return Some(g.clone());
     }
     let scaled = face.as_scaled(PxScale::from(px));
-    let id = face.glyph_id(ch);
-    let advance = scaled.h_advance(id);
-        let og = scaled.outline_glyph(scaled.scaled_glyph(ch))?;
+    let og = scaled.outline_glyph(scaled.scaled_glyph(ch))?;
     let bb = og.px_bounds();
     let w = (bb.max.x - bb.min.x).max(0.0) as u32;
     let h = (bb.max.y - bb.min.y).max(0.0) as u32;
@@ -126,7 +123,6 @@ fn rasterize_glyph(
         h,
         dx: bb.min.x as i32,
         dy: bb.min.y as i32,
-        advance,
         cover,
     };
     cache.insert(key, g.clone());

@@ -31,7 +31,7 @@ Add `pvg` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-pvg = "0.1.0"
+pvg = "0.2.0"
 ```
 
 ### Basic Compilation & SVG Export

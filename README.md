@@ -318,7 +318,7 @@ Add the dependency to your Android app's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("io.github.prathameshza:pvg:0.1.0")
+    implementation("io.github.prathameshza:pvg:0.2.0")
 }
 ```
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PVG 0.1 - Native Android Cross-Compilation Script
+PVG 0.2 - Native Android Cross-Compilation Script
 Compiles native Rust binaries for both arm64-v8a (Physical Hardware) and x86_64 (Android Studio Emulator)
 """
 
@@ -119,10 +119,10 @@ def main():
     args = parser.parse_args()
 
     project_root = os.path.dirname(os.path.abspath(__file__))
-    output_jni_dir = os.path.join(project_root, "android", "app", "src", "main", "jniLibs")
+    output_jni_dir = os.path.join(project_root, "android", "pvg-android", "src", "main", "jniLibs")
 
     print(f"\n{BOLD}==============================================================={RESET}")
-    print(f"{CYAN}{BOLD}   ⚡ PVG 0.1 Native Android Engine Cross-Compiler for Windows   {RESET}")
+    print(f"{CYAN}{BOLD}   ⚡ PVG 0.2 Native Android Engine Cross-Compiler for Windows   {RESET}")
     print(f"{BOLD}==============================================================={RESET}\n")
 
     ndk_path = find_android_ndk()
