@@ -27,8 +27,8 @@ circle
     if let DrawCmd::Circle { center, radius, style } = &dl.items[0] {
         assert_eq!(*center, (250.0, 250.0));
         assert_eq!(*radius, 100.0);
-        assert_eq!(style.fill, Color::Rgba(0, 255, 204, 255));
-        assert_eq!(style.stroke, Color::Rgba(255, 255, 255, 255));
+        assert_eq!(style.fill, Paint::Color(Color::Rgba(0, 255, 204, 255)));
+        assert_eq!(style.stroke, Paint::Color(Color::Rgba(255, 255, 255, 255)));
         assert_eq!(style.width, 2.5);
         assert!((style.opacity - 0.85).abs() < 1e-4);
     } else {

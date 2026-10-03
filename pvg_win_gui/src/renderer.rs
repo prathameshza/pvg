@@ -1,10 +1,6 @@
-use eframe::egui::{Color32, Painter, Pos2, Rect, Stroke};
-use eframe::epaint::PathShape;
+use eframe::egui::{self, Color32, ColorImage, Painter, Pos2, Rect, TextureOptions};
 use pvg::ast::Color as PvgColor;
-use pvg::draw_list::{DrawCmd, DrawList, DrawPathCommand, DrawStyle, TextAlign};
-use std::f32::consts::PI as PI_F32;
-use std::f64::consts::PI as PI_F64;
-use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect as SkiaRect, Stroke as SkiaStroke, Transform};
+use pvg::draw_list::{DrawCmd, DrawList, Paint as PvgPaint, TextAlign};
 
 #[inline]
 pub fn to_egui_color(col: &PvgColor, opacity: f64) -> Color32 {
@@ -17,620 +13,187 @@ pub fn to_egui_color(col: &PvgColor, opacity: f64) -> Color32 {
     }
 }
 
-pub fn escape_xml(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&apos;"),
-            _ => out.push(c),
+/// Flat fallback from `Paint` to a solid egui color (used for the text
+/// overlay; vector fills go through the software rasterizer with real
+/// gradients). Gradients use the middle stop's color.
+pub fn paint_to_egui(paint: &PvgPaint, opacity: f64) -> Color32 {
+    match paint {
+        PvgPaint::Color(c) => to_egui_color(c, opacity),
+        // Pattern tiles need the full rasterizer; the text overlay uses a
+        // neutral gray so patterned text stays visible.
+        PvgPaint::Pattern(_) => to_egui_color(&PvgColor::Rgba(136, 136, 136, 255), opacity),
+        PvgPaint::Linear { stops, .. }
+        | PvgPaint::Radial { stops, .. }
+        | PvgPaint::Angular { stops, .. } => {
+            if stops.is_empty() {
+                Color32::TRANSPARENT
+            } else {
+                let mid = &stops[stops.len() / 2].color;
+                to_egui_color(mid, opacity)
+            }
         }
     }
-    out
 }
 
-pub fn render_draw_list(painter: &Painter, draw_list: &DrawList, origin: Pos2, zoom: f32) {
-    let to_screen = |p: (f64, f64)| -> Pos2 {
-        Pos2::new(
-            origin.x + (p.0 as f32) * zoom,
-            origin.y + (p.1 as f32) * zoom,
-        )
-    };
+// ---------------------------------------------------------------------------
+// Live preview: full-fidelity software raster -> GPU texture + text overlay
+// ---------------------------------------------------------------------------
 
-    // 1. Canvas Background
-    if let Some(ref bg) = draw_list.background {
-        let bg_color = to_egui_color(bg, 1.0);
-        let canvas_rect = Rect::from_min_size(
-            origin,
-            eframe::egui::vec2(
-                (draw_list.canvas_width as f32) * zoom,
-                (draw_list.canvas_height as f32) * zoom,
-            ),
+/// Frame cache for the live preview: skips both CPU rasterization *and* GPU
+/// texture upload when nothing changed since the last frame.
+///
+/// Keyed by `(doc_rev, time, render_scale, canvas)`: typing new code bumps
+/// `doc_rev`, animation advances `time`, zoom changes `render_scale`. Pan does
+/// not affect the key (the same texture is just drawn at a new offset).
+/// Effect layers inside the rasterizer have their own sub-cache
+/// (`software::FxCache`), so animated scenes with static glow/shadow only
+/// re-rasterize what actually moves.
+#[derive(Default)]
+pub struct PreviewCache {
+    fx: crate::software::FxCache,
+    last_key: Option<(u64, u64, u32, u32, u32)>,
+    texture: Option<egui::TextureHandle>,
+}
+
+impl PreviewCache {
+    /// Renders the preview: all vector geometry (with real PVG 0.2 gradients,
+    /// dash, clip, blend, blur, glow, shadow) is rasterized on the CPU by
+    /// [`crate::software`] and uploaded as a texture; text is then overlaid
+    /// with real egui fonts at the exact screen positions.
+    ///
+    /// Text limitation (documented): overlay text always draws on top of the
+    /// vector texture, so a `text` primitive ordered *under* a later shape will
+    /// still appear above it, and `clip` masking does not apply to overlay text.
+    /// All shipped presets author text-on-top, where this is exact.
+    pub fn render_draw_list(
+        &mut self,
+        ctx: &egui::Context,
+        painter: &Painter,
+        draw_list: &DrawList,
+        origin: Pos2,
+        zoom: f32,
+        doc_rev: u64,
+        time: f64,
+    ) {
+        // Preview resolution (clamped so extreme zoom doesn't explode the
+        // pixmap); the texture is min/mag-filtered onto the canvas rect.
+        let render_scale = zoom.clamp(0.25, 3.0);
+        let key = (
+            doc_rev,
+            time.to_bits(),
+            render_scale.to_bits(),
+            ((draw_list.canvas_width as f32) * render_scale).round() as u32,
+            ((draw_list.canvas_height as f32) * render_scale).round() as u32,
         );
-        painter.rect_filled(canvas_rect, 0.0, bg_color);
-    }
-
-    // 2. Render Primitives with Screen-Space Adaptive Resolution
-    for cmd in &draw_list.items {
-        match cmd {
-            DrawCmd::Circle { center, radius, style } => {
-                let c = to_screen(*center);
-                let r = (*radius as f32) * zoom;
-                let fill_c = to_egui_color(&style.fill, style.opacity);
-                let stroke_c = to_egui_color(&style.stroke, style.opacity);
-                let stroke = Stroke::new((style.width as f32) * zoom, stroke_c);
-                painter.circle(c, r, fill_c, stroke);
+        if self.last_key != Some(key) {
+            if let Ok(pixmap) = self.fx.render_cached(draw_list, render_scale) {
+                let image = pixmap_to_color_image(&pixmap);
+                let texture = ctx.load_texture("pvg-preview", image, TextureOptions::LINEAR);
+                self.texture = Some(texture);
+                self.last_key = Some(key);
             }
+        }
 
-            DrawCmd::Ellipse { center, radius, style } => {
-                let c = to_screen(*center);
-                let rx = (radius.0 as f32) * zoom;
-                let ry = (radius.1 as f32) * zoom;
-                let fill_c = to_egui_color(&style.fill, style.opacity);
-                let stroke_c = to_egui_color(&style.stroke, style.opacity);
-                let stroke = Stroke::new((style.width as f32) * zoom, stroke_c);
+        if let Some(ref texture) = self.texture {
+            let dest = Rect::from_min_size(
+                origin,
+                egui::vec2(
+                    (draw_list.canvas_width as f32) * zoom,
+                    (draw_list.canvas_height as f32) * zoom,
+                ),
+            );
+            painter.image(
+                texture.id(),
+                dest,
+                Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+                Color32::WHITE,
+            );
+        }
 
-                // Ramanujan ellipse circumference approximation for adaptive step count
-                let perimeter_est = PI_F32 * (3.0 * (rx + ry) - ((3.0 * rx + ry) * (rx + 3.0 * ry)).sqrt());
-                let steps = ((perimeter_est / 2.0).ceil().clamp(64.0, 512.0)) as usize;
-
-                let mut pts = Vec::with_capacity(steps);
-                for i in 0..steps {
-                    let theta = (i as f32 / steps as f32) * std::f32::consts::TAU;
-                    pts.push(Pos2::new(c.x + rx * theta.cos(), c.y + ry * theta.sin()));
-                }
-                if fill_c != Color32::TRANSPARENT {
-                    painter.add(PathShape::convex_polygon(pts.clone(), fill_c, Stroke::NONE));
-                }
-                if stroke.width > 0.0 && stroke.color != Color32::TRANSPARENT {
-                    painter.add(PathShape::closed_line(pts, stroke));
-                }
-            }
-
-            DrawCmd::Rectangle { pos, size, corner_radius, style } => {
-                let min = to_screen(*pos);
-                let rect = Rect::from_min_size(
-                    min,
-                    eframe::egui::vec2((size.0 as f32) * zoom, (size.1 as f32) * zoom),
-                );
-                let cr = (*corner_radius as f32) * zoom;
-                let fill_c = to_egui_color(&style.fill, style.opacity);
-                let stroke_c = to_egui_color(&style.stroke, style.opacity);
-                let stroke = Stroke::new((style.width as f32) * zoom, stroke_c);
-                painter.rect(rect, cr, fill_c, stroke);
-            }
-
-            DrawCmd::Line { from, to, style } => {
-                let p1 = to_screen(*from);
-                let p2 = to_screen(*to);
-                let stroke_c = to_egui_color(&style.stroke, style.opacity);
-                let stroke = Stroke::new((style.width as f32) * zoom, stroke_c);
-                painter.line_segment([p1, p2], stroke);
-            }
-
-            DrawCmd::Polygon { points, style } => {
-                if points.len() < 2 {
-                    continue;
-                }
-                let screen_pts: Vec<Pos2> = points.iter().map(|p| to_screen(*p)).collect();
-                let fill_c = to_egui_color(&style.fill, style.opacity);
-                let stroke_c = to_egui_color(&style.stroke, style.opacity);
-                let stroke = Stroke::new((style.width as f32) * zoom, stroke_c);
-
-                if fill_c != Color32::TRANSPARENT {
-                    painter.add(PathShape::convex_polygon(screen_pts.clone(), fill_c, Stroke::NONE));
-                }
-                if stroke.width > 0.0 && stroke.color != Color32::TRANSPARENT {
-                    painter.add(PathShape::closed_line(screen_pts, stroke));
-                }
-            }
-
-            DrawCmd::Text { pos, content, size, font_family, align, style } => {
-                let screen_pos = to_screen(*pos);
-                let fill_c = to_egui_color(&style.fill, style.opacity);
-                let egui_align = match align {
-                    TextAlign::Left => eframe::egui::Align2::LEFT_TOP,
-                    TextAlign::Center => eframe::egui::Align2::CENTER_TOP,
-                    TextAlign::Right => eframe::egui::Align2::RIGHT_TOP,
-                };
-                let font_fam = match font_family.to_lowercase().as_str() {
-                    "mono" | "monospace" | "code" => eframe::egui::FontFamily::Monospace,
-                    _ => eframe::egui::FontFamily::Proportional,
-                };
-                let font_id = eframe::egui::FontId::new((*size as f32) * zoom, font_fam);
-                painter.text(screen_pos, egui_align, content, font_id, fill_c);
-            }
-
-            DrawCmd::Path { commands, style } => {
-                let fill_c = to_egui_color(&style.fill, style.opacity);
-                let stroke_c = to_egui_color(&style.stroke, style.opacity);
-                let stroke = Stroke::new((style.width as f32) * zoom, stroke_c);
-
-                struct SubPath {
-                    pts: Vec<Pos2>,
-                    closed: bool,
-                }
-
-                let mut subpaths: Vec<SubPath> = Vec::new();
-                let mut current_subpath = SubPath {
-                    pts: Vec::new(),
-                    closed: false,
-                };
-                let mut current_pt = Pos2::ZERO;
-
-                for cmd in commands {
-                    match cmd {
-                        DrawPathCommand::Start(p) => {
-                            if !current_subpath.pts.is_empty() {
-                                subpaths.push(current_subpath);
-                                current_subpath = SubPath {
-                                    pts: Vec::new(),
-                                    closed: false,
-                                };
-                            }
-                            current_pt = to_screen(*p);
-                            current_subpath.pts.push(current_pt);
-                        }
-
-                        DrawPathCommand::Line(p) => {
-                            if current_subpath.pts.is_empty() {
-                                current_subpath.pts.push(current_pt);
-                            }
-                            current_pt = to_screen(*p);
-                            current_subpath.pts.push(current_pt);
-                        }
-
-                        DrawPathCommand::Quad { cp, ep } => {
-                            let p0 = current_pt;
-                            let p1 = to_screen(*cp);
-                            let p2 = to_screen(*ep);
-
-                            if current_subpath.pts.is_empty() {
-                                current_subpath.pts.push(p0);
-                            }
-
-                            // Adaptive subdivision based on screen-space chord length
-                            let chord_len = (p1.x - p0.x).hypot(p1.y - p0.y) + (p2.x - p1.x).hypot(p2.y - p1.y);
-                            let steps = ((chord_len / 1.5).ceil().clamp(32.0, 512.0)) as usize;
-
-                            for step in 1..=steps {
-                                let t = step as f32 / steps as f32;
-                                let inv = 1.0 - t;
-                                let x = inv * inv * p0.x + 2.0 * inv * t * p1.x + t * t * p2.x;
-                                let y = inv * inv * p0.y + 2.0 * inv * t * p1.y + t * t * p2.y;
-                                current_subpath.pts.push(Pos2::new(x, y));
-                            }
-                            current_pt = p2;
-                        }
-
-                        DrawPathCommand::Curve { c1, c2, ep } => {
-                            let p0 = current_pt;
-                            let p1 = to_screen(*c1);
-                            let p2 = to_screen(*c2);
-                            let p3 = to_screen(*ep);
-
-                            if current_subpath.pts.is_empty() {
-                                current_subpath.pts.push(p0);
-                            }
-
-                            // Adaptive subdivision based on screen-space control polygon length
-                            let chord_len = (p1.x - p0.x).hypot(p1.y - p0.y)
-                                + (p2.x - p1.x).hypot(p2.y - p1.y)
-                                + (p3.x - p2.x).hypot(p3.y - p2.y);
-                            let steps = ((chord_len / 1.5).ceil().clamp(48.0, 768.0)) as usize;
-
-                            for step in 1..=steps {
-                                let t = step as f32 / steps as f32;
-                                let inv = 1.0 - t;
-                                let inv2 = inv * inv;
-                                let inv3 = inv2 * inv;
-                                let t2 = t * t;
-                                let t3 = t2 * t;
-                                let x = inv3 * p0.x + 3.0 * inv2 * t * p1.x + 3.0 * inv * t2 * p2.x + t3 * p3.x;
-                                let y = inv3 * p0.y + 3.0 * inv2 * t * p1.y + 3.0 * inv * t2 * p2.y + t3 * p3.y;
-                                current_subpath.pts.push(Pos2::new(x, y));
-                            }
-                            current_pt = p3;
-                        }
-
-                        DrawPathCommand::Arc { center, radius, start_angle, end_angle } => {
-                            let c = to_screen(*center);
-                            let r = (*radius as f32) * zoom;
-                            let delta = (*end_angle - *start_angle) as f32;
-                            let arc_len = r * delta.abs();
-                            let steps = ((arc_len / 1.5).ceil().clamp(32.0, 512.0)) as usize;
-
-                            for step in 0..=steps {
-                                let t = step as f64 / steps as f64;
-                                let angle = *start_angle + t * (*end_angle - *start_angle);
-                                let x = c.x + r * (angle.cos() as f32);
-                                let y = c.y + r * (angle.sin() as f32);
-                                current_subpath.pts.push(Pos2::new(x, y));
-                            }
-                            if let Some(last) = current_subpath.pts.last() {
-                                current_pt = *last;
-                            }
-                        }
-
-                        DrawPathCommand::Close => {
-                            current_subpath.closed = true;
-                        }
-                    }
-                }
-
-                if !current_subpath.pts.is_empty() {
-                    subpaths.push(current_subpath);
-                }
-
-                // Render filled and stroked subpaths
-                for sp in &subpaths {
-                    if sp.pts.len() < 2 {
-                        continue;
-                    }
-                    if sp.closed && fill_c != Color32::TRANSPARENT {
-                        painter.add(PathShape::convex_polygon(sp.pts.clone(), fill_c, Stroke::NONE));
-                    }
-                    if stroke.width > 0.0 && stroke.color != Color32::TRANSPARENT {
-                        if sp.closed {
-                            painter.add(PathShape::closed_line(sp.pts.clone(), stroke));
-                        } else {
-                            painter.add(PathShape::line(sp.pts.clone(), stroke));
-                        }
-                    }
-                }
-            }
+        let to_screen = |p: (f64, f64)| -> Pos2 {
+            Pos2::new(origin.x + (p.0 as f32) * zoom, origin.y + (p.1 as f32) * zoom)
+        };
+        let mut texts = Vec::new();
+        for cmd in &draw_list.items {
+            collect_text(cmd, &mut texts);
+        }
+        for t in texts {
+            draw_text_overlay(painter, t, &to_screen, zoom);
         }
     }
 }
 
-pub fn export_svg(draw_list: &DrawList) -> String {
-    let mut out = String::with_capacity(1024 * 4);
-    out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-    out.push_str(&format!(
-        "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-        draw_list.canvas_width, draw_list.canvas_height, draw_list.canvas_width, draw_list.canvas_height
-    ));
-
-    let format_color = |c: &PvgColor| -> String {
-        match c {
-            PvgColor::Rgba(r, g, b, 255) => format!("#{:02x}{:02x}{:02x}", r, g, b),
-            PvgColor::Rgba(r, g, b, a) => format!("rgba({}, {}, {}, {:.3})", r, g, b, *a as f64 / 255.0),
-            PvgColor::None => "none".to_string(),
+fn collect_text<'a>(cmd: &'a DrawCmd, out: &mut Vec<&'a DrawCmd>) {
+    match cmd {
+        // Note: `group` nodes are flattened into transformed primitives at
+        // eval time, so only `Text` and `Clip` content need walking here.
+        DrawCmd::Text { .. } => out.push(cmd),
+        DrawCmd::Clip { content, .. } => {
+            for sub in content {
+                collect_text(sub, out);
+            }
         }
-    };
+        _ => {}
+    }
+}
 
-    let format_style = |s: &DrawStyle| -> String {
-        let mut attrs = Vec::new();
-        attrs.push(format!("fill=\"{}\"", format_color(&s.fill)));
-        if s.stroke != PvgColor::None && s.width > 0.0 {
-            attrs.push(format!("stroke=\"{}\"", format_color(&s.stroke)));
-            attrs.push(format!("stroke-width=\"{:.2}\"", s.width));
+/// tiny-skia premultiplied RGBA -> egui unpremultiplied `ColorImage`.
+fn pixmap_to_color_image(pixmap: &tiny_skia::Pixmap) -> ColorImage {
+    let (w, h) = (pixmap.width() as usize, pixmap.height() as usize);
+    let src = pixmap.data();
+    let mut pixels = Vec::with_capacity(w * h);
+    for px in src.chunks_exact(4) {
+        let (r, g, b, a) = (px[0] as u32, px[1] as u32, px[2] as u32, px[3] as u32);
+        if a == 0 {
+            pixels.push(Color32::TRANSPARENT);
         } else {
-            attrs.push("stroke=\"none\"".to_string());
-        }
-        if (s.opacity - 1.0).abs() > 0.001 {
-            attrs.push(format!("opacity=\"{:.3}\"", s.opacity));
-        }
-        attrs.join(" ")
-    };
-
-    if let Some(ref bg) = draw_list.background {
-        out.push_str(&format!(
-            "  <rect width=\"100%\" height=\"100%\" fill=\"{}\" />\n",
-            format_color(bg)
-        ));
-    }
-
-    for cmd in &draw_list.items {
-        match cmd {
-            DrawCmd::Circle { center, radius, style } => {
-                out.push_str(&format!(
-                    "  <circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" {} />\n",
-                    center.0, center.1, radius, format_style(style)
-                ));
-            }
-            DrawCmd::Ellipse { center, radius, style } => {
-                out.push_str(&format!(
-                    "  <ellipse cx=\"{:.2}\" cy=\"{:.2}\" rx=\"{:.2}\" ry=\"{:.2}\" {} />\n",
-                    center.0, center.1, radius.0, radius.1, format_style(style)
-                ));
-            }
-            DrawCmd::Rectangle { pos, size, corner_radius, style } => {
-                if *corner_radius > 0.0 {
-                    out.push_str(&format!(
-                        "  <rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"{:.2}\" ry=\"{:.2}\" {} />\n",
-                        pos.0, pos.1, size.0, size.1, corner_radius, corner_radius, format_style(style)
-                    ));
-                } else {
-                    out.push_str(&format!(
-                        "  <rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" {} />\n",
-                        pos.0, pos.1, size.0, size.1, format_style(style)
-                    ));
-                }
-            }
-            DrawCmd::Line { from, to, style } => {
-                out.push_str(&format!(
-                    "  <line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" {} />\n",
-                    from.0, from.1, to.0, to.1, format_style(style)
-                ));
-            }
-            DrawCmd::Polygon { points, style } => {
-                if !points.is_empty() {
-                    let pts: Vec<String> = points.iter().map(|p| format!("{:.2},{:.2}", p.0, p.1)).collect();
-                    out.push_str(&format!(
-                        "  <polygon points=\"{}\" {} />\n",
-                        pts.join(" "),
-                        format_style(style)
-                    ));
-                }
-            }
-            DrawCmd::Text { pos, content, size, font_family, align, style } => {
-                let anchor = match align {
-                    TextAlign::Left => "start",
-                    TextAlign::Center => "middle",
-                    TextAlign::Right => "end",
-                };
-                out.push_str(&format!(
-                    "  <text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" font-family=\"{}\" text-anchor=\"{}\" dominant-baseline=\"hanging\" {}>{}</text>\n",
-                    pos.0, pos.1, size, font_family, anchor, format_style(style), escape_xml(content)
-                ));
-            }
-            DrawCmd::Path { commands, style } => {
-                let mut d = Vec::new();
-                for c in commands {
-                    match c {
-                        DrawPathCommand::Start(p) => d.push(format!("M {:.2} {:.2}", p.0, p.1)),
-                        DrawPathCommand::Line(p) => d.push(format!("L {:.2} {:.2}", p.0, p.1)),
-                        DrawPathCommand::Quad { cp, ep } => d.push(format!("Q {:.2} {:.2}, {:.2} {:.2}", cp.0, cp.1, ep.0, ep.1)),
-                        DrawPathCommand::Curve { c1, c2, ep } => d.push(format!("C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}", c1.0, c1.1, c2.0, c2.1, ep.0, ep.1)),
-                        DrawPathCommand::Arc { center, radius, start_angle, end_angle } => {
-                            let delta = end_angle - start_angle;
-                            let end_x = center.0 + radius * end_angle.cos();
-                            let end_y = center.1 + radius * end_angle.sin();
-                            let sweep = if delta > 0.0 { 1 } else { 0 };
-                            let large_arc = if delta.abs() > PI_F64 { 1 } else { 0 };
-                            d.push(format!("A {:.2} {:.2} 0 {} {} {:.2} {:.2}", radius, radius, large_arc, sweep, end_x, end_y));
-                        }
-                        DrawPathCommand::Close => d.push("Z".into()),
-                    }
-                }
-                out.push_str(&format!("  <path d=\"{}\" {} />\n", d.join(" "), format_style(style)));
-            }
+            pixels.push(Color32::from_rgba_unmultiplied(
+                ((r * 255 / a).min(255)) as u8,
+                ((g * 255 / a).min(255)) as u8,
+                ((b * 255 / a).min(255)) as u8,
+                a as u8,
+            ));
         }
     }
-
-    out.push_str("</svg>\n");
-    out
+    ColorImage { size: [w, h], pixels }
 }
 
-fn color_to_skia(col: &PvgColor, opacity: f64) -> Option<Paint<'static>> {
-    match col {
-        PvgColor::Rgba(r, g, b, a) => {
-            let final_a = ((*a as f64) * opacity).clamp(0.0, 255.0).round() as u8;
-            if final_a == 0 {
-                return None;
-            }
-            let mut paint = Paint::default();
-            paint.set_color_rgba8(*r, *g, *b, final_a);
-            paint.anti_alias = true;
-            Some(paint)
-        }
-        PvgColor::None => None,
+fn draw_text_overlay(
+    painter: &Painter,
+    cmd: &DrawCmd,
+    to_screen: &impl Fn((f64, f64)) -> Pos2,
+    zoom: f32,
+) {
+    if let DrawCmd::Text { pos, content, size, font_family, align, style } = cmd {
+        let screen_pos = to_screen(*pos);
+        // PVG 0.2 note: stroke/blur/shadow/glow on text are not applied to the
+        // overlay (fill + opacity only); vector-side FX never touches text.
+        let fill_c = paint_to_egui(&style.fill, style.opacity);
+        let egui_align = match align {
+            TextAlign::Left => egui::Align2::LEFT_TOP,
+            TextAlign::Center => egui::Align2::CENTER_TOP,
+            TextAlign::Right => egui::Align2::RIGHT_TOP,
+        };
+        let font_fam = match font_family.to_lowercase().as_str() {
+            "mono" | "monospace" | "code" => egui::FontFamily::Monospace,
+            _ => egui::FontFamily::Proportional,
+        };
+        let font_id = egui::FontId::new((*size as f32) * zoom, font_fam);
+        painter.text(screen_pos, egui_align, content, font_id, fill_c);
     }
 }
 
+// ---------------------------------------------------------------------------
+// Exports (delegate to the core / software rasterizer - single source of truth)
+// ---------------------------------------------------------------------------
+
+/// SVG export via the core 0.2 emitter (gradients, clip, dash, blend, filters).
+pub fn export_svg(draw_list: &DrawList) -> String {
+    draw_list.to_svg()
+}
+
+/// PNG export via the full-fidelity 0.2 software rasterizer.
 pub fn rasterize_png(draw_list: &DrawList, scale: f32) -> Result<Vec<u8>, String> {
-    let scale = if scale <= 0.0 { 1.0 } else { scale };
-    let width = ((draw_list.canvas_width as f32) * scale).round() as u32;
-    let height = ((draw_list.canvas_height as f32) * scale).round() as u32;
-
-    if width == 0 || height == 0 {
-        return Err("Canvas dimensions must be greater than 0".into());
-    }
-
-    let mut pixmap = Pixmap::new(width, height)
-        .ok_or_else(|| format!("Failed to allocate Pixmap of size {}x{}", width, height))?;
-    let transform = Transform::from_scale(scale, scale);
-
-    if let Some(ref bg) = draw_list.background {
-        if let Some(bg_paint) = color_to_skia(bg, 1.0) {
-            if let Some(rect) = SkiaRect::from_xywh(0.0, 0.0, width as f32, height as f32) {
-                pixmap.fill_rect(rect, &bg_paint, Transform::identity(), None);
-            }
-        }
-    }
-
-    for cmd in &draw_list.items {
-        match cmd {
-            DrawCmd::Circle { center, radius, style } => {
-                let mut pb = PathBuilder::new();
-                pb.push_circle(center.0 as f32, center.1 as f32, *radius as f32);
-                if let Some(path) = pb.finish() {
-                    if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
-                        pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
-                    }
-                    if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
-                        if style.width > 0.0 {
-                            let mut stroke = SkiaStroke::default();
-                            stroke.width = style.width as f32;
-                            pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
-                        }
-                    }
-                }
-            }
-            DrawCmd::Ellipse { center, radius, style } => {
-                let x = (center.0 - radius.0) as f32;
-                let y = (center.1 - radius.1) as f32;
-                let w = (radius.0 * 2.0) as f32;
-                let h = (radius.1 * 2.0) as f32;
-                if let Some(rect) = SkiaRect::from_xywh(x, y, w, h) {
-                    let mut pb = PathBuilder::new();
-                    pb.push_oval(rect);
-                    if let Some(path) = pb.finish() {
-                        if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
-                            pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
-                        }
-                        if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
-                            if style.width > 0.0 {
-                                let mut stroke = SkiaStroke::default();
-                                stroke.width = style.width as f32;
-                                pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
-                            }
-                        }
-                    }
-                }
-            }
-            DrawCmd::Rectangle { pos, size, corner_radius, style } => {
-                let x = pos.0 as f32;
-                let y = pos.1 as f32;
-                let w = size.0 as f32;
-                let h = size.1 as f32;
-                let cr = (*corner_radius as f32).max(0.0);
-                if w > 0.0 && h > 0.0 {
-                    let path = if cr > 0.0 {
-                        let r = cr.min(w / 2.0).min(h / 2.0);
-                        let mut pb = PathBuilder::new();
-                        pb.move_to(x + r, y);
-                        pb.line_to(x + w - r, y);
-                        pb.quad_to(x + w, y, x + w, y + r);
-                        pb.line_to(x + w, y + h - r);
-                        pb.quad_to(x + w, y + h, x + w - r, y + h);
-                        pb.line_to(x + r, y + h);
-                        pb.quad_to(x, y + h, x, y + h - r);
-                        pb.line_to(x, y + r);
-                        pb.quad_to(x, y, x + r, y);
-                        pb.close();
-                        pb.finish()
-                    } else {
-                        SkiaRect::from_xywh(x, y, w, h).and_then(|r| {
-                            let mut pb = PathBuilder::new();
-                            pb.push_rect(r);
-                            pb.finish()
-                        })
-                    };
-
-                    if let Some(path) = path {
-                        if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
-                            pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
-                        }
-                        if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
-                            if style.width > 0.0 {
-                                let mut stroke = SkiaStroke::default();
-                                stroke.width = style.width as f32;
-                                pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
-                            }
-                        }
-                    }
-                }
-            }
-            DrawCmd::Line { from, to, style } => {
-                let mut pb = PathBuilder::new();
-                pb.move_to(from.0 as f32, from.1 as f32);
-                pb.line_to(to.0 as f32, to.1 as f32);
-                if let Some(path) = pb.finish() {
-                    if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
-                        if style.width > 0.0 {
-                            let mut stroke = SkiaStroke::default();
-                            stroke.width = style.width as f32;
-                            pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
-                        }
-                    }
-                }
-            }
-            DrawCmd::Polygon { points, style } => {
-                if points.len() >= 2 {
-                    let mut pb = PathBuilder::new();
-                    pb.move_to(points[0].0 as f32, points[0].1 as f32);
-                    for p in &points[1..] {
-                        pb.line_to(p.0 as f32, p.1 as f32);
-                    }
-                    pb.close();
-                    if let Some(path) = pb.finish() {
-                        if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
-                            pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
-                        }
-                        if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
-                            if style.width > 0.0 {
-                                let mut stroke = SkiaStroke::default();
-                                stroke.width = style.width as f32;
-                                pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
-                            }
-                        }
-                    }
-                }
-            }
-            DrawCmd::Text { .. } => {}
-            DrawCmd::Path { commands, style } => {
-                let mut pb = PathBuilder::new();
-                let mut has_commands = false;
-                for c in commands {
-                    match c {
-                        DrawPathCommand::Start(p) => {
-                            pb.move_to(p.0 as f32, p.1 as f32);
-                            has_commands = true;
-                        }
-                        DrawPathCommand::Line(p) => {
-                            if !has_commands {
-                                pb.move_to(p.0 as f32, p.1 as f32);
-                                has_commands = true;
-                            } else {
-                                pb.line_to(p.0 as f32, p.1 as f32);
-                            }
-                        }
-                        DrawPathCommand::Quad { cp, ep } => {
-                            if !has_commands {
-                                pb.move_to(cp.0 as f32, cp.1 as f32);
-                                has_commands = true;
-                            }
-                            pb.quad_to(cp.0 as f32, cp.1 as f32, ep.0 as f32, ep.1 as f32);
-                        }
-                        DrawPathCommand::Curve { c1, c2, ep } => {
-                            if !has_commands {
-                                pb.move_to(c1.0 as f32, c1.1 as f32);
-                                has_commands = true;
-                            }
-                            pb.cubic_to(c1.0 as f32, c1.1 as f32, c2.0 as f32, c2.1 as f32, ep.0 as f32, ep.0 as f32);
-                        }
-                        DrawPathCommand::Arc { center, radius, start_angle, end_angle } => {
-                            let delta = end_angle - start_angle;
-                            let steps = ((delta.abs() / (PI_F64 / 16.0)).ceil().max(8.0)) as usize;
-                            for step in 0..=steps {
-                                let t = step as f64 / steps as f64;
-                                let angle = start_angle + t * delta;
-                                let px = center.0 + radius * angle.cos();
-                                let py = center.1 + radius * angle.sin();
-                                if !has_commands && step == 0 {
-                                    pb.move_to(px as f32, py as f32);
-                                    has_commands = true;
-                                } else {
-                                    pb.line_to(px as f32, py as f32);
-                                }
-                            }
-                        }
-                        DrawPathCommand::Close => {
-                            pb.close();
-                        }
-                    }
-                }
-
-                if let Some(path) = pb.finish() {
-                    if let Some(fill_paint) = color_to_skia(&style.fill, style.opacity) {
-                        pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
-                    }
-                    if let Some(stroke_paint) = color_to_skia(&style.stroke, style.opacity) {
-                        if style.width > 0.0 {
-                            let mut stroke = SkiaStroke::default();
-                            stroke.width = style.width as f32;
-                            pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
+    let pixmap = crate::software::render_pixmap(draw_list, scale)?;
     pixmap.encode_png().map_err(|e| format!("PNG encode error: {}", e))
 }

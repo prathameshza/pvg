@@ -18,6 +18,15 @@ pub enum TokenKind {
     Pvg,
     Canvas,
     Background,
+    Snap,
+    Filter,
+    Param,
+    Pattern,
+    Sprite,
+    Spline,
+    Palette,
+    Data,
+    Row,
     Set,
     Def,
     Return,
@@ -39,6 +48,7 @@ pub enum TokenKind {
     Path,
     Text,
     Group,
+    Clip,
 
     // Properties
     Center,
@@ -55,6 +65,20 @@ pub enum TokenKind {
     Opacity,
     Rot,
     Scale,
+    Cap,
+    Join,
+    Miter,
+    Dash,
+    Blend,
+    Blur,
+    Shadow,
+    Glow,
+
+    // Gradient keywords (PVG 0.2)
+    Linear,
+    Radial,
+    Angular,
+    Stop,
 
     // Path commands
     Start,
@@ -110,11 +134,13 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn tokenize_all(&mut self) -> Result<Vec<Token>, PvgError> {
+        let lines: Vec<&str> = self.source.lines().collect();
         let mut tokens = Vec::new();
-        let mut line_num = 0;
+        let mut li: usize = 0;
 
-        for raw_line in self.source.lines() {
-            line_num += 1;
+        while li < lines.len() {
+            let line_num = li + 1;
+            let raw_line = lines[li];
 
             let bytes = raw_line.as_bytes();
             let mut spaces = 0;
@@ -131,6 +157,7 @@ impl<'a> Lexer<'a> {
             }
 
             if spaces == bytes.len() || bytes[spaces] == b'#' {
+                li += 1;
                 continue;
             }
 
@@ -164,30 +191,136 @@ impl<'a> Lexer<'a> {
             }
 
             let content = &raw_line[spaces..];
-            self.tokenize_line(content, line_num, spaces + 1, &mut tokens)?;
+            // Triple-quoted strings (`"""`) may span lines (sprite art, text
+            // blocks). They consume whole following lines as raw content.
+            let extra = if triple_opener_before_comment(content) {
+                self.tokenize_line_with_triple(
+                    content, &lines, &mut li, line_num, spaces + 1, spaces, &mut tokens,
+                )?
+            } else {
+                self.tokenize_line(content, line_num, spaces + 1, &mut tokens)?;
+                0
+            };
             tokens.push(Token {
                 kind: TokenKind::Newline,
                 line: line_num,
                 col: raw_line.len() + 1,
             });
+            li += 1 + extra;
         }
 
+        let last_line = lines.len().max(1);
         while self.indent_stack.len() > 1 {
             self.indent_stack.pop();
             tokens.push(Token {
                 kind: TokenKind::Dedent,
-                line: line_num.max(1),
+                line: last_line,
                 col: 1,
             });
         }
 
         tokens.push(Token {
             kind: TokenKind::Eof,
-            line: line_num.max(1),
+            line: last_line,
             col: 1,
         });
 
         Ok(tokens)
+    }
+
+    /// Lexes a line containing a `"""` opener. Emits the prefix tokens, one
+    /// raw multi-line `String` token, and any same-line tail. Returns how many
+    /// *extra* source lines were consumed (continuation + closer lines).
+    #[allow(clippy::too_many_arguments)]
+    fn tokenize_line_with_triple(
+        &self,
+        content: &str,
+        lines: &[&str],
+        li: &mut usize,
+        line_num: usize,
+        col_offset: usize,
+        base_spaces: usize,
+        tokens: &mut Vec<Token>,
+    ) -> Result<usize, PvgError> {
+        let open = content.find("\"\"\"").unwrap();
+        let (prefix, rest) = content.split_at(open);
+        if !prefix.trim().is_empty() {
+            self.tokenize_line(prefix, line_num, col_offset, tokens)?;
+        }
+        let open_col = col_offset + open;
+        let after_open = &rest[3..];
+
+        // Opener and closer on the same line: `data """..11.."""`.
+        if let Some(close) = after_open.find("\"\"\"") {
+            tokens.push(Token {
+                kind: TokenKind::String(after_open[..close].to_string()),
+                line: line_num,
+                col: open_col,
+            });
+            let tail = &after_open[close + 3..];
+            if !tail.trim().is_empty() {
+                self.tokenize_line(tail, line_num, open_col + 3 + close + 3, tokens)?;
+            }
+            return Ok(0);
+        }
+
+        // Multi-line form: the opener must end the line (a trailing
+        // `# comment` is allowed).
+        {
+            let tail = after_open.trim_start();
+            if !(tail.is_empty() || tail.starts_with('#')) {
+                return Err(PvgError::lex(
+                    line_num,
+                    open_col,
+                    "Multi-line \"\"\" strings must start at the end of the line (e.g. `data \"\"\"`).",
+                ));
+            }
+        }
+
+        let mut body: Vec<String> = Vec::new();
+        let mut extra = 0usize;
+        loop {
+            let nli = *li + 1 + extra;
+            if nli >= lines.len() {
+                return Err(PvgError::lex(line_num, open_col, "Unclosed triple-quoted string."));
+            }
+            let l = lines[nli];
+            let lb = l.as_bytes();
+            let mut sp = 0;
+            while sp < lb.len() && lb[sp] == b' ' {
+                sp += 1;
+            }
+            if l[sp..].starts_with("\"\"\"") {
+                let tail = &l[sp + 3..];
+                // A trailing `# comment` after the closer is allowed.
+                let tail_trim = tail.trim_start();
+                if !(tail_trim.is_empty() || tail_trim.starts_with('#')) {
+                    return Err(PvgError::lex(
+                        nli + 1,
+                        sp + 4,
+                        "Unexpected content after closing \"\"\".",
+                    ));
+                }
+                extra += 1; // consume the closer line itself
+                break;
+            }
+            // Dedent continuation lines by the opener's block indent so art
+            // and text blocks read naturally (leading spaces are transparent
+            // in sprites anyway).
+            let mut cut = 0;
+            while cut < base_spaces && cut < lb.len() && lb[cut] == b' ' {
+                cut += 1;
+            }
+            body.push(l[cut..].to_string());
+            extra += 1;
+        }
+
+        tokens.push(Token {
+            kind: TokenKind::String(body.join("\n")),
+            line: line_num,
+            col: open_col,
+        });
+        Ok(extra)
     }
 
     fn tokenize_line(
@@ -382,6 +515,15 @@ impl<'a> Lexer<'a> {
                     "PVG" | "CPSVG" => TokenKind::Pvg,
                     "canvas" => TokenKind::Canvas,
                     "background" => TokenKind::Background,
+                    "snap" => TokenKind::Snap,
+                    "filter" => TokenKind::Filter,
+                    "param" => TokenKind::Param,
+                    "pattern" => TokenKind::Pattern,
+                    "sprite" => TokenKind::Sprite,
+                    "spline" => TokenKind::Spline,
+                    "palette" => TokenKind::Palette,
+                    "data" => TokenKind::Data,
+                    "row" => TokenKind::Row,
                     "set" => TokenKind::Set,
                     "def" => TokenKind::Def,
                     "return" => TokenKind::Return,
@@ -401,6 +543,7 @@ impl<'a> Lexer<'a> {
                     "path" => TokenKind::Path,
                     "text" => TokenKind::Text,
                     "group" => TokenKind::Group,
+                    "clip" => TokenKind::Clip,
                     "center" => TokenKind::Center,
                     "radius" => TokenKind::Radius,
                     "pos" => TokenKind::Pos,
@@ -415,6 +558,18 @@ impl<'a> Lexer<'a> {
                     "opacity" => TokenKind::Opacity,
                     "rot" => TokenKind::Rot,
                     "scale" => TokenKind::Scale,
+                    "cap" => TokenKind::Cap,
+                    "join" => TokenKind::Join,
+                    "miter" => TokenKind::Miter,
+                    "dash" => TokenKind::Dash,
+                    "blend" => TokenKind::Blend,
+                    "blur" => TokenKind::Blur,
+                    "shadow" => TokenKind::Shadow,
+                    "glow" => TokenKind::Glow,
+                    "linear" => TokenKind::Linear,
+                    "radial" => TokenKind::Radial,
+                    "angular" | "conic" => TokenKind::Angular,
+                    "stop" => TokenKind::Stop,
                     "start" => TokenKind::Start,
                     "quad" => TokenKind::Quad,
                     "curve" => TokenKind::Curve,
@@ -449,4 +604,38 @@ impl<'a> Lexer<'a> {
 
         Ok(())
     }
+}
+
+/// Reports whether a `"""` opener appears on this line *before* any real `#`
+/// comment start (mirroring `tokenize_line`'s hex-color rule so `#fff`-style
+/// colors don't count as comments).
+fn triple_opener_before_comment(content: &str) -> bool {
+    let bytes = content.as_bytes();
+    let open = match content.find("\"\"\"") {
+        Some(i) => i,
+        None => return false,
+    };
+    let mut i = 0;
+    while i < open {
+        if bytes[i] == b'#' {
+            let mut hex_end = i + 1;
+            while hex_end < bytes.len() && bytes[hex_end].is_ascii_hexdigit() {
+                hex_end += 1;
+            }
+            let hex_len = hex_end - (i + 1);
+            if hex_len == 3 || hex_len == 6 || hex_len == 8 {
+                let is_delim = hex_end == bytes.len()
+                    || bytes[hex_end].is_ascii_whitespace()
+                    || matches!(bytes[hex_end], b']' | b')' | b',' | b':' | b'"');
+                if is_delim {
+                    i = hex_end;
+                    continue;
+                }
+            }
+            // A real comment starts here; the `"""` is inside it.
+            return false;
+        }
+        i += 1;
+    }
+    true
 }

@@ -1,11 +1,17 @@
 package com.pvg.android
 
 import android.util.Log
+import android.view.Choreographer
 import android.view.Surface
 import java.io.Closeable
 
 /**
  * Low-level JNI interface bridging to the native Rust engine (`libpvg_android.so`).
+ *
+ * Frame pacing is display-locked: [startVsync] posts a [Choreographer]
+ * callback that forwards every panel tick to the native render thread via
+ * [nativeOnVsync]. This phase-locks output to 60/90/120Hz — a free-running
+ * timer can never hold 60 FPS (timer slack + drift against SurfaceFlinger).
  */
 class PvgEngine(
     initialSource: String,
@@ -14,6 +20,32 @@ class PvgEngine(
 ) : Closeable {
 
     private var nativeHandle: Long = 0
+
+    private val choreographer: Choreographer = Choreographer.getInstance()
+
+    @Volatile
+    private var vsyncRunning = false
+
+    private val frameCallback = object : Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            if (!vsyncRunning || nativeHandle == 0L) return
+            nativeOnVsync(nativeHandle, frameTimeNanos)
+            if (vsyncRunning) choreographer.postFrameCallback(this)
+        }
+    }
+
+    /** Starts display-locked ticks; idempotent. Call on the UI thread. */
+    fun startVsync() {
+        if (vsyncRunning) return
+        vsyncRunning = true
+        choreographer.postFrameCallback(frameCallback)
+    }
+
+    /** Stops display ticks; idempotent. Call on the UI thread. */
+    fun stopVsync() {
+        vsyncRunning = false
+        choreographer.removeFrameCallback(frameCallback)
+    }
 
     init {
         nativeHandle = nativeInit(initialSource, isPlaying, speed)
@@ -44,6 +76,31 @@ class PvgEngine(
         }
     }
 
+    /**
+     * Sets a host uniform (`param`, PVG 0.2 spec section 18.1) declared by the
+     * current source. Overrides the document's default value and re-renders the
+     * next frame.
+     */
+    fun setParam(name: String, value: Double) {
+        if (nativeHandle != 0L) {
+            nativeSetParam(nativeHandle, name, value)
+        }
+    }
+
+    /** Clears a host uniform override so the document default applies again. */
+    fun clearParam(name: String) {
+        if (nativeHandle != 0L) {
+            nativeClearParam(nativeHandle, name)
+        }
+    }
+
+    /** Names of the `param` declarations in the current source. */
+    fun paramNames(): List<String> {
+        if (nativeHandle == 0L) return emptyList()
+        val arr = nativeGetParamNames(nativeHandle) ?: return emptyList()
+        return (0 until arr.size).map { arr[it] }
+    }
+
     fun onSurfaceCreated(surface: Surface) {
         if (nativeHandle != 0L) {
             nativeOnSurfaceCreated(nativeHandle, surface)
@@ -62,6 +119,16 @@ class PvgEngine(
         }
     }
 
+    /** Latest parse/eval failure for the current source, or "" when healthy. */
+    fun getLastError(): String {
+        if (nativeHandle == 0L) return ""
+        return try {
+            nativeGetLastError(nativeHandle) ?: ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
     fun getTelemetry(): PvgTelemetry {
         if (nativeHandle == 0L) return PvgTelemetry()
         val data = nativeGetTelemetry(nativeHandle)
@@ -71,7 +138,9 @@ class PvgEngine(
                 evalUs = data[1],
                 rasterUs = data[2],
                 fps = data[3],
-                primitiveCount = data[4].toInt()
+                primitiveCount = data[4].toInt(),
+                lockUs = if (data.size >= 7) data[5] else 0.0,
+                postUs = if (data.size >= 7) data[6] else 0.0
             )
         } else {
             PvgTelemetry()
@@ -79,6 +148,7 @@ class PvgEngine(
     }
 
     override fun close() {
+        stopVsync()
         if (nativeHandle != 0L) {
             Log.i(TAG, "Releasing native PvgEngine ($nativeHandle)")
             nativeDestroy(nativeHandle)
@@ -123,6 +193,18 @@ class PvgEngine(
         private external fun nativeSetSpeed(handle: Long, speed: Double)
 
         @JvmStatic
+        private external fun nativeSetParam(handle: Long, name: String, value: Double)
+
+        @JvmStatic
+        private external fun nativeClearParam(handle: Long, name: String)
+
+        @JvmStatic
+        private external fun nativeGetParamNames(handle: Long): Array<String>
+
+        @JvmStatic
+        private external fun nativeOnVsync(handle: Long, frameNanos: Long)
+
+        @JvmStatic
         private external fun nativeOnSurfaceCreated(handle: Long, surface: Surface)
 
         @JvmStatic
@@ -133,5 +215,8 @@ class PvgEngine(
 
         @JvmStatic
         private external fun nativeGetTelemetry(handle: Long): DoubleArray
+
+        @JvmStatic
+        private external fun nativeGetLastError(handle: Long): String?
     }
 }

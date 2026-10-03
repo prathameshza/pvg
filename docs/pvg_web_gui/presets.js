@@ -1,5 +1,5 @@
 /**
- * Procedural Vector Graphics (PVG) 0.1 - Reference Presets
+ * Procedural Vector Graphics (PVG) 0.2 - Reference Presets
  */
 
 const PVG_PRESETS = [
@@ -475,6 +475,280 @@ def draw_gear(gx, gy, teeth, outer_r, inner_r, col)
 
 draw_gear(220, 300, 12, 110, 30, #ff5722)
 draw_gear(410, 300, 8, 75, 20, #03a9f4)`,
+  },
+  {
+    name: "Sci-Fi Shield Core (0.2 FX)",
+    code: `# PVG 0.2 reference preset: sci-fi energy shield core.
+# Showcases gradients, clip, stroke topology, glow/shadow/blur, blend modes.
+PVG 0.2
+canvas 512 512
+  background #07090e
+
+set cx = 256
+set cy = 256
+
+# 1. Ambient Background Glow (Additive Lighting)
+circle
+  center [cx, cy]
+  radius 160
+  fill #00aaff
+  blur 45
+  blend "add"
+  opacity 0.25
+
+# 2. Outer Armor Plate with Drop Shadow & Metallic Linear Gradient
+rectangle
+  pos [106, 106]
+  size [300, 300]
+  radius 36
+  fill linear [106, 106] [406, 406]
+    stop 0.0 #2b3040
+    stop 0.5 #171922
+    stop 1.0 #0e1017
+  stroke #48526e
+  width 2
+  join "miter"
+  shadow [0, 18] 24 #000000bb
+
+# 3. Clipped Core Window (Beveled Glass Housing)
+clip
+  circle
+    center [cx, cy]
+    radius 105
+  for i from -5 to 5
+    line
+      from [cx - 150, cy + i * 30]
+      to [cx + 150, cy + i * 30 + 60]
+      stroke #00ffff
+      width 1.5
+      opacity 0.12
+  circle
+    center [cx, cy]
+    radius 90
+    fill radial [cx, cy] 90
+      stop 0.0 #00ffff
+      stop 0.6 #0033aa
+      stop 1.0 #07090e
+
+# 4. Mechanical Energy Retainer Ring (Exact Crisp Strokes)
+circle
+  center [cx, cy]
+  radius 112
+  fill none
+  stroke #00d2ff
+  width 4
+  cap "butt"
+  dash [28, 8, 12, 8]
+  glow 8 #00d2ff80
+
+# 5. Floating Energy Prisms (Rotated Group with Additive Blend)
+group
+  pos [cx, cy]
+  rot time * 1.5
+  blend "add"
+  for p from 0 to 2
+    set angle = p * (360deg / 3)
+    path
+      fill linear [0, 0] [cos(angle) * 70, sin(angle) * 70]
+        stop 0.0 #ffffff
+        stop 1.0 #0066ff00
+      stroke #ffffff
+      width 1
+      join "miter"
+      set r_inner = 35
+      set r_outer = 68
+      start [r_inner * cos(angle - 15deg), r_inner * sin(angle - 15deg)]
+      line [r_outer * cos(angle), r_outer * sin(angle)]
+      line [r_inner * cos(angle + 15deg), r_inner * sin(angle + 15deg)]
+      close
+
+# 6. Core Hub Highlight (Specularity)
+circle
+  center [cx - 6, cy - 6]
+  radius 14
+  fill #ffffff
+  blur 4
+  blend "screen"`,
+  },
+  {
+    name: "Tactical HUD (0.2 Uniforms + Pattern + Sprite)",
+    code: `PVG 0.2
+canvas 512 512
+  background #06080d
+
+# ==============================================================================
+# 1. DYNAMIC HOST UNIFORMS (Controllable via Rust at runtime)
+# ==============================================================================
+param shield_power: 0.82        # Shield percentage [0.0 - 1.0]
+param hull_hp: 0.65             # Armor integrity [0.0 - 1.0]
+param flux_temp: 74             # Reactor core temperature in Celsius
+param pilot_tag: "VIPER-7"      # Callsign string
+
+set cx = 256
+set cy = 230
+
+# ==============================================================================
+# 2. REPEATABLE PATTERN FILL: Tactical Carbon-Fiber Grid (16x16 Tile)
+# ==============================================================================
+pattern carbon_mesh 16 16
+  line
+    from [0, 0] to [16, 16]
+    stroke #ffffff0a
+    width 1
+  line
+    from [16, 0] to [0, 16]
+    stroke #ffffff0a
+    width 1
+  rectangle
+    pos [0, 0]
+    size [16, 16]
+    fill none
+    stroke #00ffff08
+    width 1
+
+# Background Chassis Card with Pattern Fill & Drop Shadow
+rectangle
+  pos [26, 26]
+  size [460, 460]
+  radius 24
+  fill pattern carbon_mesh
+  stroke #1b2336
+  width 2
+  shadow [0, 16] 24 #000000ee
+
+# ==============================================================================
+# 3. 16x16 RETRO TARGETING DRONE (Indexed Color Sprite)
+# ==============================================================================
+# Palette: 0=transparent, 1=crimson, 2=dark metal, 3=white eye, 4=amber glow
+sprite
+  pos [410, 48]
+  scale 2
+  palette [#00000000, #ff1a4b, #1e2333, #ffffff, #ffaa00]
+  data """
+  ..11........11..
+  .1441......1441.
+  142241....142241
+  1423241..1423241
+  .12222111122221.
+  ..122222222221..
+  ...1222222221...
+  ...1244224421...
+  ...1222222221...
+  ...1221111221...
+  ..1221....1221..
+  .14221....12241.
+  142221....122241
+  142241....142241
+  .1441......1441.
+  ..11........11..
+  """
+
+# ==============================================================================
+# 4. ORGANIC SHIELD BARRIER USING DETERMINISTIC noise2d()
+# ==============================================================================
+# Ambient Core Glow
+circle
+  center [cx, cy]
+  radius 115
+  fill #0066ff
+  blur 38
+  opacity 0.22
+  blend "add"
+
+# Fixed Tactical Reticle (Dashed Ring)
+circle
+  center [cx, cy]
+  radius 125
+  fill none
+  stroke #00d2ff
+  width 2
+  cap "butt"
+  dash [24, 10, 6, 10]
+  glow 6 #00d2ff66
+
+# Organic Fluctuating Shield Perimeter (Deformed via noise2d)
+path
+  fill none
+  stroke shield_power > 0.3 ? #00ffff : #ff2255
+  width 2.5
+  glow 10 (shield_power > 0.3 ? #00ffff80 : #ff225580)
+  blend "add"
+
+  for deg from 0 to 360 step 6
+    set rad = deg * (PI / 180)
+    # 2D Simplex/Value noise sampling along circle perimeter + time drift
+    set n = noise2d(cos(rad) * 1.8 + time * 0.9, sin(rad) * 1.8 + time * 0.9)
+    set r = 100 + n * (18 * shield_power)
+    set pt = [cx + r * cos(rad), cy + r * sin(rad)]
+
+    if deg == 0
+      start pt
+    else
+      line pt
+  close
+
+# Central Radar Hub
+circle
+  center [cx, cy]
+  radius 12
+  fill #ffffff
+  blur 4
+  blend "screen"
+
+# ==============================================================================
+# 5. DYNAMIC TELEMETRY HUD & DATA SPLINE (Arrays & Splines)
+# ==============================================================================
+# Callsign and Status
+text
+  pos [50, 48]
+  content "TACTICAL HUD // " + pilot_tag
+  size 14
+  font "mono"
+  align "left"
+  fill #00ffff
+
+# Dynamic Hull Bar (Responds directly to param hull_hp)
+rectangle
+  pos [50, 78]
+  size [160, 10]
+  radius 3
+  fill #111522
+  stroke #232c42
+  width 1
+
+rectangle
+  pos [50, 78]
+  size [160 * hull_hp, 10]
+  radius 3
+  fill hull_hp > 0.3 ? #00e676 : #ff3344
+  glow 4 (hull_hp > 0.3 ? #00e67680 : #ff334480)
+
+text
+  pos [220, 76]
+  content "" + floor(hull_hp * 100) + "% HULL"
+  size 11
+  font "mono"
+  fill #8fa2c7
+
+# Temperature Telemetry Card
+text
+  pos [50, 375]
+  content "HARMONIC FLUX: " + flux_temp + " °C"
+  size 12
+  font "mono"
+  fill #00d2ff
+
+# 1D Array of dynamic telemetry points
+set wave_samples = [430, 418, 435, 395, 420, 405, 445, 410, 428, 390, 425]
+
+# Smooth Cardinal / Catmull-Rom Spline through the array
+spline
+  pos [50, 395]
+  size [412, 50]
+  points wave_samples
+  stroke #00ffcc
+  width 2.5
+  glow 8 #00ffcc66`,
   },
 ];
 

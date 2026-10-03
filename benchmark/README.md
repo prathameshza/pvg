@@ -1,4 +1,4 @@
-# ⚡ PVG 0.1 Benchmark Suite
+# ⚡ PVG 0.2 Benchmark Suite
 
 This standalone benchmark suite delivers high-precision profiling of the Procedural Vector Graphics core engine written in Rust.
 

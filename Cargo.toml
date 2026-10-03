@@ -7,3 +7,17 @@ members = [
     "pvg_android",
 ]
 resolver = "2"
+
+# The Studio rasterizes heavy per-pixel CPU work (box blurs, conic fills,
+# tiny-skia geometry) every frame. Unoptimized debug builds turn a ~5ms frame
+# into ~400ms (stutter + pegged core), so the hot raster crates build with
+# optimizations even in dev. UI crates (eframe/egui) stay unoptimized for
+# fast iteration; release builds (`--release`) are unaffected.
+[profile.dev.package.pvg]
+opt-level = 2
+[profile.dev.package.pvg_win_gui]
+opt-level = 2
+[profile.dev.package.tiny-skia]
+opt-level = 2
+[profile.dev.package.tiny-skia-path]
+opt-level = 2

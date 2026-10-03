@@ -58,6 +58,13 @@ pub fn get_reference_presets() -> Vec<TestCase> {
             source: include_str!("../../presets/gears.pvg").to_string(),
             is_animated: false,
         },
+        TestCase {
+            name: "shield_core".to_string(),
+            category: "Preset".to_string(),
+            description: "PVG 0.2 sci-fi shield: gradients, clip, dash, blur, glow, shadow, blend".to_string(),
+            source: include_str!("../../presets/shield_core.pvg").to_string(),
+            is_animated: true,
+        },
     ]
 }
 

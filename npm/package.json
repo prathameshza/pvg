@@ -1,7 +1,7 @@
 {
   "name": "pvgview",
-  "version": "0.1.0",
-  "description": "Deterministic Procedural Vector Graphics (PVG) Engine with microsecond evaluation and <pvg-view> Web Component",
+  "version": "0.2.0",
+  "description": "Deterministic Procedural Vector Graphics (PVG 0.2) Engine with microsecond evaluation and <pvg-view> Web Component",
   "author": "Prathamesh",
   "license": "Apache-2.0",
   "homepage": "https://prathameshza.github.io/pvg/",

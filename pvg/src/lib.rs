@@ -73,14 +73,17 @@ pub mod svg;
 
 // Re-export core types
 pub use ast::{
-    CanvasDecl, CircleNode, Color, Document, EllipseNode, Expr, FunctionDef, GroupNode, LineNode,
-    PathCommand, PathNode, PolygonNode, RectNode, Stmt, TextNode, UnaryOp, BinaryOp,
+    CanvasDecl, CircleNode, Color, Document, EllipseNode, Expr, FunctionDef, GlowExpr, GradientStop as AstGradientStop,
+    GroupNode, LineNode, ParamDecl, PathCommand, PathNode, PatternDef, PixelFilter, PolygonNode, RectNode,
+    ShadowExpr, SplineNode, SpriteNode, Stmt, TextNode, UnaryOp, BinaryOp,
 };
 pub use draw_list::{
-    DrawCmd, DrawList, DrawPathCommand, DrawStyle, TextAlign, Transform2D,
+    BlendMode, DrawCmd, DrawList, DrawPathCommand, DrawPattern, DrawStyle, Glow, GradientStop, LineCap,
+    LineJoin, Paint, Shadow, StrokeAlign, TextAlign, Transform2D,
 };
 pub use error::{PvgError, PvgErrorKind};
-pub use eval::{Evaluator, Value};
+pub use eval::{pvg_noise2, pvg_noise3, spline_to_bezier, Evaluator, Scene, Value};
+pub use eval::{MAX_CALL_STACK_DEPTH, MAX_SCENE_PRIMITIVES};
 pub use lexer::{Lexer, Token, TokenKind};
 pub use parser::Parser;
 pub use svg::{emit_animated_svg, emit_draw_commands, emit_svg, escape_xml, format_svg_attributes};
@@ -123,6 +126,21 @@ pub fn to_svg(source: &str) -> Result<String, PvgError> {
 pub fn to_svg_at_time(source: &str, time: f64) -> Result<String, PvgError> {
     let draw_list = compile_at_time(source, time)?;
     Ok(draw_list.to_svg())
+}
+
+/// Compiles with host uniforms (`param`) overridden without re-parsing twice
+/// by the caller. `params` is a list of `(name, value)` pairs.
+pub fn compile_with_params(
+    source: &str,
+    params: &[(&str, Value)],
+    time: f64,
+) -> Result<DrawList, PvgError> {
+    let doc = parse(source)?;
+    let mut ev = Evaluator::new_with_time(time);
+    for (k, v) in params {
+        ev.set_param(*k, v.clone());
+    }
+    ev.evaluate_document(&doc)
 }
 
 // Backwards-compatible aliases

@@ -22,7 +22,8 @@ fun PvgView(
     controller: PvgController? = null,
     isPlaying: Boolean = true,
     speed: Double = 1.0,
-    time: Double = 0.0
+    time: Double = 0.0,
+    params: Map<String, Double> = emptyMap()
 ) {
     val activeController = controller ?: rememberPvgController(
         source = source,
@@ -46,17 +47,33 @@ fun PvgView(
         activeController.seekTo(time)
     }
 
+    // Host uniforms (PVG 0.2 section 18.1): each entry overrides a `param`
+    // declared by the document for every subsequent frame.
+    LaunchedEffect(params) {
+        for ((k, v) in params) {
+            activeController.setParam(k, v)
+        }
+    }
+
     AndroidView(
         modifier = modifier.fillMaxSize(),
         factory = { context: Context ->
             SurfaceView(context).apply {
-                holder.setFormat(PixelFormat.RGBA_8888)
+                // Opaque buffer (no alpha): AOSP sets SurfaceControl.OPAQUE
+                // for alpha-less formats, letting SurfaceFlinger skip the
+                // per-frame blend. The rasterizer always paints fully
+                // opaque pixels, so nothing visual changes.
+                holder.setFormat(PixelFormat.RGBX_8888)
                 setZOrderMediaOverlay(true)
 
                 holder.addCallback(object : SurfaceHolder.Callback {
                     override fun surfaceCreated(holder: SurfaceHolder) {
                         if (holder.surface.isValid) {
                             activeController.engine.onSurfaceCreated(holder.surface)
+                            // Display-locked ticks only while animating.
+                            if (activeController.isPlaying) {
+                                activeController.engine.startVsync()
+                            }
                         }
                     }
 
@@ -65,6 +82,7 @@ fun PvgView(
                     }
 
                     override fun surfaceDestroyed(holder: SurfaceHolder) {
+                        activeController.engine.stopVsync()
                         activeController.engine.onSurfaceDestroyed()
                     }
                 })

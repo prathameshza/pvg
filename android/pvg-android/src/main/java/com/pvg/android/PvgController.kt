@@ -30,21 +30,34 @@ class PvgController(
     var currentTime by mutableDoubleStateOf(0.0)
         private set
 
+    /** Latest native parse/eval failure ("" = healthy). Refresh via [refreshError]. */
+    var lastError by mutableStateOf("")
+        private set
+
+    /** Host uniform overrides applied on top of the document's `param` defaults (PVG 0.2 §18.1). */
+    var params by mutableStateOf<Map<String, Double>>(emptyMap())
+        private set
+
     internal val engine = PvgEngine(initialSource, initialPlaying, initialSpeed)
 
     fun load(pvgCode: String) {
         source = pvgCode
+        params = emptyMap()
         engine.setSource(pvgCode)
+        // A new document may have (un)animated state; keep ticks aligned.
+        if (isPlaying) engine.startVsync() else engine.stopVsync()
     }
 
     fun play() {
         isPlaying = true
         engine.setPlaying(true)
+        engine.startVsync()
     }
 
     fun pause() {
         isPlaying = false
         engine.setPlaying(false)
+        engine.stopVsync()
     }
 
     fun toggle() {
@@ -56,6 +69,25 @@ class PvgController(
         engine.setSpeed(playbackSpeed)
     }
 
+    /**
+     * Sets a host uniform (`param`, PVG 0.2 spec section 18.1) declared by the
+     * document, e.g. `engine.setParam("shield", 0.42)`. Overrides the declared
+     * default for every subsequent frame.
+     */
+    fun setParam(name: String, value: Double) {
+        params = params + (name to value)
+        engine.setParam(name, value)
+    }
+
+    /** Clears a host uniform override so the document default applies again. */
+    fun clearParam(name: String) {
+        params = params - name
+        engine.clearParam(name)
+    }
+
+    /** Names of the `param` declarations in the loaded document. */
+    fun paramNames(): List<String> = engine.paramNames()
+
     fun seekTo(timeSeconds: Double) {
         currentTime = timeSeconds
         engine.setTime(timeSeconds)
@@ -66,6 +98,11 @@ class PvgController(
     }
 
     fun getTelemetry(): PvgTelemetry = engine.getTelemetry()
+
+    /** Polls the native error string into [lastError] (call after load/apply and periodically). */
+    fun refreshError() {
+        lastError = engine.getLastError()
+    }
 
     override fun close() {
         engine.close()

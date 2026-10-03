@@ -99,6 +99,57 @@ pub unsafe fn ANativeWindow_unlockAndPost(_window: *mut ANativeWindow) -> i32 {
     0
 }
 
+/// Best-effort display frame-rate hint (`ANativeWindow_setFrameRate`, API 30+).
+///
+/// Tells SurfaceFlinger our cadence (60Hz) so it can schedule composition
+/// optimally instead of inferring it from queue behavior — the standard
+/// game-loop recommendation for stable pacing. Dynamically resolved via
+/// `dlopen`/`dlsym` so the library still loads on older releases; silently
+/// a no-op when the symbol is absent.
+#[cfg(target_os = "android")]
+pub mod frame_rate {
+    use std::ffi::CString;
+    use std::os::raw::{c_char, c_float, c_void};
+
+    type SetFrameRateFn = unsafe extern "C" fn(*mut c_void, c_float, i8) -> i32;
+
+    extern "C" {
+        fn dlopen(filename: *const c_char, flags: i32) -> *mut c_void;
+        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    }
+
+    const RTLD_NOW: i32 = 2;
+    /// `ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_DEFAULT`.
+    const COMPAT_DEFAULT: i8 = 0;
+
+    /// Requests 60Hz composition scheduling for `window`. Never fails loudly.
+    ///
+    /// # Safety
+    /// `window` must be a live `ANativeWindow*` (or null, which is ignored).
+    pub unsafe fn set_frame_rate_60(window: *mut c_void) {
+        if window.is_null() {
+            return;
+        }
+        let Ok(lib) = CString::new("libandroid.so") else {
+            return;
+        };
+        let Ok(sym) = CString::new("ANativeWindow_setFrameRate") else {
+            return;
+        };
+        let handle = dlopen(lib.as_ptr(), RTLD_NOW);
+        if handle.is_null() {
+            return;
+        }
+        let fptr = dlsym(handle, sym.as_ptr());
+        if fptr.is_null() {
+            return;
+        }
+        let f: SetFrameRateFn = std::mem::transmute(fptr);
+        // Deliberately no dlclose: one handle for the process lifetime.
+        f(window, 60.0, COMPAT_DEFAULT);
+    }
+}
+
 #[macro_export]
 macro_rules! log_info {
     ($($arg:tt)*) => {

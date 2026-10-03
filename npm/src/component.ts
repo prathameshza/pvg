@@ -75,6 +75,7 @@ export class PvgView extends CustomElementBase {
       "fit",
       "interactive",
       "lazy",
+      "params",
     ];
   }
 
@@ -87,6 +88,8 @@ export class PvgView extends CustomElementBase {
   private _isVisible = true;
   private _isAnimatedDoc = false;
   private _manuallySetCode = false;
+  /** Host uniform overrides (`param`, Section 18.1) pushed into the evaluator. */
+  private _params = new Map<string, string | number | boolean>();
 
   private _panX = 0;
   private _panY = 0;
@@ -219,6 +222,45 @@ export class PvgView extends CustomElementBase {
     else this.removeAttribute("src");
   }
 
+  /**
+   * Sets a host uniform (`param`, Section 18.1) and re-renders.
+   * Values override the document's declared defaults.
+   */
+  setParam(name: string, value: string | number | boolean): void {
+    this._params.set(name, value);
+    this.renderAt(this._currentTime);
+  }
+
+  /** Removes a host uniform override and re-renders. */
+  clearParam(name: string): void {
+    this._params.delete(name);
+    this.renderAt(this._currentTime);
+  }
+
+  /** Snapshot of the currently applied host uniform overrides. */
+  get params(): Record<string, string | number | boolean> {
+    return Object.fromEntries(this._params);
+  }
+
+  /** Parses the `params` attribute (a JSON object). */
+  private _parseParamsAttr(json: string | null): void {
+    this._params.clear();
+    if (!json) return;
+    try {
+      const parsed = JSON.parse(json) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+          this._params.set(k, v);
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.dispatchEvent(
+        new CustomEvent("error", { detail: { error: `Invalid params attribute: ${message}` } })
+      );
+    }
+  }
+
   get renderMode(): "canvas" | "svg" {
     return (this.getAttribute("render") || "canvas").toLowerCase() === "svg" ? "svg" : "canvas";
   }
@@ -303,6 +345,9 @@ export class PvgView extends CustomElementBase {
       this._sourceCode = dedentCode(newValue || "");
       this._manuallySetCode = true;
       this.extractAndCompile();
+    } else if (name === "params") {
+      this._parseParamsAttr(newValue);
+      this.renderAt(this._currentTime);
     } else if (name === "render") {
       this._setupRenderSurface();
       this.renderAt(this._currentTime);
@@ -459,6 +504,8 @@ export class PvgView extends CustomElementBase {
       const parser = new Parser(tokens);
       const ast = parser.parseDocument();
       const evaluator = new Evaluator(time);
+      // Host uniforms win over the document's declared defaults (Section 18.1).
+      for (const [k, v] of this._params) evaluator.setParam(k, v);
       this._currentDrawList = evaluator.evaluateDocument(ast);
 
       this._hideError();

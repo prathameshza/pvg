@@ -26,7 +26,8 @@ class PvgSurfaceView @JvmOverloads constructor(
     private var engine: PvgEngine? = null
 
     init {
-        holder.setFormat(PixelFormat.RGBA_8888)
+        // Opaque buffer (no alpha) so SurfaceFlinger can skip blending.
+        holder.setFormat(PixelFormat.RGBX_8888)
         holder.addCallback(this)
         setZOrderMediaOverlay(true)
     }
@@ -36,20 +37,24 @@ class PvgSurfaceView @JvmOverloads constructor(
             engine = PvgEngine(pvgCode, isPlaying, speed)
             if (holder.surface.isValid) {
                 engine?.onSurfaceCreated(holder.surface)
+                if (isPlaying) engine?.startVsync()
             }
         } else {
             engine?.setSource(pvgCode)
             engine?.setPlaying(isPlaying)
             engine?.setSpeed(speed)
+            if (isPlaying) engine?.startVsync() else engine?.stopVsync()
         }
     }
 
     fun play() {
         engine?.setPlaying(true)
+        engine?.startVsync()
     }
 
     fun pause() {
         engine?.setPlaying(false)
+        engine?.stopVsync()
     }
 
     fun seekTo(time: Double) {
@@ -60,13 +65,37 @@ class PvgSurfaceView @JvmOverloads constructor(
         engine?.setSpeed(speed)
     }
 
+    /**
+     * Sets a host uniform (`param`, PVG 0.2 §18.1) declared by the document.
+     * Numeric params only; string params must be baked into the source.
+     */
+    fun setParam(name: String, value: Double) {
+        engine?.setParam(name, value)
+    }
+
+    /** Clears a host uniform override so the document default applies again. */
+    fun clearParam(name: String) {
+        engine?.clearParam(name)
+    }
+
+    /** Names of the `param` declarations in the loaded document. */
+    fun paramNames(): List<String> {
+        return engine?.paramNames() ?: emptyList()
+    }
+
     fun getTelemetry(): PvgTelemetry {
         return engine?.getTelemetry() ?: PvgTelemetry()
+    }
+
+    /** Latest native parse/eval failure for the current source, or "" when healthy. */
+    fun getLastError(): String {
+        return engine?.getLastError() ?: ""
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         if (holder.surface.isValid) {
             engine?.onSurfaceCreated(holder.surface)
+            engine?.startVsync()
         }
     }
 
@@ -75,6 +104,7 @@ class PvgSurfaceView @JvmOverloads constructor(
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
+        engine?.stopVsync()
         engine?.onSurfaceDestroyed()
     }
 

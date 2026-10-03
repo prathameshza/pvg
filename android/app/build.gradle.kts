@@ -20,6 +20,10 @@ android {
 
     buildTypes {
         release {
+            // Local-only: sign release with the debug key so `installRelease`
+            // exists for emulator testing (`adb install`). CI/sonatype AAR
+            // publishing is unaffected. Remove for store builds.
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
